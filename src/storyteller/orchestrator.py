@@ -2,8 +2,8 @@
 
 This module deliberately stops at the boundary between the orchestrator and
 an executor.  It creates and advances a run, executes registered ``code``
-tasks immediately, and leaves ``llm`` tasks ready for a later claim/submit
-implementation.
+tasks immediately, and claims ``llm`` tasks for an executor.  Output
+validation and submission policy are implemented by later work items.
 """
 
 from __future__ import annotations
@@ -11,20 +11,23 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import os
 import re
+import secrets
 import shutil
+import socket
 from copy import deepcopy
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final
 
-from .cards import TaskCardError
+from .cards import TaskCardError, generate_task_card
 from .manifest import load_manifest, write_manifest
 from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
-from .storage import atomic_write_json, manifest_lock
+from .storage import atomic_write_json, atomic_write_text, manifest_lock
 from .validation import validate_document
 
 
@@ -37,6 +40,9 @@ TASK_DEFINITION_SCHEMA_PATH = (
 _TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _TASK_TYPE = re.compile(r"^[A-Z][0-9]+\.[a-z][a-z0-9_]*$")
 _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
+_TICKET = re.compile(r"^[a-f0-9]{32}$")
+_EXECUTOR_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
 _MISSING: Final = object()
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -63,6 +69,16 @@ class InvalidTransition(OrchestrationError):
 
 class CodeTaskError(OrchestrationError):
     """A code task could not be executed or its result was invalid."""
+
+
+class ClaimError(OrchestrationError):
+    """A task cannot be claimed or its claim cannot be used."""
+
+    exit_code = 3
+
+
+class InvalidClaimError(ClaimError):
+    """A submitted ticket no longer identifies a valid claim."""
 
 
 @dataclass(frozen=True)
@@ -294,6 +310,345 @@ class Orchestrator:
                 _update_run_status(manifest)
                 write_manifest(run_dir / "manifest.json", manifest)
 
+    def claim_next(
+        self,
+        run_id: str | None = None,
+        *,
+        executor_id: str | None = None,
+        isolation: str = "none",
+    ) -> dict[str, str] | None:
+        """Claim the next ready LLM task and return its executor-facing card.
+
+        The returned mapping intentionally contains no task ID.  A ticket is
+        the only identifier an executor needs in order to submit its output.
+        The caller may restrict selection to one run; otherwise active runs
+        are considered in creation order, followed by DAG depth and task ID.
+        """
+
+        resolved_executor_id = _resolve_executor_id(executor_id)
+        _validate_isolation(isolation)
+
+        run_ids = self._claimable_run_ids(run_id)
+        # Code tasks are synchronous.  Advancing before looking for an LLM
+        # task makes a newly-unblocked task visible to this invocation.
+        for candidate_run_id in run_ids:
+            manifest = self.load_run(candidate_run_id)
+            if manifest["status"] == "active":
+                self.advance(candidate_run_id)
+
+        for candidate_run_id in self._claimable_run_ids(run_id):
+            run_dir = self.run_dir(candidate_run_id)
+            with manifest_lock(run_dir):
+                manifest = load_manifest(run_dir / "manifest.json")
+                if manifest["status"] != "active":
+                    continue
+                now = self._now()
+                changed = _refresh_claims(
+                    manifest,
+                    run_dir,
+                    now,
+                    self._clock,
+                )
+                _refresh_blocked_tasks(manifest, now)
+                task_id = _next_ready_llm_task(manifest)
+                if task_id is None:
+                    if changed:
+                        _update_run_status(manifest)
+                    _touch_manifest(manifest, now)
+                    write_manifest(run_dir / "manifest.json", manifest)
+                    continue
+
+                result = self._claim_task_locked(
+                    manifest,
+                    candidate_run_id,
+                    task_id,
+                    executor_id=resolved_executor_id,
+                    isolation=isolation,
+                    now=now,
+                )
+                _update_run_status(manifest)
+                _touch_manifest(manifest, now)
+                write_manifest(run_dir / "manifest.json", manifest)
+                if result is not None:
+                    return result
+        return None
+
+    # These aliases keep the operation discoverable to callers that use the
+    # task-oriented spelling.  They share one implementation and therefore
+    # have identical locking and ordering semantics.
+    next_task = claim_next
+    _claim_next = claim_next
+
+    def claim_task(
+        self,
+        run_id: str,
+        task_id: str,
+        *,
+        executor_id: str | None = None,
+        isolation: str = "none",
+    ) -> dict[str, str]:
+        """Claim one specific ready LLM task.
+
+        ``claim_next`` is the normal selection entry point.  This narrower
+        seam is useful to the submit/retry layers and to tests that need to
+        inspect one task without depending on the rest of a DAG.
+        """
+
+        resolved_executor_id = _resolve_executor_id(executor_id)
+        _validate_isolation(isolation)
+        manifest = self.load_run(run_id)
+        if manifest["status"] == "active":
+            self.advance(run_id)
+
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if manifest["status"] != "active":
+                raise ClaimError(f"run is not active: {run_id}")
+            now = self._now()
+            _refresh_claims(manifest, run_dir, now, self._clock)
+            _refresh_blocked_tasks(manifest, now)
+            task = _get_task(manifest, task_id)
+            if task["kind"] != "llm" or task["state"] != "ready":
+                raise ClaimError(f"task is not ready for claim: {task_id}")
+            result = self._claim_task_locked(
+                manifest,
+                run_id,
+                task_id,
+                executor_id=resolved_executor_id,
+                isolation=isolation,
+                now=now,
+            )
+            if result is None:
+                raise ClaimError(f"task is already claimed: {task_id}")
+            _update_run_status(manifest)
+            _touch_manifest(manifest, now)
+            write_manifest(run_dir / "manifest.json", manifest)
+            return result
+
+    _claim_task = claim_task
+
+    def validate_claim(self, ticket: str) -> dict[str, Any]:
+        """Return claim metadata when *ticket* is currently valid.
+
+        Submission code in later work items calls this before validating an
+        output.  It deliberately performs no state transition, so an invalid
+        ticket is rejected with the claim-specific exit code without changing
+        the task.
+        """
+
+        if not isinstance(ticket, str) or not _TICKET.fullmatch(ticket):
+            raise InvalidClaimError("存在しない ticket です")
+        found = self._find_claim_ticket(ticket)
+        if found is None:
+            raise InvalidClaimError("存在しない ticket です")
+        found_run_id, found_task_id = found
+        run_dir = self.run_dir(found_run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            task = _get_task(manifest, found_task_id)
+            claim = task.get("claim")
+            claim_path = self.task_dir(found_run_id, found_task_id) / "claim.json"
+            if (
+                task["state"] != "claimed"
+                or not isinstance(claim, Mapping)
+                or claim.get("ticket") != ticket
+            ):
+                raise InvalidClaimError("ticket の claim は無効です")
+            payload = _read_claim_file(claim_path)
+            if payload.get("ticket") != ticket or _claim_expired(
+                payload, self._now()
+            ):
+                raise InvalidClaimError("ticket の lease が切れています")
+            if _manifest_claim(payload) != dict(claim):
+                raise InvalidClaimError("manifest と claim.json が一致しません")
+            return {
+                "run_id": found_run_id,
+                "task_id": found_task_id,
+                "claim": dict(claim),
+            }
+
+    # ``require_claim`` reads naturally at submit call sites.
+    require_claim = validate_claim
+
+    def revoke_claim(
+        self,
+        run_id: str,
+        task_id: str,
+        *,
+        reason: str = "claimを取り消し",
+    ) -> dict[str, Any]:
+        """Cancel a live claim and return the task to ``ready``.
+
+        The claim file is retained as ``claim.revoked.<n>.json`` so a ticket
+        from the cancelled executor can never become valid again.
+        """
+
+        if not isinstance(reason, str) or not reason.strip():
+            raise ClaimError("claim cancellation requires a reason")
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            task = _get_task(manifest, task_id)
+            if task["state"] != "claimed":
+                raise ClaimError(f"task is not claimed: {task_id}")
+            claim_path = self.task_dir(run_id, task_id) / "claim.json"
+            payload = _read_claim_file(claim_path)
+            _rename_claim(claim_path, "claim.revoked")
+            executor_id = None
+            if isinstance(task.get("claim"), Mapping):
+                executor_id = task["claim"].get("executor_id")
+            task["claim"] = None
+            _set_task_state(
+                manifest,
+                task_id,
+                "ready",
+                self._now(),
+                reason=reason,
+                executor_id=executor_id,
+            )
+            _update_run_status(manifest)
+            _touch_manifest(manifest, self._now())
+            write_manifest(run_dir / "manifest.json", manifest)
+            # Reading the payload before renaming also ensures a malformed or
+            # mismatched claim cannot be silently cancelled.
+            del payload
+            return manifest
+
+    _revoke_claim = revoke_claim
+
+    def _claimable_run_ids(self, run_id: str | None) -> list[str]:
+        if run_id is not None:
+            # Let run_dir provide the same path-safety error as other APIs,
+            # then load the manifest to give callers a useful missing-run
+            # error before any claim work starts.
+            self.load_run(run_id)
+            return [run_id]
+
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.is_dir():
+            return []
+        records: list[tuple[str, str]] = []
+        for entry in runs_dir.iterdir():
+            if not entry.is_dir() or not _RUN_ID.fullmatch(entry.name):
+                continue
+            manifest = load_manifest(entry / "manifest.json")
+            if manifest["status"] == "active":
+                records.append((manifest["created_at"], entry.name))
+        records.sort(key=lambda item: (item[0], item[1]))
+        return [entry[1] for entry in records]
+
+    def _claim_task_locked(
+        self,
+        manifest: dict[str, Any],
+        run_id: str,
+        task_id: str,
+        *,
+        executor_id: str,
+        isolation: str,
+        now: str,
+    ) -> dict[str, str] | None:
+        task = _get_task(manifest, task_id)
+        if task["kind"] != "llm" or task["state"] != "ready":
+            return None
+
+        definition = self.task_definitions[task["type"]]
+        ticket = secrets.token_hex(16)
+        claimed_at = now
+        lease_expires_at = _lease_expires_at(
+            claimed_at,
+            definition.get("lease_minutes", 30),
+        )
+        payload = {
+            "ticket": ticket,
+            "task_id": task_id,
+            "executor_id": executor_id,
+            "isolation": isolation,
+            "claimed_at": claimed_at,
+            "lease_expires_at": lease_expires_at,
+        }
+        claim_path = self.task_dir(run_id, task_id) / "claim.json"
+
+        try:
+            card = self._build_task_card(manifest, run_id, task_id, ticket)
+        except Exception as error:
+            # Input rendering failure is a task failure according to the
+            # task-card contract.  The retry/invalidation policy belongs to a
+            # later work item.
+            _fail_task(manifest, task_id, now, _error_text(error))
+            return None
+
+        try:
+            _create_claim_file(claim_path, payload)
+        except FileExistsError:
+            # Another claim creator won the O_EXCL race.  The next invocation
+            # will reconcile the file with the manifest before selecting.
+            return None
+
+        manifest_claim = _manifest_claim(payload)
+        task["claim"] = manifest_claim
+        _set_task_state(
+            manifest,
+            task_id,
+            "claimed",
+            now,
+            reason="実行者がclaim",
+            executor_id=executor_id,
+        )
+        try:
+            atomic_write_text(self.task_dir(run_id, task_id) / "card.md", card)
+        except BaseException:
+            _remove_claim_if_ticket(claim_path, ticket)
+            task["claim"] = None
+            _set_task_state(
+                manifest,
+                task_id,
+                "ready",
+                now,
+                reason="タスクカードの保存に失敗",
+                executor_id=executor_id,
+            )
+            raise
+        return {
+            "ticket": ticket,
+            "card": card,
+            "lease_expires_at": lease_expires_at,
+        }
+
+    def _build_task_card(
+        self,
+        manifest: Mapping[str, Any],
+        run_id: str,
+        task_id: str,
+        ticket: str,
+    ) -> str:
+        task = _get_task(manifest, task_id)
+        definition = self.task_definitions[task["type"]]
+        context = self._build_context(manifest, run_id, task_id)
+        retry_reason = task.get("error")
+        if not isinstance(retry_reason, str):
+            retry_reason = None
+        return generate_task_card(
+            definition,
+            ticket,
+            inputs=context.inputs,
+            retry_reason=retry_reason,
+        )
+
+    def _find_claim_ticket(self, ticket: str) -> tuple[str, str] | None:
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.is_dir():
+            return None
+        for entry in sorted(runs_dir.iterdir(), key=lambda path: path.name):
+            if not entry.is_dir() or not _RUN_ID.fullmatch(entry.name):
+                continue
+            manifest = load_manifest(entry / "manifest.json")
+            for task_id, task in manifest["tasks"].items():
+                claim = task.get("claim")
+                if isinstance(claim, Mapping) and claim.get("ticket") == ticket:
+                    return entry.name, task_id
+        return None
+
     # This spelling describes the operation in the plan and is convenient for
     # tests without introducing a second implementation.
     process_code_tasks = advance
@@ -307,11 +662,11 @@ class Orchestrator:
         output: Any = _MISSING,
         reason: str | None = None,
     ) -> dict[str, Any]:
-        """Apply one task-state transition without implementing claim/lease.
+        """Apply one internal state-machine transition.
 
-        This is the small state-machine seam used by later claim/submit code
-        and by Phase 0 tests.  It records ``claimed`` as a state only; no
-        claim file or lease is created here.
+        The direct ``claimed`` transition remains a small test/DAG seam and
+        intentionally does not create a lease.  Real executor claims must go
+        through :meth:`claim_task` or :meth:`claim_next`.
         """
 
         run_dir = self.run_dir(run_id)
@@ -758,6 +1113,272 @@ def _get_task(manifest: Mapping[str, Any], task_id: str) -> dict[str, Any]:
     return task
 
 
+def _resolve_executor_id(executor_id: str | None) -> str:
+    if executor_id is None:
+        host = re.sub(r"[^A-Za-z0-9._-]", "-", socket.gethostname())
+        host = host or "host"
+        executor_id = f"{host}-{os.getpid()}"
+    if not isinstance(executor_id, str) or not _EXECUTOR_ID.fullmatch(executor_id):
+        raise ClaimError("executor_id は英数字・'.'・'_'・'-' を1〜64文字で指定してください")
+    return executor_id
+
+
+def _validate_isolation(isolation: str) -> None:
+    if isolation not in _ISOLATIONS:
+        values = ", ".join(sorted(_ISOLATIONS))
+        raise ClaimError(f"isolation は {values} のいずれかです")
+
+
+def _parse_utc_timestamp(value: Any) -> datetime:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",
+        value,
+    ):
+        raise ClaimError("claim の時刻形式が不正です")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise ClaimError("claim の時刻形式が不正です") from error
+    return parsed.astimezone(timezone.utc)
+
+
+def _lease_expires_at(claimed_at: str, lease_minutes: Any) -> str:
+    if isinstance(lease_minutes, bool) or not isinstance(
+        lease_minutes, (int, float)
+    ) or lease_minutes <= 0:
+        raise ClaimError("lease_minutes は0より大きい数でなければなりません")
+    expiry = _parse_utc_timestamp(claimed_at) + timedelta(
+        minutes=float(lease_minutes)
+    )
+    return expiry.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _manifest_claim(payload: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        "ticket": payload["ticket"],
+        "executor_id": payload["executor_id"],
+        "isolation": payload["isolation"],
+        "lease_expires_at": payload["lease_expires_at"],
+    }
+
+
+def _validate_claim_payload(payload: Any) -> dict[str, str]:
+    if not isinstance(payload, Mapping):
+        raise ClaimError("claim.json はオブジェクトでなければなりません")
+    expected = {
+        "ticket",
+        "task_id",
+        "executor_id",
+        "isolation",
+        "claimed_at",
+        "lease_expires_at",
+    }
+    if set(payload) != expected:
+        raise ClaimError("claim.json の項目が不正です")
+    ticket = payload["ticket"]
+    task_id = payload["task_id"]
+    executor_id = payload["executor_id"]
+    isolation = payload["isolation"]
+    if not isinstance(ticket, str) or not _TICKET.fullmatch(ticket):
+        raise ClaimError("claim.json の ticket が不正です")
+    if not isinstance(task_id, str) or not _TASK_ID.fullmatch(task_id):
+        raise ClaimError("claim.json の task_id が不正です")
+    if not isinstance(executor_id, str) or not _EXECUTOR_ID.fullmatch(executor_id):
+        raise ClaimError("claim.json の executor_id が不正です")
+    _validate_isolation(isolation)
+    claimed_at = payload["claimed_at"]
+    lease_expires_at = payload["lease_expires_at"]
+    _parse_utc_timestamp(claimed_at)
+    _parse_utc_timestamp(lease_expires_at)
+    if _parse_utc_timestamp(lease_expires_at) <= _parse_utc_timestamp(claimed_at):
+        raise ClaimError("claim.json の lease が有効期限になっていません")
+    return {
+        "ticket": ticket,
+        "task_id": task_id,
+        "executor_id": executor_id,
+        "isolation": isolation,
+        "claimed_at": claimed_at,
+        "lease_expires_at": lease_expires_at,
+    }
+
+
+def _read_claim_file(path: Path) -> dict[str, str]:
+    try:
+        with path.open("r", encoding="utf-8", newline=None) as stream:
+            payload = json.load(stream)
+    except FileNotFoundError as error:
+        raise InvalidClaimError("claim.json がありません") from error
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ClaimError(f"claim.json を読み込めません: {path}") from error
+    return _validate_claim_payload(payload)
+
+
+def _claim_expired(payload: Mapping[str, Any], now: str) -> bool:
+    return _parse_utc_timestamp(now) >= _parse_utc_timestamp(
+        payload["lease_expires_at"]
+    )
+
+
+def _create_claim_file(path: Path, payload: Mapping[str, Any]) -> None:
+    """Create claim.json with O_EXCL; unlike normal files it must not replace."""
+
+    data = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
+    descriptor = os.open(
+        path,
+        os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+        0o666,
+    )
+    try:
+        with os.fdopen(descriptor, "wb", closefd=True) as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _remove_claim_if_ticket(path: Path, ticket: str) -> None:
+    try:
+        payload = _read_claim_file(path)
+    except (ClaimError, InvalidClaimError):
+        return
+    if payload["ticket"] != ticket:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _rename_claim(path: Path, prefix: str) -> Path:
+    for number in range(1, 2**31):
+        destination = path.with_name(f"{prefix}.{number}.json")
+        # All callers hold the run's manifest lock.  Checking before
+        # os.replace is therefore enough to preserve the smallest-unused
+        # suffix; unlike a blind replace it also avoids overwriting history.
+        if destination.exists():
+            continue
+        try:
+            os.replace(path, destination)
+        except FileNotFoundError:
+            raise InvalidClaimError("claim.json がありません") from None
+        return destination
+    raise ClaimError(f"claim の退避先を作成できません: {path}")
+
+
+def _refresh_claims(
+    manifest: dict[str, Any],
+    run_dir: Path,
+    now: str,
+    clock: Callable[[], datetime],
+) -> bool:
+    """Reconcile claim files and manifest records before selecting work."""
+
+    del clock  # Kept in the seam so clock ownership remains explicit.
+    changed = False
+    for task_id, task in manifest["tasks"].items():
+        claim_path = run_dir / "tasks" / task_id / "claim.json"
+        if not claim_path.exists():
+            if task["state"] == "claimed":
+                executor_id = None
+                if isinstance(task.get("claim"), Mapping):
+                    executor_id = task["claim"].get("executor_id")
+                task["claim"] = None
+                _set_task_state(
+                    manifest,
+                    task_id,
+                    "ready",
+                    now,
+                    reason="claim.json がありません",
+                    executor_id=executor_id,
+                )
+                changed = True
+            continue
+
+        payload = _read_claim_file(claim_path)
+        if payload["task_id"] != task_id:
+            raise ClaimError(f"claim.json の task_id が一致しません: {task_id}")
+        if task["kind"] != "llm":
+            raise ClaimError(f"code task に claim.json があります: {task_id}")
+
+        if _claim_expired(payload, now):
+            _rename_claim(claim_path, "claim.expired")
+            executor_id = None
+            if isinstance(task.get("claim"), Mapping):
+                executor_id = task["claim"].get("executor_id")
+            task["claim"] = None
+            if task["state"] == "claimed":
+                _set_task_state(
+                    manifest,
+                    task_id,
+                    "ready",
+                    now,
+                    reason="leaseが切れた",
+                    executor_id=executor_id,
+                )
+            elif task["state"] not in {"ready", "blocked"}:
+                raise ClaimError(f"期限切れclaimの状態が不正です: {task_id}")
+            changed = True
+            continue
+
+        record = _manifest_claim(payload)
+        if task["state"] == "ready":
+            task["claim"] = record
+            _set_task_state(
+                manifest,
+                task_id,
+                "claimed",
+                now,
+                reason="既存のclaimを復元",
+                executor_id=payload["executor_id"],
+            )
+            changed = True
+        elif task["state"] == "claimed":
+            if task.get("claim") != record:
+                task["claim"] = record
+                changed = True
+        else:
+            raise ClaimError(f"claim中タスクの状態が不正です: {task_id}")
+    return changed
+
+
+def _task_depths(manifest: Mapping[str, Any]) -> dict[str, int]:
+    memo: dict[str, int] = {}
+    visiting: set[str] = set()
+
+    def depth(task_id: str) -> int:
+        if task_id in memo:
+            return memo[task_id]
+        if task_id in visiting:
+            raise DAGError(f"task graph contains a cycle at {task_id}")
+        visiting.add(task_id)
+        task = _get_task(manifest, task_id)
+        value = max((depth(dependency) + 1 for dependency in task["deps"]), default=0)
+        visiting.remove(task_id)
+        memo[task_id] = value
+        return value
+
+    for task_id in manifest["tasks"]:
+        depth(task_id)
+    return memo
+
+
+def _next_ready_llm_task(manifest: Mapping[str, Any]) -> str | None:
+    depths = _task_depths(manifest)
+    candidates = [
+        task_id
+        for task_id, task in manifest["tasks"].items()
+        if task["kind"] == "llm" and task["state"] == "ready"
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda task_id: (depths[task_id], task_id))
+
+
 def _validate_transition(
     manifest: Mapping[str, Any], task_id: str, state: str
 ) -> None:
@@ -784,6 +1405,7 @@ def _set_task_state(
     at: str,
     *,
     reason: str | None = None,
+    executor_id: str | None = None,
 ) -> None:
     task = _get_task(manifest, task_id)
     old_state = task["state"]
@@ -802,6 +1424,8 @@ def _set_task_state(
     }
     if reason:
         event["reason"] = reason
+    if executor_id is not None:
+        event["executor_id"] = executor_id
     task["history"].append(event)
 
 
