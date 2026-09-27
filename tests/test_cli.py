@@ -72,7 +72,7 @@ def _claim(data_dir: Path, run_id: str) -> dict[str, str]:
     result = _run_st(data_dir, "next", "--run", run_id, "--json")
     assert result.returncode == 0, result.stderr
     claim = json.loads(result.stdout)
-    _extend_claim_lease(data_dir, run_id)
+    _extend_claim_lease(data_dir, run_id, claim["ticket"])
     return claim
 
 
@@ -91,19 +91,47 @@ def _save_manifest(data_dir: Path, run_id: str, manifest: dict) -> None:
     )
 
 
-def _extend_claim_lease(data_dir: Path, run_id: str) -> None:
+def _task_id_for_ticket(data_dir: Path, run_id: str, ticket: str) -> str:
+    manifest = _load_manifest(data_dir, run_id)
+    for task_id, task in manifest["tasks"].items():
+        if (task.get("claim") or {}).get("ticket") == ticket:
+            return task_id
+    raise AssertionError(f"ticket が見つかりません: {ticket}")
+
+
+def _extend_claim_lease(data_dir: Path, run_id: str, ticket: str) -> None:
     """Keep subprocess fixtures independent of the dummy's three-second lease."""
-    task_dir = data_dir / "runs" / run_id / "tasks" / "D1.echo"
+    task_id = _task_id_for_ticket(data_dir, run_id, ticket)
+    task_dir = data_dir / "runs" / run_id / "tasks" / task_id
     claim_path = task_dir / "claim.json"
     claim_payload = json.loads(claim_path.read_text(encoding="utf-8"))
     claim_payload["lease_expires_at"] = "2099-01-01T00:00:00Z"
     claim_path.write_text(json.dumps(claim_payload) + "\n", encoding="utf-8")
 
     manifest = _load_manifest(data_dir, run_id)
-    manifest["tasks"]["D1.echo"]["claim"]["lease_expires_at"] = (
+    manifest["tasks"][task_id]["claim"]["lease_expires_at"] = (
         "2099-01-01T00:00:00Z"
     )
     _save_manifest(data_dir, run_id, manifest)
+
+
+def _drain_run(data_dir: Path, run_id: str) -> None:
+    while True:
+        result = _run_st(data_dir, "next", "--run", run_id, "--json")
+        if result.returncode == 2:
+            return
+        assert result.returncode == 0, result.stderr
+        claim = json.loads(result.stdout)
+        task_id = _task_id_for_ticket(data_dir, run_id, claim["ticket"])
+        if task_id.startswith("D2.echo-"):
+            item_id = task_id.rsplit("-", 1)[1]
+            output = json.dumps({"text": "ok", "sources": [item_id]})
+        else:
+            output = "alpha beta gamma。"
+        accepted = _run_st(
+            data_dir, "submit", claim["ticket"], input=output
+        )
+        assert accepted.returncode == 0, accepted.stdout + accepted.stderr
 
 
 def test_cli_help_lists_the_command_section(capsys):
@@ -136,12 +164,14 @@ def test_phase0_cli_creates_dummy_and_claims_json_card(tmp_path, monkeypatch, ca
     assert main(["next", "--run", run_id, "--json"]) == 0
     claim = json.loads(capsys.readouterr().out)
     assert set(claim) == {"ticket", "card", "lease_expires_at"}
-    assert "D1.echo" not in claim["card"]
+    assert "D1.items" not in claim["card"]
 
-    monkeypatch.setattr("sys.stdin", io.StringIO('{"text":"alpha"}'))
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO('{"text":"alpha", "sources":["d1"]}')
+    )
     assert main(["submit", claim["ticket"]]) == 0
     assert capsys.readouterr().out == "accepted\n"
-    assert main(["next", "--run", run_id]) == 2
+    assert main(["next", "--run", run_id]) == 0
 
 
 def test_submit_rejection_uses_exit_code_five(tmp_path, monkeypatch, capsys):
@@ -172,14 +202,14 @@ def test_subprocess_json_and_status_outputs_are_machine_readable(tmp_path):
     assert claim_result.returncode == 0
     claim = json.loads(claim_result.stdout)
     assert "\\n" in claim_result.stdout
-    assert "短い確認文" in claim_result.stdout
+    assert "1件の項目" in claim_result.stdout
     assert set(claim) == {"ticket", "card", "lease_expires_at"}
 
     accepted = _run_st(
         data_dir,
         "submit",
         claim["ticket"],
-        input='{"text":"ok"}',
+        input='{"text":"ok", "sources":["d1"]}',
     )
     assert accepted.returncode == 0
     assert accepted.stdout == "accepted\n"
@@ -208,13 +238,15 @@ def test_subprocess_stdio_is_utf8_with_cp1252_default(tmp_path):
     assert claim_result.returncode == 0, claim_result.stderr.decode("utf-8")
     assert b"\r\n" not in claim_result.stdout
     claim = json.loads(claim_result.stdout.decode("utf-8"))
-    assert "短い確認文" in claim["card"]
+    assert "1件の項目" in claim["card"]
 
     accepted = _run_st_with_cp1252_stdio(
         data_dir,
         "submit",
         claim["ticket"],
-        input=json.dumps({"text": "日本語の提出"}, ensure_ascii=False).encode("utf-8"),
+        input=json.dumps(
+            {"text": "日本語の提出", "sources": ["d1"]}, ensure_ascii=False
+        ).encode("utf-8"),
     )
     assert accepted.returncode == 0, accepted.stderr.decode("utf-8")
     assert accepted.stdout == b"accepted\n"
@@ -237,17 +269,23 @@ def test_subprocess_exit_codes_cover_success_no_task_and_submission_states(tmp_p
         data_dir,
         "submit",
         replacement["ticket"],
-        input='{"text":"ok"}',
+        input='{"text":"ok", "sources":["d1"]}',
     )
     assert accepted.returncode == 0
     assert accepted.stdout == "accepted\n"
     assert _run_st(data_dir, "status").returncode == 0
+    _drain_run(data_dir, run_id)
     assert _run_st(data_dir, "next", "--run", run_id).returncode == 2
 
     failed_data = tmp_path / "failed"
     failed_run = _new_dummy(failed_data, seed=9)
+    failed_task_id = ""
     for _ in range(3):
         failed_claim = _claim(failed_data, failed_run)
+        if not failed_task_id:
+            failed_task_id = _task_id_for_ticket(
+                failed_data, failed_run, failed_claim["ticket"]
+            )
         failed = _run_st(
             failed_data,
             "submit",
@@ -255,7 +293,7 @@ def test_subprocess_exit_codes_cover_success_no_task_and_submission_states(tmp_p
             input="not json",
         )
         assert failed.returncode == 5
-    assert _run_st(failed_data, "retry", "D1.echo").returncode == 0
+    assert _run_st(failed_data, "retry", failed_task_id).returncode == 0
 
 
 def test_subprocess_exit_code_one_covers_invalid_arguments_and_state(tmp_path):
@@ -299,7 +337,8 @@ def test_subprocess_exit_code_three_covers_missing_and_expired_tickets(tmp_path)
     expired_data = tmp_path / "expired"
     run_id = _new_dummy(expired_data, seed=11)
     claim = _claim(expired_data, run_id)
-    claim_path = expired_data / "runs" / run_id / "tasks" / "D1.echo" / "claim.json"
+    task_id = _task_id_for_ticket(expired_data, run_id, claim["ticket"])
+    claim_path = expired_data / "runs" / run_id / "tasks" / task_id / "claim.json"
     claim_payload = json.loads(claim_path.read_text(encoding="utf-8"))
     claim_payload["lease_expires_at"] = "2000-01-01T00:00:00Z"
     claim_path.write_text(json.dumps(claim_payload) + "\n", encoding="utf-8")
@@ -320,7 +359,7 @@ def test_subprocess_exit_code_six_covers_halted_next_and_submit_and_resume(tmp_p
         data_dir,
         "submit",
         claim["ticket"],
-        input='{"text":"ok"}',
+        input='{"text":"ok", "sources":["d1"]}',
     )
     assert halted_submit.returncode == 6
     assert _run_st(

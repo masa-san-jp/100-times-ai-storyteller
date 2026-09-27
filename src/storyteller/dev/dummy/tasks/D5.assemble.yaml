@@ -1,0 +1,10 @@
+id: D5.assemble
+version: 1
+kind: code
+handler: dummy_assemble
+inputs:
+  text:
+    label: 本文
+    from: D4.story
+    select: output
+    required: true

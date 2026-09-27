@@ -1,0 +1,4 @@
+id: D3.check
+version: 1
+kind: code
+handler: dummy_check
