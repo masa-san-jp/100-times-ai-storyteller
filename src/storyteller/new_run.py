@@ -9,6 +9,7 @@ from .input_data import read_free_input
 from .orchestrator import Orchestrator, TaskSpec
 from .scale import derive_scale
 from .seed import generated_seed
+from .story_s2 import story_s2_merge, story_s2_plan
 from .tables import load_table
 from .validation import load_and_validate_yaml
 
@@ -51,6 +52,14 @@ def create_free_run(
         )
         for paragraph in free_input.paragraphs
     ]
+    s1_task_ids = tuple(spec.task_id for spec in task_specs)
+    task_specs.append(
+        TaskSpec(
+            task_id="S2.plan",
+            type="S2.plan",
+            deps=s1_task_ids,
+        )
+    )
     task_definitions = _load_story_task_definitions(repository_root)
     orchestrator = Orchestrator(
         data_dir,
@@ -83,6 +92,10 @@ def create_story_orchestrator(data_dir: str | Path) -> Orchestrator:
     return Orchestrator(
         data_dir,
         _load_story_task_definitions(repository_root),
+        {
+            "story_s2_plan": story_s2_plan,
+            "story_s2_merge": story_s2_merge,
+        },
         harness_root=repository_root,
         repository_root=repository_root,
     )

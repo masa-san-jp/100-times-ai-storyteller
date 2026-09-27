@@ -1,0 +1,4 @@
+id: S2.merge
+version: 1
+kind: code
+handler: story_s2_merge

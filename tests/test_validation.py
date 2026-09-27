@@ -406,6 +406,36 @@ def test_no_new_proper_nouns_supports_warn_and_fail(tmp_path: Path):
     assert "新名称" in fail.errors[0]
 
 
+def test_avoid_listed_checks_selected_fields_after_nfkc_normalization(tmp_path: Path):
+    deny_list = tmp_path / "cliches.yaml"
+    deny_list.write_text("phrases: [運命, hero]\n", encoding="utf-8")
+    task = output_task(
+        checks=[
+            {
+                "avoid_listed": {
+                    "fields": ["items"],
+                    "table": "cliches.yaml",
+                }
+            }
+        ]
+    )
+
+    accepted = validate_output(
+        task,
+        json.dumps({"items": ["定義に沿った要素"]}, ensure_ascii=False),
+        harness_root=tmp_path,
+    )
+    rejected = validate_output(
+        task,
+        json.dumps({"items": ["ｈｅｒｏのような表現"]}, ensure_ascii=False),
+        harness_root=tmp_path,
+    )
+
+    assert accepted.passed
+    assert not rejected.passed
+    assert "hero" in rejected.errors[0]
+
+
 def test_no_new_proper_nouns_excludes_input_and_allowed_words(tmp_path: Path):
     common_words = tmp_path / "common_words.yaml"
     common_words.write_text("words:\n  - 東京\n", encoding="utf-8")

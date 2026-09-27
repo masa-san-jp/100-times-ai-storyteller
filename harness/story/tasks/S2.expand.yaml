@@ -1,0 +1,40 @@
+id: S2.expand
+version: 1
+kind: llm
+inputs:
+  material:
+    label: 素材
+    from: S2.plan
+    select: plans[{slot}].material
+    required: true
+  axis:
+    label: 要素の軸
+    from: S2.plan
+    select: plans[{slot}].axis
+    required: true
+output: json
+card:
+  role: 与えられた一つの素材と一つの要素の軸だけを手がかりに、具体的で意外性のある要素を作る。
+  steps:
+    - 与えられた軸について、素材から着想した要素をちょうど5件書く。各要素は10〜40字で、表層的な特徴から深層の意味まで幅を持たせる。
+    - 願望では、具体的な相手・場所・物・期限の少なくとも一つを含め、身体的・精神的・社会的・超越的な観点を散らす。
+    - 能力では、平凡な得意なことも含め、身体的・精神的・社会的・特殊な観点を散らす。特別な力には発動条件と制約を必ず持たせ、火・透明化・怪力・読心・治癒のような既視感のある力だけにしない。
+    - 役割・課題では、社会的・物語的・象徴的な観点を散らし、現代または近未来の職能・身分と空想的な要素を組み合わせる。
+    - 禁忌・場所の性質・時代の性質・象徴的な事物・年齢・性別・種族では、与えられた定義に沿って、具体的な性質と抽象的な意味の両方を散らす。
+    - 5件と対極にある要素を1件、同じ軸の定義に沿って書く。対極は単なる反対語ではなく、素材に対する別の再構築にする。
+    - 「使わない表現」：hero、destiny、darkness、protect the innocent、ヒーロー、運命、闇、守るべきもの、強い意志、守りたい、平和、最強、真実の愛、戦士、魔法使い、治癒師、暗殺者、世界を救う、選ばれし者、古代の予言、火、透明化、怪力、読心、治癒。
+    - sources には入力された素材のIDを1件だけ書く。入力にない人物・設定・固有名詞を付け加えない。
+  output_example: '{"items": ["...", "...", "...", "...", "..."], "counterpart": "...", "sources": ["m003"]}'
+validate:
+  schema: schemas/tasks/S2.expand.schema.json
+  checks:
+    - sources_exist
+    - count:
+        field: items
+        n: 5
+    - avoid_listed:
+        fields: [items, counterpart]
+        table: tables/cliches.yaml
+    - no_new_proper_nouns:
+        mode: warn
+share_across_runs: true

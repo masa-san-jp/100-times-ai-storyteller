@@ -379,6 +379,39 @@ def _run_check(
             return ["ends_complete: 完結を示す末尾ではありません"], []
         return [], []
 
+    if name == "avoid_listed":
+        fields = arguments.get("fields")
+        if fields is not None and (
+            not isinstance(fields, list)
+            or not all(isinstance(field, str) and field for field in fields)
+        ):
+            raise ValidationConfigurationError(
+                "avoid_listed.fields must be a list of strings"
+            )
+        table = arguments.get("table")
+        if not isinstance(table, str) or not table:
+            raise ValidationConfigurationError(
+                "avoid_listed.table must be a non-empty string"
+            )
+        phrases = _load_avoid_phrases(table, harness_root)
+        texts = _avoid_listed_texts(output, output_kind, fields)
+        normalized_texts = [_normalize_for_substring(text) for text in texts]
+        normalized_phrases = [
+            _normalize_for_substring(phrase) for phrase in phrases
+        ]
+        found = sorted(
+            {
+                phrase
+                for phrase, normalized in zip(phrases, normalized_phrases)
+                if normalized and any(normalized in text for text in normalized_texts)
+            }
+        )
+        if found:
+            return [
+                f"avoid_listed: 禁止表現が含まれています: {', '.join(found)}"
+            ], []
+        return [], []
+
     if name == "no_new_proper_nouns":
         mode = arguments.get("mode")
         if mode not in {"warn", "fail"}:
@@ -503,6 +536,47 @@ def _proper_noun_texts(
     return texts
 
 
+def _avoid_listed_texts(
+    output: Any,
+    output_kind: str,
+    fields: Any,
+) -> list[str]:
+    if fields is None:
+        if output_kind == "text":
+            return [output]
+        return _all_string_values(output, skip_key="sources")
+    texts: list[str] = []
+    for field in fields:
+        value, missing = _read_field(output, field)
+        if not missing:
+            texts.extend(_all_string_values(value))
+    return texts
+
+
+def _load_avoid_phrases(table: str, harness_root: str | Path | None) -> list[str]:
+    root = Path(harness_root) if harness_root is not None else _DEFAULT_HARNESS_ROOT
+    relative_path = Path(table.replace("\\", "/"))
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        raise ValidationConfigurationError(
+            f"avoid_listed.table はハーネス内の相対パスで指定してください: {table}"
+        )
+    path = root / relative_path
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            document = yaml.safe_load(stream)
+    except (OSError, UnicodeError, yaml.YAMLError) as error:
+        raise ValidationConfigurationError(
+            f"avoid_listed のテーブルを読めません: {path}"
+        ) from error
+    if not isinstance(document, Mapping) or not isinstance(
+        document.get("phrases"), list
+    ) or not all(isinstance(phrase, str) and phrase for phrase in document["phrases"]):
+        raise ValidationConfigurationError(
+            f"avoid_listed のテーブル形式が不正です: {path}"
+        )
+    return list(document["phrases"])
+
+
 def _all_string_values(value: Any, *, skip_key: str | None = None) -> list[str]:
     if isinstance(value, str):
         return [value]
@@ -547,6 +621,11 @@ def _load_common_words(
 
 def _normalise(value: str) -> str:
     return unicodedata.normalize("NFC", value)
+
+
+def _normalize_for_substring(value: str) -> str:
+    """Normalize text for deny-list substring matching."""
+    return unicodedata.normalize("NFKC", value).casefold()
 
 
 def _char_length(value: str) -> int:
