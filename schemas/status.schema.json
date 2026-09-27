@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Storyteller CLI status",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs"],
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/run-summary"}
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "status", "warnings", "tasks"],
+      "properties": {
+        "run_id": {"type": "string"},
+        "status": {"type": "string"},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "tasks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/task"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "run-summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "status", "counts"],
+      "properties": {
+        "run_id": {"type": "string"},
+        "status": {"type": "string"},
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["blocked", "ready", "claimed", "done", "failed", "skipped"],
+          "properties": {
+            "blocked": {"type": "integer", "minimum": 0},
+            "ready": {"type": "integer", "minimum": 0},
+            "claimed": {"type": "integer", "minimum": 0},
+            "done": {"type": "integer", "minimum": 0},
+            "failed": {"type": "integer", "minimum": 0},
+            "skipped": {"type": "integer", "minimum": 0}
+          }
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "type", "state", "tries", "invalidations", "executor_id", "isolation", "error"],
+      "properties": {
+        "task_id": {"type": "string"},
+        "type": {"type": "string"},
+        "state": {"type": "string"},
+        "tries": {"type": "integer", "minimum": 0},
+        "invalidations": {"type": "integer", "minimum": 0},
+        "executor_id": {"type": ["string", "null"]},
+        "isolation": {"type": ["string", "null"]},
+        "error": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
