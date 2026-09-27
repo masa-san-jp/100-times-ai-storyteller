@@ -100,6 +100,9 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 | `history` | 配列 | 状態遷移の記録（時刻・遷移・理由・実行者ID） |
 | `error` | 文字列または null | `failed` の理由 |
 
+- run の manifest は、§3 の表の項目をすべて必須とする（値がないものは null）。型は、`schema_version`・`seed` が整数、`created_at`・`updated_at` が §7.2 と同じ時刻の形式、`input`・`scale`・`harness`・`table_snapshot`・`tasks` がオブジェクト、`warnings` が文字列の配列、その他が文字列とする。表にない項目はエラーとする（`additionalProperties: false`）。`scale` と `table_snapshot` の内部の形式は、それを使う作業項目（P1-02、P1-05）で定める。Phase 0 では `input`・`scale` は空のオブジェクトでよい。
+- タスクの記録も、§3.1 の表の項目をすべて必須とし、表にない項目はエラーとする。
+
 形式は `schemas/manifest.schema.json` で検証する。バッチの manifest の形式は Phase 2（P2-05）で `schemas/batch-manifest.schema.json` として定める。
 
 ### 3.2 ハーネスの変更検出

@@ -71,8 +71,9 @@ st status [--run RUN_ID | --batch BATCH_ID] [--json]
 ```
 
 - 人間向けの出力は表形式とし、形式は固定しない。`--json` の出力は次の形式とし、`schemas/status.schema.json` で検証する。
-  - 引数なし：`{"runs": [{"run_id", "status", "counts": {状態: 件数}}]}`
-  - `--run`：`{"run_id", "status", "warnings": [...], "tasks": [{"task_id", "type", "state", "tries", "invalidations", "executor_id", "isolation", "error"}]}`
+  - 引数なし：`{"runs": [{"run_id": 文字列, "status": run の状態, "counts": {6つの状態すべて: 整数（0を含む）}}]}`。runs は作成順。
+  - `--run`：`{"run_id": 文字列, "status": run の状態, "warnings": [文字列], "tasks": [{"task_id": 文字列, "type": 文字列, "state": 状態, "tries": 整数, "invalidations": 整数, "executor_id": 文字列または null, "isolation": 文字列または null, "error": 文字列または null}]}`。tasks は task_id の辞書順。
+  - すべての項目は必須で、表にない項目を出力しない。
   - `--batch`：Phase 2（P2-05）で定める。
 - 引数なし：run ごとの状態と、状態別のタスク数。
 - `--run`：タスクごとの状態・試行回数・無効化の回数・実行者ID・隔離の種類、manifest の warnings。

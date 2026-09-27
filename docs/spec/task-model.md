@@ -32,7 +32,7 @@
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
-| `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8 |
+| `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー |
 
 - 表にない項目はエラーにする（`additionalProperties: false`）。
 - `kind: code` のタスク定義に llm の項目がある場合もエラーにする。
@@ -71,7 +71,12 @@ card:
 
 - `output` は参照先タスクの出力、`input` は run の入力（`input.json`）、それ以外の名前は参照先の出力の最上位のキーを指す。
 - `{slot}` は、そのタスクの添字（[data-layout.md](data-layout.md) §2 の task_id の添字）の最初の要素に置き換える。
-- 関数は `src/storyteller/selectors.py` に登録したものだけを使える。登録のない関数名、存在しない値の参照は、タスクを生成する時点でエラーにし、そのタスクを `failed` にする（理由を記録する）。
+- 関数は `src/storyteller/selectors.py` に登録したものだけを使える。登録する関数は、次の表に名前・引数・戻り値を書いてから実装する。Phase 0 で登録する関数はない（ダミーのハーネスは参照だけを使う）。関数を必要とする作業項目が、この表に追加する。
+
+| 関数 | 引数 | 戻り値 | 追加した作業項目 |
+|---|---|---|---|
+
+- 登録のない関数名、存在しない値の参照は、タスクを生成する時点でエラーにし、そのタスクを `failed` にする（理由を記録する）。
 - 任意のコードは評価しない。
 
 ## 3. タスクカード
@@ -210,13 +215,13 @@ card:
 | `ids_subset` | `field`, `slot` | 配列の各IDが、指定した入力スロットに含まれるIDの部分集合 |
 | `uses_given` | `field`, `slot`, `n` | 文字列が、指定した入力スロットの要素のうち n 個以上を部分文字列として含む |
 | `ends_complete` | `field`（任意） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか |
-| `no_new_proper_nouns` | `fields`（任意）, `mode`（`warn` / `fail`） | §6.4 |
+| `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` では `sources` を除くすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
 
 ### 6.3 不合格の扱い
 
 - 不合格の場合、出力と理由を `attempts/<n>.json` に保存し、`tries` と `attempt` を1ずつ増やす。
 - `tries` が `max_attempts` に達していなければ `ready` に戻し、次のカードの「前回の不合格理由」に理由を書く。達していれば `failed` にする。
-- `st retry` は、`failed` のタスクだけを対象とし（他の状態なら終了コード 1）、`tries` と `invalidations` を0に戻して `ready` にする。`attempt` は戻さない（同じ seed の再利用を避けるため）。依存先のタスクは変更しない。
+- `st retry` は、`failed` のタスクだけを対象とし（他の状態なら終了コード 1）、`tries` と `invalidations` と `continuation_step` を0に戻し、`error` を null にして（元の値は `history` に残す）`ready` にする。`partial.md` があれば削除し、`attempts/` は残す。`attempt` は戻さない（同じ seed の再利用を避けるため）。依存先のタスクは変更しない。コードタスクは自動では再試行しないが、`st retry` の対象にはなり、`ready` になった時点で再実行される。
 
 ### 6.4 固有名詞の検出（`no_new_proper_nouns`）
 
@@ -269,4 +274,4 @@ card:
   - `share_across_runs: true`：`seed` の代わりに `"attempt": attempt` を入れる。同じ入力から作る run の間で、出力が共有される。
 - 入力の正規化：文字列を再帰的に NFKC 正規化する。配列の順序、数値、null はそのまま保つ。
 - 合格した出力だけをキャッシュに保存する。
-- 同じキーのタスクが `ready` になったら、実行者に渡さず、キャッシュの出力で `done` にする（P6）。無効化されたタスクは `attempt` が変わるため、以前のキャッシュには一致しない。
+- 同じキーのタスクが `ready` になったら、実行者に渡さず、キャッシュの出力で `done` にする（P6）。無効化されたタスクは `attempt` が変わるため、その run では以前のキャッシュには一致しない（`share_across_runs` のタスクも同じ）。以前のキャッシュは削除せず、`attempt` が一致する他の run では引き続き再利用される。無効化は、その run の文脈での判断だからである。

@@ -50,6 +50,7 @@ P0-01 → P0-05 → P0-06 ─┴→ P0-08 → P0-09 ─┐
 | P0-03 | 対象は、リポジトリ内のすべての `*.md`（`.venv/`・`private/`・`.git/` を除く）。検査 (1) Markdown のインラインリンクと画像 `[..](..)` / `![..](..)` のうち、スキームを持たない相対パスについて、`#` 以降を除いたファイルまたはディレクトリが実在すること。(2) `docs/adr/[0-9][0-9][0-9][0-9]-*.md` の各ファイルに、`- 状態：` の行（値が `Proposed` で始まる、`Accepted`、`Superseded by ADR-NNNN` のいずれか）と `- 日付：YYYY-MM-DD` の行があること。`TEMPLATE.md` は対象外。(3) `docs/README.md` §2 の表の「原本」列にある Markdown リンクの実在（(1) で検査される）。バッククォートで書かれ「（Px-yy で作成）」と付いた行は検査しない。文書を作成した作業項目は、その行をリンクに書き換える。違反があれば一覧を出力して終了コード 1 |
 | P0-05 | YAML の共通処理（読み込み→種類に対応するスキーマで検証）は、Phase 0 ではタスク定義と `.storyteller-workspace.yaml`（`schemas/workspace.schema.json`）に使う。以降の YAML の種類も同じ処理を使う |
 | P0-09 | Phase 0 の `st next` が対象にするのは run のタスクだけとする。バッチの分析のタスクは P4-05 で対象に加える |
+| P0-10 | `no_new_proper_nouns` は、`warn` と `fail` の両方の動作を単体テストで確認する。ダミーのハーネスでは使わない |
 | P0-11 | 無効化は、コードタスクから呼び出す内部の処理として実装し、Phase 0 ではダミーのハーネスの検査タスク（D3）から呼ぶ |
 
 ## ダミーのハーネス
@@ -58,7 +59,7 @@ P0-01 → P0-05 → P0-06 ─┴→ P0-08 → P0-09 ─┐
 
 | タスク | kind | 内容 | 依存 |
 |---|---|---|---|
-| `D1.items` | code | 3件の項目 `[{"id": "d1", "text": "..."}, ...]` を固定で作る | — |
+| `D1.items` | code | 固定の3件 `{"items": [{"id": "d1", "text": "alpha"}, {"id": "d2", "text": "beta"}, {"id": "d3", "text": "gamma"}]}` を出力する | — |
 | `D2.echo` | llm（json） | 項目1件ごとに1タスク（添字 `d1`〜`d3`）。出力 `{"text": "...", "sources": ["d1"]}`。チェック：`sources_exist`、`max_chars`（text, 50） | D1 |
 | `D3.check` | code | D2 の出力のうち、text に `INVALID` を含むものを無効化する | D2 すべて |
 | `D4.story` | llm（text） | D2 の出力をまとめた本文。`continuation: true`、チェック：`ends_complete`、`min_chars`（10） | D3 |
