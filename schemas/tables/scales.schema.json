@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/tables/scales.schema.json",
+  "title": "Story scale table",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["axes", "level_min_events", "presets", "world_sections_by_level", "world_counts", "parts", "subthread_events", "input_ratio", "candidate_multiplier"],
+  "properties": {
+    "axes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time", "space", "cast", "threads", "change"],
+      "properties": {
+        "time": {"$ref": "#/$defs/axis"},
+        "space": {"$ref": "#/$defs/axis"},
+        "cast": {"$ref": "#/$defs/axis"},
+        "threads": {"$ref": "#/$defs/axis"},
+        "change": {"$ref": "#/$defs/axis"}
+      }
+    },
+    "level_min_events": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "presets": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9-]*$"},
+      "additionalProperties": {"$ref": "#/$defs/preset"}
+    },
+    "world_sections_by_level": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "uniqueItems": true
+      }
+    },
+    "world_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 5,
+        "maxItems": 5,
+        "items": {"type": "integer", "minimum": 1}
+      }
+    },
+    "parts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max", "default"],
+      "properties": {
+        "min": {"type": "integer", "minimum": 1},
+        "max": {"type": "integer", "minimum": 1},
+        "default": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "subthread_events": {
+      "$ref": "#/$defs/integer-range"
+    },
+    "input_ratio": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "candidate_multiplier": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "$defs": {
+    "axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "values"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "values": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["level", "value", "description"],
+            "properties": {
+              "level": {"type": "integer", "minimum": 0, "maximum": 4},
+              "value": {"type": "string", "minLength": 1},
+              "description": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "axes", "event_range"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "axes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["time", "space", "cast", "threads", "change"],
+          "properties": {
+            "time": {"type": "string", "minLength": 1},
+            "space": {"type": "string", "minLength": 1},
+            "cast": {"type": "string", "minLength": 1},
+            "threads": {"type": "string", "minLength": 1},
+            "change": {"type": "string", "minLength": 1}
+          }
+        },
+        "event_range": {"$ref": "#/$defs/integer-range"}
+      }
+    },
+    "integer-range": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "integer", "minimum": 1}
+    }
+  }
+}

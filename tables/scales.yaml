@@ -1,0 +1,162 @@
+axes:
+  time:
+    name: 時間の幅
+    values:
+      - level: 0
+        value: hours
+        description: 数時間〜1日
+      - level: 1
+        value: weeks
+        description: 数日〜数週間
+      - level: 2
+        value: months
+        description: 数か月
+      - level: 3
+        value: years
+        description: 数年
+      - level: 4
+        value: generations
+        description: 世代を超える
+  space:
+    name: 空間の幅
+    values:
+      - level: 0
+        value: spot
+        description: 一か所
+      - level: 1
+        value: town
+        description: 一つの町
+      - level: 2
+        value: region
+        description: 地域
+      - level: 3
+        value: nation
+        description: 国・大陸
+      - level: 4
+        value: world
+        description: 世界・複数世界
+  cast:
+    name: 主要人物
+    values:
+      - level: 0
+        value: 1-2
+        description: 1〜2人
+      - level: 1
+        value: 2-4
+        description: 2〜4人
+      - level: 2
+        value: 4-8
+        description: 4〜8人
+      - level: 3
+        value: 8-15
+        description: 8〜15人
+      - level: 4
+        value: 15+
+        description: 15人以上
+  threads:
+    name: 筋
+    values:
+      - level: 0
+        value: single
+        description: 1本
+      - level: 1
+        value: single
+        description: 1本
+      - level: 2
+        value: main+1-2
+        description: 主筋＋副筋1〜2本
+      - level: 3
+        value: main+3-5
+        description: 主筋＋副筋3〜5本
+      - level: 4
+        value: parts
+        description: 部ごとの主筋
+  change:
+    name: 変化の及ぶ範囲
+    values:
+      - level: 0
+        value: inner
+        description: 一人の内面
+      - level: 1
+        value: relation
+        description: 人間関係
+      - level: 2
+        value: community
+        description: 共同体
+      - level: 3
+        value: society
+        description: 社会
+      - level: 4
+        value: order
+        description: 世界の秩序
+
+level_min_events: [3, 6, 12, 24, 36]
+
+presets:
+  vignette:
+    name: 掌編
+    axes:
+      time: hours
+      space: spot
+      cast: 1-2
+      threads: single
+      change: inner
+    event_range: [3, 5]
+  short:
+    name: 短編
+    axes:
+      time: weeks
+      space: town
+      cast: 2-4
+      threads: single
+      change: relation
+    event_range: [8, 12]
+  novella:
+    name: 中編
+    axes:
+      time: months
+      space: region
+      cast: 4-8
+      threads: main+1-2
+      change: community
+    event_range: [18, 24]
+  novel:
+    name: 長編
+    axes:
+      time: years
+      space: nation
+      cast: 8-15
+      threads: main+3-5
+      change: society
+    event_range: [36, 48]
+  saga:
+    name: 大河
+    axes:
+      time: generations
+      space: world
+      cast: 15+
+      threads: parts
+      change: order
+    event_range: [36, 48]
+
+world_sections_by_level:
+  - [place]
+  - [place, customs, people]
+  - [place, customs, people, organizations, social_structure, social_groups, interpretation]
+  - [place, customs, people, organizations, social_structure, social_groups, interpretation, events, observation, media, past_events]
+  - [place, customs, people, organizations, social_structure, social_groups, interpretation, events, observation, media, past_events, future]
+
+world_counts:
+  past_events: [3, 5, 8, 10, 10]
+  social_groups: [3, 5, 8, 10, 10]
+  people: [5, 10, 20, 50, 100]
+  future: [3, 3, 3, 3, 3]
+
+parts:
+  min: 2
+  max: 6
+  default: [2, 4]
+
+subthread_events: [4, 6]
+input_ratio: [0.5, 0.9]
+candidate_multiplier: 3

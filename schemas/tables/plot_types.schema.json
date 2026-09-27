@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/tables/plot_types.schema.json",
+  "title": "Story plot types",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["types"],
+  "properties": {
+    "types": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/type"}
+    }
+  },
+  "$defs": {
+    "type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "core", "structure", "character_requirements", "time_design", "conflict", "climax", "pacing", "typical_setting", "customization_notes", "required_events"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "core": {"type": "string", "minLength": 1},
+        "structure": {"type": "string", "minLength": 1},
+        "character_requirements": {"type": "string", "minLength": 1},
+        "time_design": {"type": "string", "minLength": 1},
+        "conflict": {"type": "string", "minLength": 1},
+        "climax": {"type": "string", "minLength": 1},
+        "pacing": {"type": "string", "minLength": 1},
+        "typical_setting": {"type": "string", "minLength": 1},
+        "customization_notes": {"type": "string", "minLength": 1},
+        "required_events": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["description", "stages"],
+            "properties": {
+              "description": {"type": "string", "minLength": 1},
+              "stages": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["three-beat", "kishotenketsu", "heros-journey-12"],
+                "properties": {
+                  "three-beat": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                  "kishotenketsu": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                  "heros-journey-12": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

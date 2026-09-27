@@ -1,0 +1,253 @@
+types:
+  - id: quest
+    name: 旅（クエスト）
+    core: 主人公が目的地への旅を通じて試練と出会い、得たものを携えて帰還する。
+    structure: standard
+    character_requirements: 主人公と、旅の目的を示す使者または同行して試練を支える人物を置く。
+    time_design: 出発から帰還までの連続した旅程を、道中の試練と目的地への接近として進める。
+    conflict: 旅の目的を妨げる環境、敵対者、仲間との意見の違いが主人公の選択を試す。
+    climax: 主人公が旅で得たものを持ち帰るか、持ち帰ることの代償を引き受ける選択をする。
+    pacing: 出発前は短く、道中の試練を重ね、最終対決と帰還後の余波に十分な重みを置く。
+    typical_setting: 遠い目的地へ向かう道、境界を越えた異郷、帰還すべき共同体。
+    customization_notes: 入力の場所・時代・願望を旅の目的地と帰還後に活かし、既存の英雄譚へ一般化しない。
+    required_events:
+      - description: 日常を離れる理由となる呼びかけが起こる。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
+      - description: 旅の途中で目的を試す障害と仲間との関係が生じる。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
+      - description: 旅で得たものを帰還後の世界で活かす選択をする。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+  - id: overcoming-the-monster
+    name: モンスターを倒す
+    core: 主人公が共同体を脅かす敵対的な力に立ち向かい、生存と変化を勝ち取る。
+    structure: standard
+    character_requirements: 主人公と、共同体を脅かす明確な敵対者または怪物、その被害を示す人々を置く。
+    time_design: 脅威の発見から中心への接近、対決、秩序の再編までを危険の増大として進める。
+    conflict: 生存を脅かす外的な怪物と、恐怖や犠牲をどう受け止めるかという内的葛藤。
+    climax: 主人公が脅威の中心で敵対者と対決し、倒す・共存する・代償を払う結論を選ぶ。
+    pacing: 被害の提示を早く行い、接近につれて危険を増幅し、対決後は新しい秩序の余韻を置く。
+    typical_setting: 脅威に包囲された町、怪物の巣、崩れかけた共同体。
+    customization_notes: 入力にある具体的な脅威や制約を怪物の正体と被害の形に保ち、単純な善悪へ置き換えない。
+    required_events:
+      - description: 脅威の存在と被害が明らかになる。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: call-to-adventure}
+      - description: 主人公が脅威の中心へ近づき、最大の危険に直面する。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
+      - description: 脅威との対決の結果として新しい秩序を選ぶ。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+  - id: rags-to-riches
+    name: 成り上がり
+    core: 欠落した立場にいる主人公が能力と関係を得て、社会での位置を変える。
+    structure: standard
+    character_requirements: 低い立場から出発する主人公と、機会を与える支援者、立場を測る共同体を置く。
+    time_design: 欠落した現在から機会、上昇、得た立場をどう使うかの再選択へ進む。
+    conflict: 社会的な身分差、認められたい願望、成功によって失う関係の衝突。
+    climax: 主人公が得た地位を自分のためだけに使うか、他者と世界へ返すかを決める。
+    pacing: 低い立場を具体的に示し、認知と上昇を段階的に速め、成功後の選択を急がず描く。
+    typical_setting: 階層化された都市、競争のある職場、身分が可視化される宮廷や市場。
+    customization_notes: 入力の欠落と望む相手・場所・期限を、主人公が得る立場とその使い道に結び付ける。
+    required_events:
+      - description: 主人公の低い立場と満たされない願望が示される。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
+      - description: 主人公の努力が認められ、立場を変える機会が訪れる。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: reward}
+      - description: 得た立場を何のために使うかを選び直す。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+  - id: rebirth
+    name: 再生
+    core: 固着した生き方に囚われた主人公が試練を経て、別の価値観で生き直す。
+    structure: standard
+    character_requirements: 固着した生き方の主人公と、その生き方を揺るがす敵対者または支援者を置く。
+    time_design: 変われない日常、危機による破綻、古い自己を手放した後の再出発を対比する。
+    conflict: 安全な習慣と変化の必要、過去の自己像と新しい価値観の内外の葛藤。
+    climax: 主人公が古い生き方の代償を認め、新しい理解を具体的な行動として選ぶ。
+    pacing: 固着した日常を積み重ね、危機を急速に深め、再生後の小さな行動を確かに置く。
+    typical_setting: 閉じた家や共同体、失敗が繰り返される職場、過去の記憶に縛られた場所。
+    customization_notes: 入力に含まれる変えられない習慣や代償を残し、再生を外的な成功や診断に還元しない。
+    required_events:
+      - description: 主人公が変われない状態とその代償が示される。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
+      - description: 古い生き方を守れない危機に直面する。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal}
+      - description: 主人公が新しい理解を行動として選ぶ。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+  - id: romance
+    name: ラブストーリー
+    core: 異なる願望を持つ二人が障害を越え、関係を結ぶか手放すかを選ぶ。
+    structure: standard
+    character_requirements: 異なる願望と自律した選択を持つ二人と、関係を阻む人物または規則を置く。
+    time_design: 出会い、親密化、障害の露呈、関係を結ぶか手放す決断へ時間を進める。
+    conflict: 二人の願望の不一致、社会的な制約、誤解、愛情と自己決定の緊張。
+    climax: 二人が外から決められた関係ではなく、自分たちの形と代償を選ぶ。
+    pacing: 出会いは軽やかに、親密さと障害を交互に深め、決断の瞬間を急がず描く。
+    typical_setting: 身分や種族を隔てる町、秘密を抱えた共同体、二人だけの境界空間。
+    customization_notes: 入力の具体的な関係の障害と二人の異なる願望を保持し、関係の結末を一つに固定しない。
+    required_events:
+      - description: 二人が出会い、互いの願望と違いが見える。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
+      - description: 関係を阻む規則や誤解が表面化する。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
+      - description: 二人が関係の形と代償を自分たちで選ぶ。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+  - id: mystery-crime
+    name: ミステリー／犯罪
+    core: 隠された事実を追う主人公が手がかりと危険を積み重ね、真相に到達する。
+    structure: standard
+    character_requirements: 問いを追う主人公、情報を持つ支援者、真相を隠す敵対者または関係者を置く。
+    time_design: 発見、手がかりの蓄積と反転、危険の接近、証拠と真相の提示へ段階的に進む。
+    conflict: 知りたい事実と隠したい利害、証拠の解釈、真相を知った後の責任の衝突。
+    climax: 主人公が決定的な証拠を前に、真相を公表するか誰かを守るかを選ぶ。
+    pacing: 手がかりを短い単位で重ね、途中で理解を反転させ、終盤に証拠と結果を集中させる。
+    typical_setting: 記録の食い違う町、閉じた組織、誰も報告しない事件の現場。
+    customization_notes: 入力の記憶・記録・物を手がかりにし、解決を既定の犯人像や一般的な事件へ薄めない。
+    required_events:
+      - description: 解明すべき事件または不可解な痕跡が発見される。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
+      - description: 手がかりが既存の理解を反転させ、真相の危険が近づく。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
+      - description: 真相を示す証拠と、それを受け止める結果が現れる。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: reward}
+  - id: tragedy
+    name: 悲劇
+    core: 主人公が自らの願望や選択に囚われ、回避できたはずの喪失へ進んでいく。
+    structure: standard
+    character_requirements: 強い願望に囚われた主人公、警告を与える使者や支援者、破局を促す敵対者を置く。
+    time_design: 望みが選択を狭め、警告が退けられ、回避可能だった喪失へ不可逆に進む。
+    conflict: 願望と現実、警告と自負、愛着と破壊的な選択の衝突。
+    climax: 主人公が最後の選択をし、その代償が取り返せない喪失として現れる。
+    pacing: 前半に回避の機会を複数置き、中盤から選択肢を絞り、破局を急がず必然として積む。
+    typical_setting: 予言に縛られた王国、崩壊を抱える家族、警告が届かない制度。
+    customization_notes: 入力の願望、喪失、禁忌、期限を破局の選択の具体的な条件として残す。
+    required_events:
+      - description: 主人公の強い願望と、それを歪める欠落が示される。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
+      - description: 警告や支援を退け、破局へ向かう選択をする。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: refusal}
+      - description: 選択の代償が決定的な喪失として現れる。
+        stages: {three-beat: resolution, kishotenketsu: ten, heros-journey-12: ordeal}
+  - id: voyage-and-return
+    name: 帰還
+    core: 主人公が異質な世界で試練を経験し、元の世界を新しい目で見直して帰る。
+    structure: standard
+    character_requirements: 異質な世界へ入る主人公と、その世界の規則を示す人物、帰還を妨げる存在を置く。
+    time_design: 日常から離れ、異質な時間と規則を経験し、元の場所へ戻って意味を反転させる。
+    conflict: 異世界の規則と主人公の常識、帰還への願いと得た新しい視点の衝突。
+    climax: 主人公が異質な世界で得た視点を捨てずに日常へ戻る方法を選ぶ。
+    pacing: 出発と異世界への侵入を鮮明にし、探索を広げ、帰還の障害と帰還後の変化を圧縮する。
+    typical_setting: 時間の違う国、境界の向こうの都市、戻ると意味が変わる故郷。
+    customization_notes: 入力の場所・時代・帰属感を異質な世界の規則に反映し、帰還後に具体的な意味の変化を残す。
+    required_events:
+      - description: 主人公が日常から離れ、異質な環境へ入る。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: threshold}
+      - description: 異質な環境の規則と危険を知り、帰還の手段を探す。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
+      - description: 得た視点を持って日常へ戻り、周囲の意味を変える。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+  - id: comedy
+    name: コメディ
+    core: 誤解と関係のもつれが連鎖し、固定された立場がほどけて新しい結びつきに至る。
+    structure: standard
+    character_requirements: 異なる思い込みを持つ人物群と、誤解を増幅する使者または周囲の共同体を置く。
+    time_design: 小さなずれが連鎖し、誤解が最大化した後、前提の反転と関係の組み替えへ進む。
+    conflict: 人物が信じる自己像と他者から見える現実、立場と本音の食い違い。
+    climax: 誤解の中心が明らかになり、人物が面子を守るか関係を結び直すかを選ぶ。
+    pacing: 早い往復と積み重なる誤解で加速し、真相の開示では一拍置いて関係の変化を示す。
+    typical_setting: 儀礼の場、狭い家や職場、立場が入れ替わり続ける祝祭。
+    customization_notes: 入力にある固有の物・場所・期限を誤解の連鎖に使い、人物を単なる道化にしない。
+    required_events:
+      - description: 人物の思い込みや関係のずれが発端になる。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
+      - description: 誤解が重なり、人物が自分の前提を疑う転換が起こる。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
+      - description: 誤解がほどけ、人物同士の関係が組み替えられる。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+  - id: survival-dystopia
+    name: サバイバル／ディストピア
+    core: 制約の強い社会で主人公が生存のために動き、支配の仕組みを問い直す。
+    structure: standard
+    character_requirements: 生存を脅かされる主人公、支配の仕組みに関わる人物、抵抗や協力を担う集団を置く。
+    time_design: 不足と規則を示し、抵抗の代償を増やし、支配の中心で新しい秩序を選ぶ。
+    conflict: 生存のための服従と自由のための抵抗、個人の安全と共同体の解放の衝突。
+    climax: 主人公が生き残る方法だけでなく、どんな秩序を残すかを決める。
+    pacing: 資源と安全を短い間隔で削り、支配の中心への接近で緊張を高め、結末の可能性を残す。
+    typical_setting: 資源を配給する都市、監視された居住区、災害後の閉鎖共同体。
+    customization_notes: 入力の不足する資源、社会の規則、具体的な抵抗の条件を保持し、抽象的な悪の体制にしない。
+    required_events:
+      - description: 生存を脅かす社会の規則と不足が示される。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
+      - description: 主人公が支配の中心へ近づき、生存と抵抗の代償を知る。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
+      - description: 生き残った者たちが新しい秩序の可能性を選ぶ。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+  - id: revenge
+    name: 復讐
+    core: 喪失を受けた主人公が加害の構造を追い、報復の代償と自分の選択に向き合う。
+    structure: standard
+    character_requirements: 喪失を受けた主人公、加害の標的、復讐の代償を知らせる支援者を置く。
+    time_design: 喪失の記憶から標的への接近、越境の危機、報復後の選択へ不可逆に進む。
+    conflict: 正義と報復、被害者の記憶と加害の構造、復讐によって失う自己の衝突。
+    climax: 主人公が標的を罰するだけでなく、復讐を続けるか終えるかの代償を引き受ける。
+    pacing: 喪失の根を早く示し、接近のたびに越える線を狭め、報復後の余波を重く扱う。
+    typical_setting: 裁かれない加害が残る町、権力者の領域、過去の傷を保存する場所。
+    customization_notes: 入力の失った相手・物・期限と加害の具体的な構造を復讐の標的と代償へ結び付ける。
+    required_events:
+      - description: 復讐を駆動する喪失と標的が明らかになる。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
+      - description: 復讐の過程で、主人公自身が越えてはいけない線に近づく。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
+      - description: 報復の結果を受け、復讐を続けるか終えるかを選ぶ。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+  - id: conspiracy-political-drama
+    name: 陰謀・政治劇
+    core: 主人公が権力と情報の絡む陰謀を追い、誰に何を委ねるかを決める。
+    structure: standard
+    character_requirements: 情報を追う主人公、同盟と裏切りを生む権力者、異なる利害を持つ組織を置く。
+    time_design: 兆候の発見、同盟の形成と崩壊、権力中心への接近、真相の扱いの決断へ進む。
+    conflict: 公的な秩序と隠された意図、情報の所有、忠誠と自己保身の衝突。
+    climax: 主人公が真相を公にする、利用する、隠すという政治的責任を選ぶ。
+    pacing: 手がかりと交渉を交互に置き、裏切りで中盤を反転させ、決断の結果を明確に示す。
+    typical_setting: 議会や宮廷、情報を管理する都市、複数の組織が争う国境。
+    customization_notes: 入力の情報、記録、組織、固有の利害を同盟と裏切りの条件として保ち、万能な陰謀にしない。
+    required_events:
+      - description: 公に見える秩序の裏に別の意図がある兆候をつかむ。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
+      - description: 同盟と裏切りの中で、権力の中心へ接近する。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
+      - description: 真相を公にするか利用するかの決断を下す。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+  - id: human-drama
+    name: 人間ドラマ
+    core: 人物たちが身近な関係の中で異なる願望と責任を受け止め、共に変化する。
+    structure: standard
+    character_requirements: 身近な関係で異なる願望と責任を抱える複数の人物を置く。
+    time_design: 日常に蓄積した課題を表面化させ、避けられない出来事の後に関係の選択へ進む。
+    conflict: 愛情と責任、過去の役割と現在の願望、言えないことと関係の維持の衝突。
+    climax: 人物たちが関係を続ける条件と、これから引き受ける責任を選ぶ。
+    pacing: 小さな場面で関係を積み上げ、転換を生活の中に置き、結末の変化を静かに残す。
+    typical_setting: 家族の家、長く働く職場、日々の習慣が関係を支える町。
+    customization_notes: 入力の生活上の具体的な関係、責任、言えないことを場面の選択に残し、劇的な事件だけに頼らない。
+    required_events:
+      - description: 人物の日常と、関係に蓄積した未解決の課題が示される。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
+      - description: 課題を避けられない出来事が起こり、関係の真意が試される。
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
+      - description: 人物たちが関係の形とこれからの責任を選ぶ。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+  - id: philosophical-existential
+    name: 哲学的／存在論的
+    core: 主人公が世界の意味や自分の存在を問い直し、選んだ生き方とその責任を引き受ける。
+    structure: standard
+    character_requirements: 意味を問い直す主人公と、異なる答えや生き方を示す人物を置く。
+    time_design: 問いの発生、既成の答えの崩壊、自由な選択と責任の引き受けへ内的時間を深める。
+    conflict: 世界に固有の意味があるという信念と、自ら意味を選ぶ責任の衝突。
+    climax: 主人公が唯一の答えを得るのではなく、選んだ意味を生きる行動を決める。
+    pacing: 外的事件を絞って問いと対話を重ね、決断の場面を長く保ち、行動で余韻を作る。
+    typical_setting: 存在の法則が揺らぐ場所、孤独な観測所、答えを失った共同体。
+    customization_notes: 入力の具体的な問い、物、記憶、観測条件を哲学的な問いの足場にし、答えを断定しない。
+    required_events:
+      - description: 主人公が自分の存在や世界の意味に疑問を抱く契機が示される。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
+      - description: 既成の答えを失った主人公が、自由に選ぶこととその責任の重さに直面する。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal}
+      - description: 主人公が唯一の答えに頼らず、自ら選んだ意味と生き方を引き受ける。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
