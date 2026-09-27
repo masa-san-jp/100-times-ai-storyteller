@@ -23,7 +23,8 @@
 |---|---|
 | 目的・設計原則（P1〜P8） | [VISION.md](VISION.md) |
 | 用語の定義 | [GLOSSARY.md](GLOSSARY.md) |
-| 先行3リポジトリとの関係・取り込み対象・重複の統合 | [LINEAGE.md](LINEAGE.md) |
+| 先行3リポジトリとの関係・重複の統合 | [LINEAGE.md](LINEAGE.md) |
+| 先行リポジトリの要素ごとの取り込み先 | [lineage-inventory.md](lineage-inventory.md) |
 | 構成要素・実行モデル・実行者の隔離 | [spec/architecture.md](spec/architecture.md) |
 | タスク定義・タスクカード・DAG・claim/lease・検証・再試行・キャッシュキー | [spec/task-model.md](spec/task-model.md) |
 | ディレクトリ構成・manifest・run とキャッシュの配置・書き込み規則 | [spec/data-layout.md](spec/data-layout.md) |

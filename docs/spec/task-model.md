@@ -219,6 +219,7 @@ card:
 | `ids_subset` | `field`, `slot` | 配列の各IDが、指定した入力スロットに含まれるIDの部分集合 |
 | `uses_given` | `field`, `slot`, `n` | 文字列が、指定した入力スロットの要素のうち n 個以上を部分文字列として含む |
 | `ends_complete` | `field`（任意） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか |
+| `avoid_listed` | `fields`（任意）, `table`（例：`tables/cliches.yaml`） | 指定したテーブルの表現を、正規化後の部分文字列として含まない |
 | `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` では `sources` を除くすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
 
 ### 6.3 不合格の扱い

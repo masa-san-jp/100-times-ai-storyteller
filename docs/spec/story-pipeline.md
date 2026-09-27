@@ -43,14 +43,17 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 ### S1 素材抽出 [L]
 - タスクの単位：ナラティブの空でない1項目、または自由入力の1段落。
 - 入力：その1項目の問いと回答（またはその1段落）だけ。
-- 処理：回答から、物語の素材になる要素を、抽象化した短い語句（10〜30字）で5個抽出する。原文の表現をそのまま引用しない。断定や診断をしない。
-- 出力：`{"materials": [{"text": "...", "kind": "desire|fear|conflict|image|value"}], "sources": ["p001"]}`（materials は5件。sources はカードに示した入力のID：ナラティブの項目キー、または自由入力の段落ID `p<3桁>`）
+- 処理：回答から、物語の素材になる要素を、抽象化した短い語句（10〜30字）で5個抽出する。原文の表現をそのまま引用しない。断定や診断をしない。素材の種類は、heros-journey の分析の観点（切望＝desire、抑圧＝suppression、自己矛盾と葛藤＝conflict）と、world-building のコンテクストの観点（主題＝theme、雰囲気＝mood、心象＝image）を含む。
+- 出力：`{"materials": [{"text": "...", "kind": "desire|fear|suppression|conflict|image|value|theme|mood"}], "sources": ["p001"]}`（materials は5件。sources はカードに示した入力のID：ナラティブの項目キー、または自由入力の段落ID `p<3桁>`）
 - `share_across_runs: true`。
 
 ### S2 要素プール拡張 [L]
 - タスクの単位：素材1個 × 要素の軸1つ（§3）。
 - 入力：素材1個（ID つき）と、軸の定義文だけ。
-- 処理：その素材から着想される、その軸の要素を5件、10〜30字で書く。加えて、その5件と対極にある要素を1件書く（heroes の「対になるキャラクター」を継承）。
+- 処理：その素材から着想される、その軸の要素を5件、10〜40字で書く。加えて、その5件と対極にある要素を1件書く（heroes の「対になるキャラクター」を継承）。
+- カードの規則には、heroes の生成規則を軸ごとに入れる（例：能力は、ありきたりな超能力を避け、発動の条件と制約を持たせる。願望は、具体的な人・場所・物・期限のいずれかを含める。役割は、現代の職能と空想の要素を組み合わせる）。規則の原本は、各 S2 タスク定義の `card.steps` とする。
+- ありきたりな表現の一覧 `tables/cliches.yaml` を、カードに「使わない表現」として示し、`avoid_listed` チェック（[task-model.md](task-model.md) §6.2）で検査する。
+- 要素は、表層から深層まで、また軸ごとの観点（願望：身体的・精神的・社会的・超越的、役割：社会的・物語的・象徴的、など）に散らす（world-building Phase 1 の規則）。
 - 出力：`{"items": ["..."], "counterpart": "...", "sources": ["m003"]}`
 - コードは、NFKC 正規化・空白除去の後に重複する要素を除いて入力由来プールに加え、IDを振る。対極要素は `tables.lock` を取ってから、データディレクトリの増補テーブル `tables/<axis>.json` に追記する（[data-layout.md](data-layout.md) §2）。追記は、実行者の提出が合格したときだけ行い、キャッシュから `done` になったときは行わない。追記の前に、正規化後に同じ要素がテーブルにあれば追記しない。
 - S2 のタスクは、S1 がすべて完了した後にコードタスク `S2.plan` が一度に作る。軸ごとのタスク数は `ceil(必要量 / 5) + 1` とし、素材を ID 順に巡回して割り当てる。すべての S2 タスクの完了後、コードタスク `S2.merge` が重複を除いて入力由来プールを作る。プールが必要量に満たない軸は、S3 でテーブル由来プールから補う（[scale.md](scale.md) §6）。
@@ -69,23 +72,28 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
      - 残りの人物には、`messenger`・`supporter`・`adversary`・`bystander`（傍観者）から seed で役を選ぶ。役の重複を許す。
      - 人物の数が足りず割り当てられなかった役は「不在の役」として記録する（S6 で扱う）。
   6. 要素を割り当てる。各要素は、確率 r で入力由来プールから、確率 1−r でテーブル由来プールから、重複なしに選ぶ。
-     - 各人物：`want`・`ability`・`duty` を1つずつ
-     - 主人公：`taboo` を1つ
-     - 物語：`place`・`era`・`object` を1つずつ
+     - 各人物：`want`・`ability`・`duty`・`age`・`gender`・`species` を1つずつ
+     - 主人公：`taboo` を1つ。加えて、入力由来の素材のうち種類が `suppression` のものがあれば、1つを「抑圧されている自己像」として割り当てる
+     - 物語：`place`・`era`・`object` を1つずつ。加えて、入力由来の素材のうち種類が `theme` または `conflict` のものがあれば、1つを「解決すべき主題」として割り当てる
   7. 各人物に、名前の響き（§5）を1つ割り当て、その響きの音から6個を選ぶ。
 - 出力：`assignment.json`（r、プロット型、筋と筋ごとの出来事数・構造テンプレート、cast の枠と役、不在の役、要素、音）。
 
 ### S4 世界 [L]
-- タスクの単位：世界セクション1つ。生成するセクションは規模で決まる（[scale.md](scale.md) §6）。
-- セクションのカタログ（`tables/world_sections.yaml`）：場の描写、生活風習、人々、組織体、社会構造、過去の出来事、未来の可能性。各セクションは定義文と観点の一覧（heros-journey・world-building から取り込む）を持つ。
-- 入力：セクションの定義文と観点、物語の `place`・`era`、プロット型の名前だけ。他のセクションの内容は渡さない。
-- 出力：`{"body": "...", "sources": ["..."]}`（body は400字以内）。
+- タスクの単位：世界セクション1つ、または一覧型のセクションの項目1件。生成するセクションは規模で決まる（[scale.md](scale.md) §6）。
+- セクションのカタログは `tables/world_sections.yaml` を原本とする。各セクションは、定義文、観点の一覧（heros-journey と world-building の全観点・全小項目を取り込む。[lineage-inventory.md](../lineage-inventory.md) §10）、種類（`single`：本文1つ／`list`：項目を複数件）、本文の字数上限、前提セクション（最大2つ）を持つ。
+- 一覧型のセクション（過去の出来事、社会集団、人々、未来のシナリオ）は、規模ごとの件数（`tables/scales.yaml` の `world_counts`）だけ、1件1タスクで生成する。未来のシナリオは楽観・悲観・中庸の3件とする。
+- 入力：セクションの定義文と観点、物語の `place`・`era`、プロット型の名前、前提セクションの本文（一覧型は各項目の名前と1行の要約）。前提セクション以外の内容は渡さない。
+- 出力：`single` は `{"body": "...", "sources": [...]}`、`list` の項目は `{"name": "...", "body": "...", "sources": [...]}`。字数の上限はセクションごとに定める。
 
 ### S5 人物 [L]
-- タスクの単位：人物1人 × 項目1つ。項目は `name` → `profile` → `motive` の順に依存する。
+- タスクの単位：人物1人 × 項目1つ。項目は `name` → `profile` → `intro`・`motive`・`appearance` → `catchphrase` の順に依存する。
+- すべての項目の入力に、その人物の役の定義文（`tables/roles.yaml`。heros-journey・world-building の4役の定義を取り込む）と、プロット型の `character_requirements` を含める。
 - `name`：入力は、S3 で割り当てた音6個と、名前の響きの説明文だけ。出力は `{"name": "...", "reading": "カタカナの読み", "sources": ["<響きの集合のID>"]}`。検証：`reading` が、与えた音のうち2個以上を含む（`uses_given`）。
 - `profile`：入力は、その人物の名前・役・割り当て要素（主人公は `taboo` を含む）。出力は `{"profile": "...", "sources": [...]}`（300字以内）。
-- `motive`：入力は、その人物の名前・役・プロフィールと、他の人物の名前・役だけ。出力は `{"motive": "...", "sources": [...]}`（120字以内）。
+- `motive`：入力は、その人物の名前・役・プロフィールと、他の人物の名前・役だけ。出力は `{"motive": "...", "sources": [...]}`（120字以内）。主人公に「抑圧されている自己像」が割り当てられていれば、入力に含める。
+- `intro`：短い紹介（50字以内。world-building の short_introduction）。
+- `appearance`：外見と魅力（年齢・性別・種族・体格・装い。150字以内。heroes・heros-journey の外見の項目）。
+- `catchphrase`：決め台詞（一人称で始まる1文。heroes の catchphrase）。
 
 ### S6 構造展開 [C]
 - 入力：`assignment.json`、構造テンプレート、プロット型。
@@ -106,7 +114,10 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
   - そのスロットに割り当てた人物の ID・名前・役・動機
   - S6 で選んだ世界セクションの body（最大2件）
   - 同じ筋の直前の出来事の `result` だけ（それ以前の出来事は渡さない）
-- 出力：`{"when": "", "where": "", "who": ["c1"], "why": "", "what": "", "result": "", "sources": [...]}`
+  - その筋のプロット型の `conflict`。段階がクライマックスに当たる場合（段階の `climax: true`）は `climax` も
+  - 物語の「解決すべき主題」（割り当てられていれば）
+- 出力：`{"when": "", "where": "", "who": ["c1"], "why": "", "intent": "", "what": "", "result": "", "emotion": "", "foreshadowing": "", "sources": [...]}`
+  - `intent`：人物の意思（world-building の protagonist_actions の「意思」）、`emotion`：出来事で人物が受ける感情（受動的な感情）、`foreshadowing`：後の出来事への伏線（筋の最後のスロットでは空文字）
 - 検証：各項目120字以内、`who` は入力の人物IDの部分集合（`ids_subset`）。
 
 ### S8 整合確認 [C+L]
@@ -136,9 +147,12 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 | 場所の性質 | `place` | S3 → S4, S7 | P1-01 で記述する |
 | 時代の性質 | `era` | S3 → S4, S7 | P1-01 で記述する |
 | 象徴的な事物 | `object` | S3 → S7 | P1-01 で記述する |
+| 年齢 | `age` | S3 → S5 | heroes の seed_age |
+| 性別 | `gender` | S3 → S5 | heroes の seed_gender |
+| 種族 | `species` | S3 → S5 | heroes の seed_species |
 
 - 既定テーブルは `tables/elements/<axis>.yaml`、増補テーブルはデータディレクトリの `tables/<axis>.json` に置く。
-- heroes の年齢・性別・種族のテーブルは取り込まない。人物の外形は、割り当て要素と名前の響きから S5 が書く範囲に留める。
+- heroes に由来する軸（want・ability・duty・age・gender・species）の既定テーブルは、heroes の `config/seeds/*.csv` の全件（所有者が整えた素材）を、具体性を落とさずに日本語に訳して取り込み、原文を `source` として残す。heroes に由来しない軸（taboo・place・era・object）だけ、新たに記述する。
 
 ## 4. プロット型と構造テンプレート
 
@@ -148,11 +162,12 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
   - `id`, `name`, `core`（中核の構造、1文）
   - `required_events`：必須の出来事の一覧（説明と、割り当てる段階）
   - `structure`：`standard`、または専用テンプレートのID
+  - `character_requirements`（登場人物の要件）、`time_design`（時間の設計）、`conflict`（葛藤の種類）、`climax`（クライマックスの条件）、`pacing`（ペース配分）、`typical_setting`（典型的な舞台）：heros-journey と world-building のプロット型の項目を取り込む。各1〜2文
 - `structure: standard` の型が14型、専用テンプレートを持つ型が7型ある。型の一覧は `tables/plot_types.yaml` を原本とする。専用テンプレートを持つのは、段階構造に押し込むと個性が失われて中庸に収斂する型（タイムループ、断片的構成など）である（P4）。
 
 ### 4.2 構造テンプレートの選び方
 
-- 構造テンプレートは `tables/structures.yaml` に置く。各テンプレートは段階の一覧を持ち、各段階は次を持つ：定義文、重み、要求する役、`absent_role_note`、`world_sections`、`object`（真偽値）。
+- 構造テンプレートは `tables/structures.yaml` に置く。各テンプレートは段階の一覧を持ち、各段階は次を持つ：定義文、指針（heros-journey の段階ごとの指針と、骨子 A〜E の要素：予兆・挫折・代償など）、幕（`act`）、重み、要求する役、`absent_role_note`、`world_sections`、`object`（真偽値）、`climax`（真偽値）。
 - 標準の構造テンプレートは3つある：`three-beat`（3段階）、`kishotenketsu`（4段階）、`heros-journey-12`（12段階）。段階の定義は `tables/structures.yaml` を原本とする。
 - 主筋（および大河の各部の主筋）のテンプレートは、プロット型が `standard` の場合、その筋に配分された出来事数で決める。
 
@@ -182,7 +197,7 @@ LLM に名前を自由に作らせると、内部知識の典型的な名前に�
 
 ## 6. 正本
 
-- `story.json`：形式は `schemas/story.schema.json` を原本とする（P1-11 で作成）。次を持つ：`meta`（run ID、seed、規模、入力由来の比率、プロット型、構造テンプレート、入力の種類）、`world`（世界セクション）、`cast`（人物：役、名前、読み、プロフィール、動機、割り当て要素）、`threads`（筋：主・副、部）、`events`（出来事：段階、筋、when・where・who・why・what・result、sources）。すべての要素に §2.1 のIDと `sources` を持たせる。
+- `story.json`：形式は `schemas/story.schema.json` を原本とする（P1-11 で作成）。次を持つ：`meta`（run ID、seed、規模、入力由来の比率、筋ごとのプロット型、構造テンプレート、入力の種類、解決すべき主題）、`world`（世界セクションと一覧型の項目）、`cast`（人物：役、名前、読み、紹介、プロフィール、動機、外見、決め台詞、割り当て要素）、`threads`（筋：主・副、部、プロット型）、`events`（出来事：段階、筋、when・where・who・why・intent・what・result・emotion・foreshadowing、sources）。すべての要素に §2.1 のIDと `sources` を持たせる。
 - `story.md`：`story.json` からテンプレートで生成する説明文。
 
 ## 7. 重複除外とバッチの補充
