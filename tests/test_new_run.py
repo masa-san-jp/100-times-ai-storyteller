@@ -41,6 +41,10 @@ def test_create_free_run_writes_input_and_one_s1_task_per_paragraph(
     }
     assert "plot_type" not in manifest["scale"]
     assert set(manifest["tasks"]) == {
-        "S1.extract-p001", "S1.extract-p002"
+        "S1.extract-p001", "S1.extract-p002", "S2.plan"
     }
-    assert all(task["state"] == "ready" for task in manifest["tasks"].values())
+    assert all(
+        manifest["tasks"][task_id]["state"] == "ready"
+        for task_id in ("S1.extract-p001", "S1.extract-p002")
+    )
+    assert manifest["tasks"]["S2.plan"]["state"] == "blocked"

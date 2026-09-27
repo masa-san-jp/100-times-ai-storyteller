@@ -214,6 +214,7 @@
             "ids_subset",
             "uses_given",
             "ends_complete",
+            "avoid_listed",
             "no_new_proper_nouns"
           ]
         },
@@ -236,6 +237,7 @@
                 "field": {"type": "string", "minLength": 1}
               }
             },
+            "avoid_listed": {"$ref": "#/$defs/avoid-listed-check"},
             "no_new_proper_nouns": {"$ref": "#/$defs/proper-nouns-check"}
           }
         }
@@ -296,6 +298,23 @@
         "field": {"type": "string", "minLength": 1},
         "slot": {"type": "string", "minLength": 1},
         "n": {"type": "integer", "minimum": 1}
+      }
+    },
+    "avoid-listed-check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table"],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "table": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![/\\\\])(?![A-Za-z]:[/\\\\])(?!.*(?:^|[/\\\\])(?:\\.\\.?)(?:[/\\\\]|$)).+"
+        }
       }
     },
     "proper-nouns-check": {

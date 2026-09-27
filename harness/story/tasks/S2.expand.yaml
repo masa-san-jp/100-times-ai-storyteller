@@ -1,0 +1,41 @@
+id: S2.expand
+version: 1
+kind: llm
+inputs:
+  material:
+    label: 素材
+    from: S2.plan
+    select: plans[{slot}].material
+    required: true
+  axis:
+    label: 要素の軸
+    from: S2.plan
+    select: plans[{slot}].axis
+    required: true
+  cliches:
+    label: 使わない表現
+    from: S2.plan
+    select: cliches.phrases
+    required: true
+output: json
+card:
+  role: 与えられた一つの素材と一つの要素の軸だけを手がかりに、具体的で意外性のある要素を作る。
+  steps:
+    - 与えられた軸について、素材から着想した要素をちょうど5件書く。各要素は10〜40字で、表層的な特徴から深層の意味まで幅を持たせる。
+    - 5件と対極にある要素を1件、同じ軸の定義に沿って書く。対極は単なる反対語ではなく、素材に対する別の再構築にする。
+    - 入力スロットの「使わない表現」に含まれる表現を、要素と対極要素に使わない。
+    - sources には入力された素材のIDを1件だけ書く。入力にない人物・設定・固有名詞を付け加えない。
+  output_example: '{"items": ["...", "...", "...", "...", "..."], "counterpart": "...", "sources": ["m003"]}'
+validate:
+  schema: schemas/tasks/S2.expand.schema.json
+  checks:
+    - sources_exist
+    - count:
+        field: items
+        n: 5
+    - avoid_listed:
+        fields: [items, counterpart]
+        table: tables/cliches.yaml
+    - no_new_proper_nouns:
+        mode: warn
+share_across_runs: true
