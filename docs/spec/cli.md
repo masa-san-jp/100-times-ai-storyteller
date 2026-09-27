@@ -114,8 +114,9 @@ st workspace init PATH [--data-dir DIR] [--executor-id ID] [--agent claude-code|
 
 - PATH に実行者ワークスペースを作る（[architecture.md](architecture.md) §4）。PATH がリポジトリの内側にある場合は拒否する。
 - `--data-dir` を省略したときは、`STORYTELLER_HOME`、なければリポジトリの `private/` を、絶対パスで設定ファイルに書く。
-- `--agent` の既定は `generic`。`claude-code` と `codex` は権限設定を書き出し、隔離の種類を `permission` とする。`generic` は権限設定を書き出さず、隔離の種類を `placement` とする。
+- `--agent` の既定は `generic`。`claude-code` は権限設定を書き出し、隔離の種類を `permission` とする。`codex` は書き込み範囲だけを設定し、読み取りを制限できないため、隔離の種類を `placement` とする。`generic` は権限設定を書き出さず、隔離の種類を `placement` とする。
 - `--executor-id` を省略したときは、ホスト名とランダムな文字列から作る。
+- 作成完了時、`claude-code` または `codex` の起動コマンドを標準出力に表示する。
 
 ### `st check-input` / `st format` / `st cache prune` / `st report`
 

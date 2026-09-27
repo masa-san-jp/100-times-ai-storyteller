@@ -20,6 +20,7 @@ from .orchestrator import (
     OrchestrationError,
 )
 from .storage import DataDirectoryError, LockTimeoutError, resolve_data_dir
+from .workspace import register_cli_commands
 
 
 EXIT_OK = 0
@@ -92,6 +93,8 @@ def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
     )
     dummy_parser.add_argument("--seed", type=int)
 
+    register_cli_commands(subparsers)
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the ``st`` command-line parser."""
@@ -137,6 +140,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _run_command(args: argparse.Namespace) -> int:
     command_handler = getattr(args, "_command_handler", None)
+    if command_handler is None:
+        command_handler = getattr(args, "command_handler", None)
     if command_handler is not None:
         return command_handler(args)
     if args.command == "next":

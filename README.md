@@ -28,12 +28,28 @@ uv を使わない場合は、Python 3.11 以上の環境で `pip install -e .` 
 
 ## 実行者として動かす
 
-コーディングエージェントを実行者にする場合は、`st` をコマンドとして導入し、リポジトリの外に実行者ワークスペースを作ります。手順の詳細は Phase 1（P1-12）で確定し、この節に書きます。
+コーディングエージェントを実行者にする場合は、`st` をコマンドとして導入し、リポジトリの外に実行者ワークスペースを作ります。`workspace init` は実行者プロトコル、データディレクトリの設定、製品別の隔離設定を生成します。
 
 ```bash
-uv tool install --editable .
-st workspace init ~/storyteller-executor --agent claude-code
+REPOSITORY=/absolute/path/to/100-times-ai-storyteller
+DATA_DIR=/absolute/path/to/storyteller-data
+WORKSPACE=/absolute/path/to/storyteller-executor
+
+uv tool install --editable "$REPOSITORY"
+st workspace init "$WORKSPACE" --data-dir "$DATA_DIR" --agent claude-code
 ```
+
+`WORKSPACE` はリポジトリの外に置いてください。`--agent claude-code` は `.claude/settings.json` を、`--agent codex` は `.codex/config.toml` を生成します。Codex は読み取りを制限できないため、`.storyteller-workspace.yaml` と manifest では `placement` として扱います。`generic`（既定値）も権限設定を生成せず、配置による隔離として扱います。`workspace init` の完了時には、選択したエージェントの起動コマンドも表示されます。
+
+生成したワークスペースから、次のようにエージェントを非対話で起動します。タスクがある間は `AGENTS.md` / `CLAUDE.md` の手順に従って `st next` と `st submit` を繰り返します。
+
+```bash
+(cd "$WORKSPACE" && claude -p "<指示>" --allowedTools "Bash(st next *)" "Bash(st submit *)" "Edit(./out.txt)")
+
+codex exec -C "$WORKSPACE" "<指示>"
+```
+
+Claude Code は実機確認で、`permissions.deny` によりワークスペース外の `AGENTS.md` の読み取りと Bash による読み取りが拒否されました。ただし、新しいワークスペースは信頼済みでないため `permissions.allow` は無視されるので、`st next` と `st submit` を許可する `--allowedTools` を起動時に渡します。Codex は書き込みだけを制限し、読み取りは制限しないため、ワークスペースをリポジトリの外に置く `placement` として扱います。製品名・バージョン・実機確認の詳細は [アーキテクチャ仕様 §4](docs/spec/architecture.md) に記録しています。
 
 ## ドキュメント
 
