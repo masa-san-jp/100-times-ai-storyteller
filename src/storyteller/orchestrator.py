@@ -12,6 +12,7 @@ import secrets
 import shutil
 import socket
 import sys
+import unicodedata
 from copy import deepcopy
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -19,13 +20,23 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final
 
-from .cards import TaskCardError, generate_task_card, prepare_task_inputs
+from .cards import (
+    TaskCardError,
+    generate_task_card,
+    input_char_count,
+    prepare_task_inputs,
+)
 from .cache import cache_key, lookup_cache, save_cache
 from .manifest import load_manifest, write_manifest
 from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
 from .storage import atomic_write_json, atomic_write_text, manifest_lock
-from .validation import validate_document, validate_output
+from .validation import (
+    ValidationResult,
+    text_is_truncated,
+    validate_document,
+    validate_output,
+)
 
 
 TASK_DEFINITION_SCHEMA_PATH = (
@@ -636,23 +647,65 @@ class Orchestrator:
             definition = self.task_definitions[task["type"]]
             inputs = _load_card_inputs(self.task_dir(run_id, task_id))
 
+        continuation = _continuation_enabled(definition)
+        partial = _read_partial_output(self.task_dir(run_id, task_id))
+        if continuation and _is_truncated_submission(raw_output, truncated):
+            if int(task.get("continuation_step", 0)) >= 2:
+                validation = ValidationResult(
+                    None,
+                    errors=("継続の上限に達した出力がなお途中で切れています",),
+                )
+                submission_output = (
+                    partial + raw_output
+                    if isinstance(raw_output, str)
+                    else raw_output
+                )
+                return self._commit_submission(
+                    ticket,
+                    run_id,
+                    task_id,
+                    submission_output,
+                    validation,
+                    inputs,
+                    discard_partial=True,
+                )
+            return self._commit_truncated_submission(
+                ticket,
+                run_id,
+                task_id,
+                raw_output,
+            )
+
         if truncated and definition.get("output") == "json":
             raise OrchestrationError(
                 "JSON出力に --truncated を指定できません"
             )
 
-        validation = validate_output(
-            definition,
-            raw_output,
-            inputs=inputs,
-            harness_root=self.definition_root,
-            common_words_path=self.repository_root / "tables" / "common_words.yaml",
-        )
+        if truncated:
+            validation = ValidationResult(
+                None,
+                errors=("--truncated は continuation: true のタスクでのみ指定できます",),
+            )
+            submission_output = raw_output
+        else:
+            submission_output = raw_output
+            if continuation and partial:
+                if not isinstance(raw_output, str):
+                    submission_output = raw_output
+                else:
+                    submission_output = partial + raw_output
+            validation = validate_output(
+                definition,
+                submission_output,
+                inputs=inputs,
+                harness_root=self.definition_root,
+                common_words_path=self.repository_root / "tables" / "common_words.yaml",
+            )
         return self._commit_submission(
             ticket,
             run_id,
             task_id,
-            raw_output,
+            submission_output,
             validation,
             inputs,
         )
@@ -669,6 +722,8 @@ class Orchestrator:
         raw_output: Any,
         validation: Any,
         card_inputs: Mapping[str, Any],
+        *,
+        discard_partial: bool = False,
     ) -> SubmissionResult:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
@@ -721,6 +776,7 @@ class Orchestrator:
                 _update_run_status(manifest)
                 _touch_manifest(manifest, at)
                 write_manifest(run_dir / "manifest.json", manifest)
+                _remove_partial_output(self.task_dir(run_id, task_id))
                 return SubmissionResult(
                     True,
                     run_id,
@@ -766,6 +822,8 @@ class Orchestrator:
             write_manifest(run_dir / "manifest.json", manifest)
             _release_claim(run_dir, task_id, task)
             _remove_task_outputs(run_dir, task_id)
+            if discard_partial:
+                _remove_partial_output(self.task_dir(run_id, task_id))
             atomic_write_json(
                 self.task_dir(run_id, task_id)
                 / "attempts"
@@ -779,6 +837,68 @@ class Orchestrator:
                 value=validation.value,
                 errors=errors or (reason,),
                 warnings=warnings,
+            )
+
+    def _commit_truncated_submission(
+        self,
+        ticket: str,
+        run_id: str,
+        task_id: str,
+        raw_output: Any,
+    ) -> SubmissionResult:
+        """Persist one continuation chunk without validating or caching it."""
+        if not isinstance(raw_output, str):
+            raise OrchestrationError("継続する出力は文字列でなければなりません")
+
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if self._halt_if_harness_changed(manifest):
+                _touch_manifest(manifest, self._now())
+                write_manifest(run_dir / "manifest.json", manifest)
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            task = _get_task(manifest, task_id)
+            claim = _require_claim_locked(
+                manifest,
+                run_dir,
+                task_id,
+                ticket,
+                self._now(),
+            )
+            continuation_step = int(task["continuation_step"])
+            if continuation_step >= 2:
+                raise OrchestrationError("継続の上限に達しています")
+            partial_path = self.task_dir(run_id, task_id) / "partial.md"
+            previous = _read_partial_output(self.task_dir(run_id, task_id))
+            atomic_write_text(
+                partial_path,
+                previous + raw_output,
+                encoding="utf-8",
+            )
+            at = self._now()
+            task["continuation_step"] = continuation_step + 1
+            task["cache_key"] = None
+            task["error"] = None
+            _release_claim(run_dir, task_id, task)
+            _set_task_state(
+                manifest,
+                task_id,
+                "ready",
+                at,
+                reason="出力が途中で切れたため継続",
+                executor_id=claim["executor_id"],
+            )
+            _refresh_blocked_tasks(manifest, at)
+            _update_run_status(manifest)
+            _touch_manifest(manifest, at)
+            write_manifest(run_dir / "manifest.json", manifest)
+            return SubmissionResult(
+                True,
+                run_id,
+                task_id,
+                value=raw_output,
             )
 
     def retry_failed(self, run_id: str, task_id: str) -> dict[str, Any]:
@@ -1062,12 +1182,24 @@ class Orchestrator:
         retry_reason = task.get("error")
         if not isinstance(retry_reason, str):
             retry_reason = None
+        continuation_tail = None
+        if _continuation_enabled(definition) and int(task["continuation_step"]) > 0:
+            partial = _read_partial_output(self.task_dir(run_id, task_id))
+            remaining = int(definition.get("max_input_chars", 3000)) - input_char_count(
+                definition,
+                card_inputs,
+            )
+            if remaining < 1000:
+                raise TaskCardError("継続の予算が足りない")
+            normalized_partial = unicodedata.normalize("NFC", partial)
+            continuation_tail = normalized_partial[-min(remaining, 6000) :]
         return (
             generate_task_card(
                 definition,
                 ticket,
                 inputs=card_inputs,
                 retry_reason=retry_reason,
+                continuation_tail=continuation_tail,
             ),
             card_inputs,
         )
@@ -1382,6 +1514,7 @@ class Orchestrator:
                 reason="キャッシュの出力を再利用",
             )
             task["error"] = None
+            _remove_partial_output(self.task_dir(run_id, task_id))
             changed = True
         return changed
 
@@ -1870,6 +2003,39 @@ def _load_card_inputs(task_dir: Path) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise OrchestrationError(f"カード入力がオブジェクトではありません: {path}")
     return dict(value)
+
+
+def _continuation_enabled(definition: Mapping[str, Any]) -> bool:
+    """Apply the task-model default for the optional continuation field."""
+    return bool(
+        definition.get(
+            "continuation",
+            definition.get("output") == "text",
+        )
+    )
+
+
+def _is_truncated_submission(raw_output: Any, truncated: bool) -> bool:
+    return bool(truncated) or (
+        isinstance(raw_output, str) and text_is_truncated(raw_output)
+    )
+
+
+def _read_partial_output(task_dir: Path) -> str:
+    path = task_dir / "partial.md"
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+    except (OSError, UnicodeError) as error:
+        raise OrchestrationError(f"継続中の出力を読み込めません: {path}") from error
+
+
+def _remove_partial_output(task_dir: Path) -> None:
+    try:
+        (task_dir / "partial.md").unlink()
+    except FileNotFoundError:
+        pass
 
 
 def _write_submitted_output(

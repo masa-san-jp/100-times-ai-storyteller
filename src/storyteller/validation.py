@@ -91,6 +91,23 @@ _SCHEMA_CACHE: dict[
 ] = {}
 
 
+def text_ends_complete(value: str) -> bool:
+    """Return whether text ends with one of the spec's completion marks."""
+    if not isinstance(value, str):
+        return False
+    stripped = value.rstrip()
+    return bool(stripped) and stripped[-1] in _COMPLETE_ENDINGS
+
+
+def text_is_truncated(value: str) -> bool:
+    """Return whether a long text output is incomplete by the task spec."""
+    return (
+        isinstance(value, str)
+        and _char_length(value) >= 400
+        and not text_ends_complete(value)
+    )
+
+
 def validate_output(
     task_definition: Mapping[str, Any],
     raw_output: Any,
@@ -354,7 +371,7 @@ def _run_check(
         value, missing = _read_field(output, field)
         if missing or not isinstance(value, str):
             return ["ends_complete: 対象フィールドが文字列ではありません"], []
-        if not value.rstrip() or value.rstrip()[-1] not in _COMPLETE_ENDINGS:
+        if not text_ends_complete(value):
             return ["ends_complete: 完結を示す末尾ではありません"], []
         return [], []
 
