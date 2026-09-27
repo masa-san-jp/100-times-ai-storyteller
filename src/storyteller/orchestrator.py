@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from .cards import TaskCardError, generate_task_card, prepare_task_inputs
+from .cache import cache_key, lookup_cache, save_cache
 from .manifest import load_manifest, write_manifest
 from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
@@ -350,6 +351,8 @@ class Orchestrator:
                     write_manifest(run_dir / "manifest.json", manifest)
                     return manifest
                 _refresh_blocked_tasks(manifest, self._now())
+                self._complete_ready_cached_tasks(manifest, run_id)
+                _refresh_blocked_tasks(manifest, self._now())
                 task_id = _next_ready_code_task(manifest)
                 if task_id is None:
                     _update_run_status(manifest)
@@ -411,6 +414,11 @@ class Orchestrator:
                             run_dir,
                             now,
                             self._clock,
+                        )
+                        _refresh_blocked_tasks(manifest, now)
+                        changed = (
+                            self._complete_ready_cached_tasks(manifest, candidate_run_id)
+                            or changed
                         )
                         _refresh_blocked_tasks(manifest, now)
                         task_id = _next_ready_llm_task(manifest)
@@ -483,8 +491,14 @@ class Orchestrator:
             now = self._now()
             _refresh_claims(manifest, run_dir, now, self._clock)
             _refresh_blocked_tasks(manifest, now)
+            cache_changed = self._complete_ready_cached_tasks(manifest, run_id)
+            _refresh_blocked_tasks(manifest, now)
             task = _get_task(manifest, task_id)
             if task["kind"] != "llm" or task["state"] != "ready":
+                if cache_changed:
+                    _update_run_status(manifest)
+                    _touch_manifest(manifest, now)
+                    write_manifest(run_dir / "manifest.json", manifest)
                 raise ClaimError(f"task is not ready for claim: {task_id}")
             result = self._claim_task_locked(
                 manifest,
@@ -640,6 +654,7 @@ class Orchestrator:
             task_id,
             raw_output,
             validation,
+            inputs,
         )
 
     # Names used by internal callers and by the future CLI layer.
@@ -653,6 +668,7 @@ class Orchestrator:
         task_id: str,
         raw_output: Any,
         validation: Any,
+        card_inputs: Mapping[str, Any],
     ) -> SubmissionResult:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
@@ -678,11 +694,18 @@ class Orchestrator:
                 f"{task_id}: {warning}" for warning in warnings
             )
             if validation.passed:
+                key = self._cache_key_for_task(
+                    manifest,
+                    task_id,
+                    card_inputs,
+                )
+                save_cache(self.data_dir, key, validation.value)
                 _write_submitted_output(
                     self.task_dir(run_id, task_id),
                     self.task_definitions[task["type"]],
                     validation.value,
                 )
+                task["cache_key"] = key
                 _release_claim(run_dir, task_id, task)
                 _set_task_state(
                     manifest,
@@ -726,6 +749,7 @@ class Orchestrator:
             task["attempt"] = next_attempt
             task["tries"] = next_tries
             task["error"] = reason
+            task["cache_key"] = None
             task["claim"] = None
             max_attempts = int(self.task_definitions[task["type"]].get("max_attempts", 3))
             next_state = "failed" if task["tries"] >= max_attempts else "ready"
@@ -1310,6 +1334,79 @@ class Orchestrator:
 
     def _write_task_output(self, run_id: str, task_id: str, output: Any) -> None:
         atomic_write_json(self.task_dir(run_id, task_id) / "output.json", output)
+
+    def _complete_ready_cached_tasks(
+        self,
+        manifest: dict[str, Any],
+        run_id: str,
+    ) -> bool:
+        """Complete ready LLM tasks whose accepted output is already cached."""
+
+        changed = False
+        for task_id, task in manifest["tasks"].items():
+            if task["kind"] != "llm" or task["state"] != "ready":
+                continue
+            try:
+                context = self._build_context(manifest, run_id, task_id)
+                card_inputs = prepare_task_inputs(
+                    self.task_definitions[task["type"]],
+                    inputs=context.inputs,
+                )
+                key = self._cache_key_for_task(manifest, task_id, card_inputs)
+            except Exception as error:
+                _fail_task(
+                    manifest,
+                    task_id,
+                    self._now(),
+                    _error_text(error),
+                    run_dir=self.run_dir(run_id),
+                )
+                changed = True
+                continue
+
+            task["cache_key"] = key
+            hit, output = lookup_cache(self.data_dir, key)
+            if not hit:
+                changed = True
+                continue
+            _write_submitted_output(
+                self.task_dir(run_id, task_id),
+                self.task_definitions[task["type"]],
+                output,
+            )
+            _set_task_state(
+                manifest,
+                task_id,
+                "done",
+                self._now(),
+                reason="キャッシュの出力を再利用",
+            )
+            task["error"] = None
+            changed = True
+        return changed
+
+    def _cache_key_for_task(
+        self,
+        manifest: Mapping[str, Any],
+        task_id: str,
+        card_inputs: Mapping[str, Any],
+    ) -> str:
+        """Calculate the key for the exact input shown on a task card."""
+
+        task = _get_task(manifest, task_id)
+        definition = self.task_definitions[task["type"]]
+        task_seed = derive_task_seed(
+            int(manifest["seed"]), task_id, int(task["attempt"])
+        )
+        return cache_key(
+            task["type"],
+            int(definition["version"]),
+            card_inputs,
+            candidate=_candidate_number(task_id),
+            seed=task_seed,
+            attempt=int(task["attempt"]),
+            share_across_runs=bool(definition.get("share_across_runs", False)),
+        )
 
     def _now(self) -> str:
         return _timestamp(self._clock)
@@ -2165,6 +2262,15 @@ def _next_ready_llm_task(manifest: Mapping[str, Any]) -> str | None:
     if not candidates:
         return None
     return min(candidates, key=lambda task_id: (depths[task_id], task_id))
+
+
+def _candidate_number(task_id: str) -> int:
+    """Extract a ``c<n>`` candidate suffix from a task ID."""
+
+    match = re.search(r"(?:^|-)c([1-9][0-9]*)$", task_id)
+    if match is not None:
+        return int(match.group(1))
+    return 0
 
 
 def _validate_transition(
