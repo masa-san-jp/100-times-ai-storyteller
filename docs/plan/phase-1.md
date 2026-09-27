@@ -25,8 +25,8 @@
 | P1-10 | S8（比較対象の選び方、S7 の無効化） | P1-09 | story-pipeline S8 | `yes` で S7 が無効化され、上限で failed になる |
 | P1-11 | S9、`schemas/story.schema.json`、`story.md` のテンプレート | P1-10 | story-pipeline S9, §6 | 正本がスキーマに通る |
 | P1-12 | `st workspace init`（`--data-dir`, `--agent`）、実行者プロトコルのテンプレートと一致検査、README の「実行者として動かす」節（`uv tool install` による導入手順）、Claude Code / Codex の読み取り禁止の権限設定。実機検証の結果を architecture §4 に追記する | P0-15 | architecture §4, executor-protocol, ADR-0004 | ワークスペース外の読み取りが両製品で拒否される。リポジトリ内のパスが拒否される |
-| P1-13 | LLMアダプタ（`ollama`）、`st auto`、`config/models.yaml`、`json_mode` の段階的な切り替えと `adapters/state.json`、localhost 以外の拒否 | P0-15 | architecture §5, task-model §6.1 | 空応答が2回続くと json_mode が切り替わり、別プロセスの `st auto` にも反映される |
-| P1-14 | 固有名詞の検出（P0-10 で実装済み。全タスクを `warn` で運用）の誤検出率を、Phase 1 の end-to-end の出力で測り、`tables/common_words.yaml` を整備し、5% 未満のタスクを `fail` に切り替える | P1-11 | task-model §6.2 | 測定結果と、`tables/common_words.yaml`・タスク定義の更新がプルリクエストに記録されている |
+| P1-13 | LLMアダプタ（`ollama`）、`st auto`、`config/models.yaml`、`json_mode` の段階的な切り替えと `adapters/state.json`、localhost 以外の拒否 | P0-15 | architecture §5, task-model §6.5 | 空応答が2回続くと json_mode が切り替わり、別プロセスの `st auto` にも反映される |
+| P1-14 | 固有名詞の検出（P0-10 で実装済み。全タスクを `warn` で運用）の誤検出率を、Phase 1 の end-to-end の出力で測り、`tables/common_words.yaml` を整備し、5% 未満のタスクを `fail` に切り替える | P1-11 | task-model §6.4 | 測定結果と、`tables/common_words.yaml`・タスク定義の更新がプルリクエストに記録されている |
 | P1-15 | end-to-end：ローカルモデルとコーディングエージェントでの短編の完走。開発者が書いた自由入力による生成例を `examples/` に置く | P1-11, P1-12, P1-13 | ROADMAP Phase 1 | 完了条件 1〜4 |
 
 ## 順序

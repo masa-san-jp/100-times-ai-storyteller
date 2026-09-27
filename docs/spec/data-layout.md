@@ -1,6 +1,6 @@
 # spec: データ配置
 
-- 所有範囲：リポジトリのディレクトリ構成、データディレクトリの構成、manifest、seed の派生、書き込み規則、キャッシュの削除、共有の制約
+- 所有範囲：リポジトリのディレクトリ構成、データディレクトリの構成、manifest、seed の派生、書き込み規則とロック、キャッシュの削除、共有の制約、ハーネスの変更検出、ファイル形式（ワークスペース設定・claim）
 
 ## 1. リポジトリのディレクトリ構成
 
@@ -59,8 +59,8 @@ private/                  # 既定のデータディレクトリ。.gitignore �
     formats/<name>/…              # 様式化の出力
 ```
 
-- `run_id` は `<作成日時 YYYYMMDD-HHMMSS>-<seed の先頭6桁の16進>` とする。
-- `task_id` は `<タスク種別ID>-<添字>` とする。添字はスロット・人物・候補番号・継続番号を `-` でつなぐ（例：`S7.event-e005-c2`）。
+- `run_id` は `<作成日時（UTC） YYYYMMDD-HHMMSS>-<seed を8桁の小文字16進にした先頭6桁>` とする。
+- `task_id` は `<タスク種別ID>`、または `<タスク種別ID>-<添字>` とする。添字は、スロットや人物のID、候補番号（`c1`〜）を `-` でつなぐ（例：`S7.event-e005-c2`）。継続は同じタスクの中で扱い、task_id を分けない（[task-model.md](task-model.md) §8）。
 - コードタスクもタスクディレクトリを持ち、出力を `output.json` に置く（`card.md` と `claim.json` は持たない）。spec 中の `assignment.json`・`slots.json` は、それぞれ S3・S6 のタスクの `output.json` を指す。
 - ユーザーの入力と生成物を、データディレクトリ以外に書き出さない。
 
@@ -79,26 +79,78 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 | `scale` | 規模プリセット、上書きした軸、計算した派生値（[scale.md](scale.md) §6） |
 | `harness` | リポジトリ内のタスク定義・既定テーブル・スキーマ・様式プロファイル各ファイルの sha256。データディレクトリの増補テーブルは含めない |
 | `table_snapshot` | S3 の実行時点の、増補テーブルの軸ごとの行数。増補テーブルは追記のみなので、この行数までを読めば、同じ割当を再現できる |
-| `tasks` | タスクID → 状態・試行回数・無効化の回数・キャッシュキー・実行者ID・隔離の種類・完了時刻 |
+| `tasks` | タスクID → タスクの記録（§3.1） |
 | `warnings` | 固有名詞の候補、出来事数の引き上げ、JSON の出させ方の切り替えなど |
 
-- run の途中でハーネスのファイルの sha256 が変わったことを `st` が検出した場合、その run を `halted` にする。`halted` の run のタスクは `st next` の対象から外し、標準エラー出力に警告を出す。`st resume --accept-harness-change RUN_ID` で続行を明示した場合だけ `active` に戻す。
+### 3.1 タスクの記録
+
+| 項目 | 型 | 内容 |
+|---|---|---|
+| `type` | 文字列 | タスク種別ID |
+| `kind` | `code` / `llm` | |
+| `state` | 状態（[task-model.md](task-model.md) §4.2） | |
+| `deps` | 文字列の配列 | 依存するタスクID |
+| `index` | 文字列の配列 | task_id の添字の要素（`{slot}` の置き換えに使う） |
+| `attempt` | 整数（初期値0） | seed とキャッシュキーの計算に使う。不合格・無効化のたびに1増え、戻らない |
+| `tries` | 整数（初期値0） | 不合格の回数。`st retry` で0に戻る |
+| `invalidations` | 整数（初期値0） | 無効化の回数。`st retry` で0に戻る |
+| `continuation_step` | 整数（初期値0） | [task-model.md](task-model.md) §8 |
+| `cache_key` | 文字列または null | |
+| `claim` | オブジェクトまたは null | claim 中の `ticket`・`executor_id`・`isolation`・`lease_expires_at` |
+| `history` | 配列 | 状態遷移の記録（時刻・遷移・理由・実行者ID） |
+| `error` | 文字列または null | `failed` の理由 |
+
+形式は `schemas/manifest.schema.json` で検証する。バッチの manifest の形式は Phase 2（P2-05）で `schemas/batch-manifest.schema.json` として定める。
+
+### 3.2 ハーネスの変更検出
+
+- run の作成時に、リポジトリの `harness/`・`tables/`・`schemas/`・`formats/` の配下にあるすべてのファイルについて、相対パスと sha256 の組を manifest の `harness` に記録する。`config/` とデータディレクトリの増補テーブルは含めない。
+- `st next` と `st submit` は、対象の run について、記録と現在のファイルの組を比べる。ファイルの追加・削除・内容の変更は、すべて変更とみなす。
+- run の途中でハーネスのファイルの sha256 が変わったことを `st` が検出した場合、その run を `halted` にする。`halted` の run のタスクは `st next` の対象から外し、標準エラー出力に警告を出す。`st resume --accept-harness-change RUN_ID` で続行を明示した場合だけ、manifest の `harness` を現在の値に更新し、run の状態を [task-model.md](task-model.md) §4.2 の優先順で決め直す。既存の claim は有効のまま残す。
 - バッチの manifest は、バッチの seed・要求件数・run の一覧・完了数・重複で除外した数・作成数の上限を持つ。更新は `batch.lock` を取ってから行う。
 
 ## 4. seed の派生
 
 - バッチの seed から run の seed：`int(sha256(f"{batch_seed}:{index}").hexdigest()[:8], 16)`
-- run の seed からタスクの seed：`int(sha256(f"{run_seed}:{task_id}:{attempt}").hexdigest()[:8], 16)`
+- run の seed からタスクの seed：`int(sha256(f"{run_seed}:{task_id}:{attempt}").hexdigest()[:8], 16)`（`attempt` は §3.1）
+- `--seed` を指定しない場合、run の seed は `secrets.randbits(32)` で作る。
 - コードタスクの乱数は、必ずそのタスクの seed で初期化した `random.Random` を使う。グローバルの `random` を使わない。
 
 ## 5. 書き込み規則と共有の制約
 
-- ファイルは、同じディレクトリの一時ファイルに書いてから `os.replace` で置き換える。
-- manifest の更新は、run ごとのロックファイル（`manifest.lock`、`O_EXCL` で作成）を取ってから行う。バッチの manifest は `batch.lock`、増補テーブルへの追記は `tables.lock` を取ってから行う。どのロックも10秒で待ちを打ち切り、エラーにする。
+- ファイルは、同じディレクトリの一時ファイル（`.<ファイル名>.<ランダムな16進8桁>.tmp`）に書き、flush と `os.fsync` をしてから `os.replace` で置き換える。途中で例外が起きた場合は一時ファイルを削除し、元のファイルを変更しない。
+- manifest の更新は、run ごとのロックファイル（`manifest.lock`、`O_EXCL` で作成）を取ってから行う。バッチの manifest は `batch.lock`、増補テーブルへの追記は `tables.lock` を取ってから行う。ロックファイルには、プロセスID・ホスト名・作成時刻を書く。取得できない場合は 0.1秒間隔で再試行し、10秒で打ち切って終了コード 10 とする。作成から30秒を超えたロックファイルは、異常終了したプロセスが残したものとみなして削除し、取得し直す（ロック中の処理は短いため）。処理が終わったらロックファイルを削除する。
 - テキストファイルは UTF-8・改行 LF で書き出す。
-- 並行実行は、同じマシン上の同じファイルシステムに限って保証する。データディレクトリをファイル同期サービス（Google Drive、Dropbox、iCloud 等）の配下に置くと、排他制御が機能しない場合がある。`st` は、データディレクトリのパスにこれらのサービスの既定のフォルダ名が含まれる場合、警告を出す。
+- 並行実行は、同じマシン上の同じファイルシステムに限って保証する。データディレクトリをファイル同期サービス（Google Drive、Dropbox、iCloud 等）の配下に置くと、排他制御が機能しない場合がある。`st` は、データディレクトリの絶対パスの要素のいずれかが、大文字小文字を区別せずに次のいずれかを含む場合、コマンドごとに1回、標準エラー出力に警告を出す：`Google Drive`、`GoogleDrive`、`My Drive`、`マイドライブ`、`Dropbox`、`iCloud Drive`、`Mobile Documents`、`OneDrive`。
 
 ## 6. キャッシュの削除
 
 - キャッシュは自動では削除しない。
 - `st cache prune --older-than DAYS` で、指定日数より前に作られ、かつ `active` / `stalled` の run から参照されていないものを削除する。
+
+## 7. ファイル形式
+
+### 7.1 実行者ワークスペースの設定 `.storyteller-workspace.yaml`
+
+| キー | 必須 | 型・値 |
+|---|---|---|
+| `data_dir` | 必須 | データディレクトリの絶対パス |
+| `executor_id` | 必須 | `^[A-Za-z0-9._-]{1,64}$` |
+| `agent` | 必須 | `claude-code` / `codex` / `generic` |
+| `isolation` | 必須 | `permission` / `placement` |
+
+形式は `schemas/workspace.schema.json` で検証する。ファイルが壊れている、必須のキーがない、`data_dir` が相対パスである場合は、終了コード 1 とする。
+
+### 7.2 claim `claim.json`
+
+| キー | 型・値 |
+|---|---|
+| `ticket` | 小文字16進32桁（`secrets.token_hex(16)`） |
+| `task_id` | 文字列 |
+| `executor_id` | `^[A-Za-z0-9._-]{1,64}$` |
+| `isolation` | `permission` / `placement` / `adapter`（`st auto`）/ `none`（ワークスペース外からの実行） |
+| `claimed_at`, `lease_expires_at` | UTC の ISO 8601、秒精度、末尾 `Z`（例：`2026-09-27T03:15:00Z`） |
+
+### 7.3 データディレクトリの決め方
+
+[cli.md](cli.md) 冒頭の順で決め、コマンドの開始時に絶対パスにする。リポジトリの `private/` を使うのは、`st` がリポジトリから editable で導入されている場合（パッケージの2つ上のディレクトリに `pyproject.toml` がある場合）に限る。それ以外で、設定ファイルも `STORYTELLER_HOME` もない場合は、終了コード 1 とする。

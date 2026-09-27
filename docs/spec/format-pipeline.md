@@ -54,7 +54,7 @@ checks:
 ### F4 検証 [C+L]
 - [C] `checks.code` の検査と、書式の構文（Fountain、Marp）。
 - [L] `checks.llm` の質問を1つずつ、別のタスクとして yes/no で問う。入力は、その単位の events と本文だけ。期待する答えはすべて `no` とする。
-- 不合格の単位の F2 タスクを無効化する（[task-model.md](task-model.md) §4）。F2 の `max_invalidations` は2とし、超えた場合は `failed` にする。
+- 不合格の単位の F2 タスクを無効化する（[task-model.md](task-model.md) §4.3）。F2 の `max_invalidations` は2とし、超えた場合は `failed` にする。
 
 ### F3 組み立て [C]
 - テンプレートに単位の本文を流し込み、最終ファイルを `formats/<name>/` に出力する。

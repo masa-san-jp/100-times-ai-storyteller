@@ -21,7 +21,8 @@
 | `st cache prune` | 人間 | 古いキャッシュを削除する | 4 |
 | `st report` | 人間 | バッチの傾向分析を開始する | 4 |
 
-Phase 0 では、ダミーの DAG を作るための `st dev new-dummy` を開発用に置く。
+- 各フェーズでは、そのフェーズまでに導入するコマンドだけを登録する。未導入のコマンドは `st --help` に表示しない。
+- 開発用に `st dev new-dummy`（§2）を置く。
 
 ## 2. 各コマンド
 
@@ -48,7 +49,8 @@ st next [--run RUN_ID] [--executor-id ID] [--wait SECONDS] [--json]
 - `ready` のLLMタスクを1つ claim し、タスクカードを標準出力に出す。カードの見出しに ticket が書かれている。
 - `--json` のときは `{"ticket", "card", "lease_expires_at"}` を出力する。タスクIDは出力しない（[task-model.md](task-model.md) §3）。
 - `--run` で指定した run が `halted` の場合は、終了コード 6 を返す。
-- `--wait SECONDS`：`ready` のタスクがないとき、指定秒数まで5秒間隔で待つ。
+- `--wait SECONDS`：`ready` のタスクがないとき、指定秒数まで5秒間隔で待つ（0以上の整数。0は待たない。負の値は終了コード 1）。待っても見つからなければ終了コード 2。
+- `--run` で指定した run が存在しない場合は終了コード 1、`completed` / `stalled` / `duplicate` の場合は終了コード 2 とする。
 - `--executor-id` を省略したときは、実行者ワークスペースの設定、なければホスト名とプロセスIDから作る。
 
 ### `st submit`
@@ -57,7 +59,7 @@ st next [--run RUN_ID] [--executor-id ID] [--wait SECONDS] [--json]
 st submit TICKET [PATH | -] [--truncated]
 ```
 
-- 出力をファイルまたは標準入力から受け取り、検証する（[task-model.md](task-model.md) §6）。
+- 出力を、PATH（カレントディレクトリからの相対パスまたは絶対パス）、または標準入力（PATH が `-` か省略）から、UTF-8 として受け取り、検証する（[task-model.md](task-model.md) §6）。
 - ticket に対応する claim が無効（lease 切れ等）の場合は終了コード 3、タスクの run が `halted` の場合は終了コード 6 を返す。
 - `--truncated` は、LLMアダプタが長さによる打ち切りを報告するために使う。
 - 標準出力：合格なら `accepted`、不合格なら `rejected` と理由。
@@ -68,6 +70,10 @@ st submit TICKET [PATH | -] [--truncated]
 st status [--run RUN_ID | --batch BATCH_ID] [--json]
 ```
 
+- 人間向けの出力は表形式とし、形式は固定しない。`--json` の出力は次の形式とし、`schemas/status.schema.json` で検証する。
+  - 引数なし：`{"runs": [{"run_id", "status", "counts": {状態: 件数}}]}`
+  - `--run`：`{"run_id", "status", "warnings": [...], "tasks": [{"task_id", "type", "state", "tries", "invalidations", "executor_id", "isolation", "error"}]}`
+  - `--batch`：Phase 2（P2-05）で定める。
 - 引数なし：run ごとの状態と、状態別のタスク数。
 - `--run`：タスクごとの状態・試行回数・無効化の回数・実行者ID・隔離の種類、manifest の warnings。
 - `--batch`：バッチの要求件数・完了数・重複数・作成数、`stalled` / `halted` の run と、`failed` のタスクの理由。
@@ -78,6 +84,15 @@ st status [--run RUN_ID | --batch BATCH_ID] [--json]
 st retry TASK_ID        # タスクIDは st status --run で確認する
 st resume --accept-harness-change RUN_ID
 ```
+
+### `st dev new-dummy`
+
+```
+st dev new-dummy [--seed N]
+```
+
+- Phase 0 の検証用に、パッケージに同梱したダミーのハーネス（`src/storyteller/dev/dummy/`）から run を作る。ダミーのハーネスの内容は [phase-0.md](../plan/phase-0.md) §「ダミーのハーネス」に従う。
+- 標準出力：作成した run ID。
 
 ### `st auto`
 
@@ -115,12 +130,12 @@ st report --batch BATCH_ID
 | コード | 意味 |
 |---|---|
 | 0 | 成功（`st submit` では合格） |
-| 1 | 引数・入力の誤り |
+| 1 | 引数・入力・設定ファイルの誤り、存在しない run・タスク、状態が対象外（例：`failed` でないタスクへの `st retry`） |
 | 2 | 実行可能なタスクがない（`st next`） |
 | 3 | claim が無効（lease 切れ・他の実行者が claim し直した・存在しない ticket） |
 | 4 | 個人情報を検出したため、取り込みを拒否した |
 | 5 | 提出した出力が検証で不合格だった（`st submit`） |
 | 6 | 対象の run が `halted`（ハーネスの変更で停止中）である（`st next --run`、`st submit`） |
-| 10 | 内部エラー |
+| 10 | 内部エラー（ロックの取得の打ち切り、manifest の不整合を含む） |
 
 不合格を 0 以外にするのは、実行者（エージェントやスクリプト）が終了コードだけで次の行動を決められるようにするためである。
