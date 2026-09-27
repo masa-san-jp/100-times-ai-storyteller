@@ -142,9 +142,9 @@ presets:
 world_sections_by_level:
   - [place]
   - [place, customs, people]
-  - [place, customs, people, organizations, social_structure]
-  - [place, customs, people, organizations, social_structure, past_events]
-  - [place, customs, people, organizations, social_structure, past_events, future]
+  - [place, customs, people, organizations, social_structure, interpretation]
+  - [place, customs, people, organizations, social_structure, interpretation, events, observation, media, past_events]
+  - [place, customs, people, organizations, social_structure, interpretation, events, observation, media, past_events, future]
 
 parts:
   min: 2

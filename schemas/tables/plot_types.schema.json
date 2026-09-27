@@ -28,10 +28,19 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["description", "stage"],
+            "required": ["description", "stages"],
             "properties": {
               "description": {"type": "string", "minLength": 1},
-              "stage": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+              "stages": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["three-beat", "kishotenketsu", "heros-journey-12"],
+                "properties": {
+                  "three-beat": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                  "kishotenketsu": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+                  "heros-journey-12": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+                }
+              }
             }
           }
         }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,23 @@ def test_scale_table_contains_all_presets_and_world_levels():
     assert len(scales["world_sections_by_level"]) == 5
 
 
+def test_world_sections_and_scale_levels_are_consistent():
+    sections = load_table("world_sections", repository_root=ROOT)["sections"]
+    scales = load_table("scales", repository_root=ROOT)
+    levels = {section["id"]: section["level"] for section in sections}
+
+    assert len(levels) == len(sections)
+    assert {"events", "observation", "interpretation", "media"} <= set(levels)
+    assert levels["interpretation"] == 2
+    assert levels["events"] == levels["observation"] == levels["media"] == 3
+
+    for level, section_ids in enumerate(scales["world_sections_by_level"]):
+        assert set(section_ids) == {
+            section_id for section_id, section_level in levels.items() if section_level <= level
+        }
+        assert len(section_ids) == len(set(section_ids))
+
+
 def test_plot_and_structure_tables_have_phase_one_shape():
     plot_types = load_table("plot_types", repository_root=ROOT)
     structures = load_table("structures", repository_root=ROOT)
@@ -85,6 +103,22 @@ def test_plot_and_structure_tables_have_phase_one_shape():
     assert len(structures["templates"]["heros-journey-12"]["stages"]) == 12
 
 
+def test_required_events_assign_a_stage_in_each_standard_template():
+    plot_types = load_table("plot_types", repository_root=ROOT)
+    structures = load_table("structures", repository_root=ROOT)
+    stage_ids = {
+        template_id: {stage["id"] for stage in template["stages"]}
+        for template_id, template in structures["templates"].items()
+    }
+    standard_template_ids = {"three-beat", "kishotenketsu", "heros-journey-12"}
+
+    for plot in plot_types["types"]:
+        for event in plot["required_events"]:
+            assert set(event["stages"]) == standard_template_ids
+            for template_id, stage_id in event["stages"].items():
+                assert stage_id in stage_ids[template_id]
+
+
 def test_name_sound_table_has_eight_sets_with_twelve_sounds_each():
     sounds = load_table("name_sounds", repository_root=ROOT)
 
@@ -110,6 +144,24 @@ def test_default_element_tables_are_japanese():
             not any(char.isascii() and char.isalpha() for char in item)
             for item in table["items"]
         )
+
+
+def test_default_element_tables_have_100_unique_items_and_normalized_uniqueness():
+    axes = ("want", "ability", "duty", "taboo", "place", "era", "object")
+    normalized_items: set[str] = set()
+
+    for axis in axes:
+        items = load_table(f"elements/{axis}", repository_root=ROOT)["items"]
+        assert len(items) == 100
+        assert len(set(items)) == 100
+
+        start = 8 if axis in {"want", "ability", "duty"} else 0
+        assert all(10 <= len(item) <= 40 for item in items[start:])
+
+        for item in items:
+            normalized = "".join(unicodedata.normalize("NFKC", item).split())
+            assert normalized not in normalized_items
+            normalized_items.add(normalized)
 
 
 def test_unknown_table_name_is_rejected():

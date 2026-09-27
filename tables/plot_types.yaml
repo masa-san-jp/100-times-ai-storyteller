@@ -5,151 +5,151 @@ types:
     structure: standard
     required_events:
       - description: 日常を離れる理由となる呼びかけが起こる。
-        stage: call-to-adventure
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 旅の途中で目的を試す障害と仲間との関係が生じる。
-        stage: trials
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
       - description: 旅で得たものを帰還後の世界で活かす選択をする。
-        stage: return-with-elixir
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
   - id: overcoming-the-monster
     name: モンスターを倒す
     core: 主人公が共同体を脅かす敵対的な力に立ち向かい、生存と変化を勝ち取る。
     structure: standard
     required_events:
       - description: 脅威の存在と被害が明らかになる。
-        stage: call-to-adventure
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: call-to-adventure}
       - description: 主人公が脅威の中心へ近づき、最大の危険に直面する。
-        stage: approach
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
       - description: 脅威との対決の結果として新しい秩序を選ぶ。
-        stage: resurrection
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
   - id: rags-to-riches
     name: 成り上がり
     core: 欠落した立場にいる主人公が能力と関係を得て、社会での位置を変える。
     structure: standard
     required_events:
       - description: 主人公の低い立場と満たされない願望が示される。
-        stage: ordinary-world
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 主人公の努力が認められ、立場を変える機会が訪れる。
-        stage: reward
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: reward}
       - description: 得た立場を何のために使うかを選び直す。
-        stage: return-with-elixir
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
   - id: rebirth
     name: 再生
     core: 固着した生き方に囚われた主人公が試練を経て、別の価値観で生き直す。
     structure: standard
     required_events:
       - description: 主人公が変われない状態とその代償が示される。
-        stage: ordinary-world
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 古い生き方を守れない危機に直面する。
-        stage: ordeal
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal}
       - description: 主人公が新しい理解を行動として選ぶ。
-        stage: resurrection
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
   - id: romance
     name: ラブストーリー
     core: 異なる願望を持つ二人が障害を越え、関係を結ぶか手放すかを選ぶ。
     structure: standard
     required_events:
       - description: 二人が出会い、互いの願望と違いが見える。
-        stage: call-to-adventure
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 関係を阻む規則や誤解が表面化する。
-        stage: trials
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
       - description: 二人が関係の形と代償を自分たちで選ぶ。
-        stage: resurrection
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
   - id: mystery-crime
     name: ミステリー／犯罪
     core: 隠された事実を追う主人公が手がかりと危険を積み重ね、真相に到達する。
     structure: standard
     required_events:
       - description: 解明すべき事件または不可解な痕跡が発見される。
-        stage: call-to-adventure
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 手がかりが既存の理解を反転させ、真相の危険が近づく。
-        stage: approach
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
       - description: 真相を示す証拠と、それを受け止める結果が現れる。
-        stage: reward
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: reward}
   - id: tragedy
     name: 悲劇
     core: 主人公が自らの願望や選択に囚われ、回避できたはずの喪失へ進んでいく。
     structure: standard
     required_events:
       - description: 主人公の強い願望と、それを歪める欠落が示される。
-        stage: ordinary-world
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 警告や支援を退け、破局へ向かう選択をする。
-        stage: refusal
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: refusal}
       - description: 選択の代償が決定的な喪失として現れる。
-        stage: ordeal
+        stages: {three-beat: resolution, kishotenketsu: ten, heros-journey-12: ordeal}
   - id: voyage-and-return
     name: 帰還
     core: 主人公が異質な世界で試練を経験し、元の世界を新しい目で見直して帰る。
     structure: standard
     required_events:
       - description: 主人公が日常から離れ、異質な環境へ入る。
-        stage: threshold
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: threshold}
       - description: 異質な環境の規則と危険を知り、帰還の手段を探す。
-        stage: trials
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
       - description: 得た視点を持って日常へ戻り、周囲の意味を変える。
-        stage: return-with-elixir
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
   - id: comedy
     name: コメディ
     core: 誤解と関係のもつれが連鎖し、固定された立場がほどけて新しい結びつきに至る。
     structure: standard
     required_events:
       - description: 人物の思い込みや関係のずれが発端になる。
-        stage: ordinary-world
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 誤解が重なり、人物が自分の前提を疑う転換が起こる。
-        stage: trials
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
       - description: 誤解がほどけ、人物同士の関係が組み替えられる。
-        stage: return-with-elixir
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
   - id: survival-dystopia
     name: サバイバル／ディストピア
     core: 制約の強い社会で主人公が生存のために動き、支配の仕組みを問い直す。
     structure: standard
     required_events:
       - description: 生存を脅かす社会の規則と不足が示される。
-        stage: ordinary-world
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 主人公が支配の中心へ近づき、生存と抵抗の代償を知る。
-        stage: approach
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
       - description: 生き残った者たちが新しい秩序の可能性を選ぶ。
-        stage: resurrection
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
   - id: revenge
     name: 復讐
     core: 喪失を受けた主人公が加害の構造を追い、報復の代償と自分の選択に向き合う。
     structure: standard
     required_events:
       - description: 復讐を駆動する喪失と標的が明らかになる。
-        stage: call-to-adventure
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 復讐の過程で、主人公自身が越えてはいけない線に近づく。
-        stage: approach
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
       - description: 報復の結果を受け、復讐を続けるか終えるかを選ぶ。
-        stage: resurrection
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
   - id: conspiracy-political-drama
     name: 陰謀・政治劇
     core: 主人公が権力と情報の絡む陰謀を追い、誰に何を委ねるかを決める。
     structure: standard
     required_events:
       - description: 公に見える秩序の裏に別の意図がある兆候をつかむ。
-        stage: call-to-adventure
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 同盟と裏切りの中で、権力の中心へ接近する。
-        stage: trials
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
       - description: 真相を公にするか利用するかの決断を下す。
-        stage: resurrection
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
   - id: human-drama
     name: 人間ドラマ
     core: 人物たちが身近な関係の中で異なる願望と責任を受け止め、共に変化する。
     structure: standard
     required_events:
       - description: 人物の日常と、関係に蓄積した未解決の課題が示される。
-        stage: ordinary-world
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 課題を避けられない出来事が起こり、関係の真意が試される。
-        stage: trials
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
       - description: 人物たちが関係の形とこれからの責任を選ぶ。
-        stage: return-with-elixir
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
   - id: philosophical-existential
     name: 哲学的／存在論的
     core: 主人公が世界の意味や自分の存在を問い直し、選んだ生き方とその責任を引き受ける。
     structure: standard
     required_events:
       - description: 主人公が自分の存在や世界の意味に疑問を抱く契機が示される。
-        stage: ordinary-world
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 既成の答えを失った主人公が、自由に選ぶこととその責任の重さに直面する。
-        stage: ordeal
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal}
       - description: 主人公が唯一の答えに頼らず、自ら選んだ意味と生き方を引き受ける。
-        stage: resurrection
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
