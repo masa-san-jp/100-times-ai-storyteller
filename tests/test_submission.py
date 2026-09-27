@@ -59,7 +59,9 @@ def test_submit_uses_the_truncated_card_input_and_records_rejection(tmp_path: Pa
     claimed = orchestrator.claim_next(run_id, executor_id="worker")
     assert claimed is not None
     task_dir = tmp_path / "runs" / run_id / "tasks" / "D1.echo"
-    assert json.loads((task_dir / "input.json").read_text()) == {"given": "abcdefg"}
+    assert json.loads((task_dir / "input.json").read_text(encoding="utf-8")) == {
+        "given": "abcdefg"
+    }
 
     rejected = orchestrator.submit(
         claimed["ticket"],
@@ -72,7 +74,9 @@ def test_submit_uses_the_truncated_card_input_and_records_rejection(tmp_path: Pa
     assert task["tries"] == 1
     assert task["attempt"] == 1
     assert "sources_exist" in task["error"]
-    assert json.loads((task_dir / "attempts" / "1.json").read_text())["output"]
+    assert json.loads(
+        (task_dir / "attempts" / "1.json").read_text(encoding="utf-8")
+    )["output"]
 
     replacement = orchestrator.claim_next(run_id, executor_id="worker-2")
     assert replacement is not None
@@ -297,10 +301,14 @@ def test_invalidation_limit_keeps_output_and_dependents_unchanged(
 
     assert task["state"] == "failed"
     assert task["error"] == "上限超過"
-    assert json.loads((target_dir / "output.json").read_text()) == {"text": "one"}
+    assert json.loads(
+        (target_dir / "output.json").read_text(encoding="utf-8")
+    ) == {"text": "one"}
     assert result["tasks"]["D2.after"]["state"] == "done"
     assert json.loads(
-        (tmp_path / "runs" / run_id / "tasks" / "D2.after" / "output.json").read_text()
+        (tmp_path / "runs" / run_id / "tasks" / "D2.after" / "output.json").read_text(
+            encoding="utf-8"
+        )
     ) == {"text": "two"}
 
 
@@ -362,9 +370,11 @@ def test_rejected_submission_uses_unused_attempt_number_and_removes_claim(
     assert manifest["tasks"]["D1.echo"]["state"] == "failed"
     assert not (task_dir / "claim.json").exists()
     assert not (task_dir / "output.json").exists()
-    attempt = json.loads((task_dir / "attempts" / "2.json").read_text())
+    attempt = json.loads(
+        (task_dir / "attempts" / "2.json").read_text(encoding="utf-8")
+    )
     assert attempt["tries"] == manifest["tasks"]["D1.echo"]["tries"]
-    assert (task_dir / "attempts" / "1.json").read_text() == "old"
+    assert (task_dir / "attempts" / "1.json").read_text(encoding="utf-8") == "old"
 
 
 def test_proper_noun_warning_is_task_prefixed_only_after_pass(tmp_path: Path) -> None:
