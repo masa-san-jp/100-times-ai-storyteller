@@ -76,10 +76,10 @@ P1-11 + P1-12 + P1-13 → P1-15
 | manifest の `table_snapshot` | `{要素の軸: 増補テーブルの行数}`。Phase 1 は増補テーブルがないため、すべて0 |
 | `tables/scales.yaml` | `axes`（規模の軸ごとの値の列）、`level_min_events`（`[3, 6, 12, 24, 36]`）、`presets`（ID ごとに名前・軸の値・出来事数の範囲）、`world_sections_by_level`（段階ごとのセクションID）、`parts`（`min: 2, max: 6, default: [2, 4]`）、`subthread_events`（`[4, 6]`）、`input_ratio`（`[0.5, 0.9]`）、`candidate_multiplier`（3） |
 | `tables/structures.yaml` | `templates`：ID ごとに `stages`（`id`・`name`・`definition`・`weight`・`roles`・`absent_role_note`・`world_sections`・`object`） |
-| `tables/plot_types.yaml` | `types`：`id`・`name`・`core`・`structure`・`required_events`（`description`・`stage`）。Phase 1 は `structure: standard` の14型だけを置き、P2-08 で7型を加える |
+| `tables/plot_types.yaml` | `types`：`id`・`name`・`core`・`structure`・`required_events`（`description`・`stages`：標準の3テンプレートそれぞれで割り当てる段階 `{three-beat, kishotenketsu, heros-journey-12}`）。Phase 1 は `structure: standard` の14型だけを置き、P2-08 で7型を加える |
 | `tables/world_sections.yaml` | `sections`：`id`・`name`・`definition`・`viewpoints`・`level`（規模の段階。`level` が n 以下のものを生成する） |
 | `tables/element_axes.yaml` | `axes`：`key`・`name`・`definition` |
-| `tables/elements/<axis>.yaml` | `items`：文字列の配列。ID は `<axis>:t<1から始まる行番号>` |
+| `tables/elements/<axis>.yaml` | `items`：文字列の配列（各軸100件）。ID は `<axis>:t<1から始まる行番号>`。表層から深層まで、また観点（身体・精神・社会・特殊、など軸に応じたもの）を散らして書き、似た要素を並べない |
 | `tables/name_sounds.yaml` | `sets`：`id`・`description`・`sounds`（カタカナの音節、12個以上） |
 | `tables/common_words.yaml` | `words`：文字列の配列 |
 | `config/models.yaml` | `models`：モデル名ごとに `provider`・`endpoint`（既定 `http://127.0.0.1:11434`）・`temperature`・`max_tokens`・`context_length`・`json_mode` |

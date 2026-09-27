@@ -29,7 +29,7 @@
 | 要素テーブル既定値（能力・願望・役割。年齢・性別・種族は取り込まない） | heroes `LocalStorage.DEFAULT_SEEDS` | `tables/elements/`（[spec/story-pipeline.md](spec/story-pipeline.md) §3） |
 | 対極要素によるテーブルの自己増殖 | heroes「対になるキャラクター」 | [spec/story-pipeline.md](spec/story-pipeline.md) S2 |
 | 1出力1項目のプロンプト形式（「名前のみを出力」「1文のみ」） | heroes | [spec/task-model.md](spec/task-model.md) |
-| 世界の観点（社会構造・組織・生活・人々・過去の出来事・未来） | heros-journey 世界生成, world-building Phase 3 | `tables/world_sections.yaml` |
+| 世界の観点（世界の法則・観測・解釈・記録の媒体・社会構造・組織・生活・人々・過去の出来事・未来） | heros-journey 世界生成, world-building Phase 3（events・observation・interpretation・media を含む） | `tables/world_sections.yaml` |
 | 入力を直接引用せず抽象的に再構築する指示 | world-building Phase 1 | [spec/story-pipeline.md](spec/story-pipeline.md) S1 |
 | 長いリストの分割生成（1回20件） | world-building Phase 1 | [spec/task-model.md](spec/task-model.md) |
 | run_manifest、request ごとの派生seed、原子的な書き込み、中断した run の検出 | world-building run_manifest.py | [spec/data-layout.md](spec/data-layout.md) |
