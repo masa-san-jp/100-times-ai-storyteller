@@ -31,7 +31,9 @@ def test_missing_relative_file_and_image_are_reported(tmp_path: Path) -> None:
     assert "images/missing.png" in violations[1].message
 
 
-def test_external_and_anchor_links_do_not_require_local_files(tmp_path: Path) -> None:
+def test_external_and_anchor_links_do_not_require_local_files(
+    tmp_path: Path, monkeypatch
+) -> None:
     write_document(
         tmp_path / "README.md",
         "[external](https://example.com/no-file)\n"
@@ -40,6 +42,8 @@ def test_external_and_anchor_links_do_not_require_local_files(tmp_path: Path) ->
         "[network](//example.com/no-file)\n"
         "[absolute](/no-file)\n",
     )
+
+    monkeypatch.setattr(Path, "is_absolute", lambda self: False)
 
     assert check_docs(tmp_path) == []
 

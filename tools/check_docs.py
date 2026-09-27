@@ -127,7 +127,7 @@ def _check_links(root: Path, path: Path) -> list[Violation]:
                 continue
             if _SCHEME_RE.match(destination):
                 continue
-            if Path(destination).is_absolute():
+            if destination.startswith("/"):
                 continue
 
             destination = destination.split("#", 1)[0]
