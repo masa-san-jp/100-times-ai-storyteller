@@ -12,6 +12,9 @@ from typing import Any
 
 from .adapter import register_auto_command
 from .dev.dummy import create_dummy_orchestrator
+from .input_data import PersonalInformationError
+from .new_run import create_free_run, create_story_orchestrator
+from .manifest import load_manifest
 from .orchestrator import (
     ClaimError,
     HaltedRunError,
@@ -30,6 +33,7 @@ EXIT_INVALID_CLAIM = 3
 EXIT_REJECTED = 5
 EXIT_HALTED = 6
 EXIT_INTERNAL = 10
+EXIT_PERSONAL_INFORMATION = 4
 
 
 class CliArgumentParser(argparse.ArgumentParser):
@@ -95,6 +99,17 @@ def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
 
     register_cli_commands(subparsers)
 
+    new_parser = subparsers.add_parser("new", help="create a story run")
+    input_group = new_parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--narrative")
+    input_group.add_argument("--free")
+    new_parser.add_argument("--scale", required=True)
+    new_parser.add_argument("--axis", action="append", default=[])
+    new_parser.add_argument("--parts", type=int)
+    new_parser.add_argument("--count", type=int)
+    new_parser.add_argument("--seed", type=int)
+    new_parser.add_argument("--plot-type")
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the ``st`` command-line parser."""
@@ -118,7 +133,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "dev" and args.dev_command is None:
             raise CliArgumentError("dev のサブコマンドが必要です")
         return _run_command(args)
-    except CliArgumentError:
+    except CliArgumentError as error:
+        _print_error(error)
         return EXIT_ERROR
     except HaltedRunError as error:
         _print_error(error)
@@ -126,6 +142,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except InvalidClaimError as error:
         _print_error(error)
         return EXIT_INVALID_CLAIM
+    except PersonalInformationError as error:
+        _print_error(error)
+        return EXIT_PERSONAL_INFORMATION
     except LockTimeoutError as error:
         _print_error(error)
         return EXIT_INTERNAL
@@ -154,6 +173,8 @@ def _run_command(args: argparse.Namespace) -> int:
         return _retry(args)
     if args.command == "resume":
         return _resume(args)
+    if args.command == "new":
+        return _new(args)
     if args.command == "dev" and args.dev_command == "new-dummy":
         return _new_dummy(args)
     raise CliArgumentError("command is required")
@@ -163,8 +184,58 @@ def _data_dir() -> Path:
     return resolve_data_dir()
 
 
-def _orchestrator(data_dir: Path):
+def _orchestrator(data_dir: Path, run_id: str | None = None):
+    if run_id is None:
+        run_id = _active_story_run_id(data_dir)
+    if run_id is not None and _is_story_run(data_dir, run_id):
+        return create_story_orchestrator(data_dir)
     return create_dummy_orchestrator(data_dir)
+
+
+def _is_story_run(data_dir: Path, run_id: str) -> bool:
+    try:
+        manifest = load_manifest(data_dir / "runs" / run_id / "manifest.json")
+    except (FileNotFoundError, OSError, ValueError):
+        return False
+    return any(task.get("type", "").startswith("S1.") for task in manifest["tasks"].values())
+
+
+def _active_story_run_id(data_dir: Path) -> str | None:
+    runs_dir = data_dir / "runs"
+    if not runs_dir.is_dir():
+        return None
+    candidates: list[tuple[str, str]] = []
+    for entry in runs_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            manifest = load_manifest(entry / "manifest.json")
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+        if manifest["status"] in {"active", "stalled"} and any(
+            task.get("type", "").startswith("S1.")
+            for task in manifest["tasks"].values()
+        ):
+            candidates.append((manifest["created_at"], manifest["run_id"]))
+    return min(candidates)[1] if candidates else None
+
+
+def _orchestrator_for_ticket(data_dir: Path, ticket: str):
+    runs_dir = data_dir / "runs"
+    if runs_dir.is_dir():
+        for entry in runs_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            try:
+                manifest = load_manifest(entry / "manifest.json")
+            except (FileNotFoundError, OSError, ValueError):
+                continue
+            if any(
+                (task.get("claim") or {}).get("ticket") == ticket
+                for task in manifest["tasks"].values()
+            ):
+                return _orchestrator(data_dir, manifest["run_id"])
+    return _orchestrator(data_dir)
 
 
 def _workspace_settings() -> tuple[str | None, str]:
@@ -187,7 +258,7 @@ def _next(args: argparse.Namespace) -> int:
     executor_id = (
         args.executor_id if args.executor_id is not None else configured_executor
     )
-    orchestrator = _orchestrator(data_dir)
+    orchestrator = _orchestrator(data_dir, args.run_id)
     deadline = time.monotonic() + args.wait
     while True:
         result = orchestrator.claim_next(
@@ -220,7 +291,7 @@ def _read_submit_input(path: str) -> str:
 def _submit(args: argparse.Namespace) -> int:
     data_dir = _data_dir()
     raw_output = _read_submit_input(args.path)
-    orchestrator = _orchestrator(data_dir)
+    orchestrator = _orchestrator_for_ticket(data_dir, args.ticket)
     result = orchestrator.submit(
         args.ticket,
         raw_output,
@@ -346,6 +417,36 @@ def _new_dummy(args: argparse.Namespace) -> int:
     run_id = _orchestrator(data_dir).create_run(
         task_specs=[{"task_id": "D1.items", "type": "D1.items"}],
         seed=args.seed,
+    )
+    print(run_id)
+    return EXIT_OK
+
+
+def _new(args: argparse.Namespace) -> int:
+    if args.narrative is not None:
+        raise CliArgumentError("P1-02 では --free のみ対応しています")
+    if args.scale not in {"vignette", "short"}:
+        raise CliArgumentError("この規模プリセットは Phase 2 で対応します")
+    if args.count not in {None, 1}:
+        raise CliArgumentError("--count は Phase 2 で対応します")
+    overrides: dict[str, str] = {}
+    for raw_override in args.axis:
+        if "=" not in raw_override:
+            raise CliArgumentError("--axis は NAME=VALUE で指定してください")
+        name, value = raw_override.split("=", 1)
+        if not name or not value or name in overrides:
+            raise CliArgumentError("--axis は異なる NAME=VALUE を指定してください")
+        overrides[name] = value
+    repository_root = Path(__file__).resolve().parents[2]
+    run_id = create_free_run(
+        _data_dir(),
+        args.free,
+        preset=args.scale,
+        axis_overrides=overrides,
+        seed=args.seed,
+        parts=args.parts,
+        plot_type=args.plot_type,
+        repository_root=repository_root,
     )
     print(run_id)
     return EXIT_OK

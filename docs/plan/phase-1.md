@@ -76,6 +76,7 @@ P1-11 + P1-12 + P1-13 → P1-15
 |---|---|
 | `input.json`（自由入力） | `{"kind": "free", "source_sha256": 文字列, "paragraphs": [{"id": "p001", "text": 文字列}]}`。段落の分割は input §3。1200字を超える段落は、1200字以内で最後の文末記号（`。！？!?.`）の直後で分け、文末記号がなければ1200字で分ける |
 | manifest の `scale` | `{"preset": 文字列, "axes": {軸: 値}, "overrides": {軸: 値}, "derived": {"events": 整数, "threads": 整数, "cast": 整数, "parts": 整数または null, "world_sections": [セクションID], "pool_need": {要素の軸: 整数}}}` |
+| manifest の `input` | `{"kind": "free", "source_sha256": 文字列, "plot_type": `--plot-type` の値または null}` |
 | manifest の `table_snapshot` | `{要素の軸: 増補テーブルの行数}`。Phase 1 は増補テーブルがないため、すべて0 |
 | `tables/scales.yaml` | `axes`（規模の軸ごとの値の列）、`level_min_events`（`[3, 6, 12, 24, 36]`）、`presets`（ID ごとに名前・軸の値・出来事数の範囲）、`world_sections_by_level`（段階ごとのセクションID）、`parts`（`min: 2, max: 6, default: [2, 4]`）、`subthread_events`（`[4, 6]`）、`input_ratio`（`[0.5, 0.9]`）、`candidate_multiplier`（3）、`world_counts`（一覧型のセクションごと・規模ごとの件数） |
 | `tables/structures.yaml` | `templates`：ID ごとに `stages`（`id`・`name`・`definition`・`guidance`・`act`・`weight`・`roles`・`absent_role_note`・`world_sections`・`object`・`climax`） |
