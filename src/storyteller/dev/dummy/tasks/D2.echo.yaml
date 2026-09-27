@@ -1,0 +1,24 @@
+id: D2.echo
+version: 1
+kind: llm
+output: json
+inputs:
+  item:
+    label: 項目
+    from: D1.items
+    select: items[{slot}]
+    required: true
+card:
+  role: 与えられた1件の項目について短い確認文を書く。
+  steps:
+    - 項目の text を使って短い確認文を書く。
+    - 使った項目の id を sources に1件だけ書く。
+  output_example: '{"text": "...", "sources": ["d1"]}'
+validate:
+  schema: schemas/d2.echo.schema.json
+  checks:
+    - sources_exist
+    - max_chars:
+        field: text
+        n: 50
+lease_minutes: 0.05

@@ -334,7 +334,7 @@ def _resume(args: argparse.Namespace) -> int:
 def _new_dummy(args: argparse.Namespace) -> int:
     data_dir = _data_dir()
     run_id = _orchestrator(data_dir).create_run(
-        task_specs=[{"task_id": "D1.echo", "type": "D1.echo"}],
+        task_specs=[{"task_id": "D1.items", "type": "D1.items"}],
         seed=args.seed,
     )
     print(run_id)

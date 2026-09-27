@@ -136,6 +136,13 @@ def _read_index(
         raise SelectorError(f"invalid selector index: {expression!r}")
     try:
         position: int | str = int(token) if _INTEGER.fullmatch(token) else token
+        if isinstance(position, str) and isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, bytearray)
+        ):
+            for item in value:
+                if isinstance(item, Mapping) and item.get("id") == position:
+                    return item
+            raise KeyError(position)
         return value[position]  # type: ignore[index]
     except (IndexError, KeyError, TypeError) as error:
         raise SelectorError(f"selector value does not exist: {expression!r}") from error

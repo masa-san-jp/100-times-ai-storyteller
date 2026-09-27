@@ -1,0 +1,22 @@
+id: D4.story
+version: 1
+kind: llm
+output: text
+inputs:
+  responses:
+    label: 確認文
+    from: D2.echo
+    select: output
+    required: true
+card:
+  role: 与えられた確認文だけをまとめて本文を書く。
+  steps:
+    - 入力の確認文をすべて使って、10文字以上の本文を書く。
+    - 本文の最後を完結した文にする。
+validate:
+  checks:
+    - ends_complete
+    - min_chars:
+        n: 10
+continuation: true
+lease_minutes: 0.05
