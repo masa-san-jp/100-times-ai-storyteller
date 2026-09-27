@@ -62,7 +62,7 @@ st submit TICKET [PATH | -] [--truncated]
 - 出力を、PATH（カレントディレクトリからの相対パスまたは絶対パス）、または標準入力（PATH が `-` か省略）から、UTF-8 として受け取り、検証する（[task-model.md](task-model.md) §6）。
 - ticket に対応する claim が無効（lease 切れ等）の場合は終了コード 3、タスクの run が `halted` の場合は終了コード 6 を返す。
 - `--truncated` は、LLMアダプタが長さによる打ち切りを報告するために使う。
-- 標準出力：合格なら `accepted`、不合格なら `rejected` と理由。
+- 標準出力：合格なら `accepted`、不合格なら `rejected` と理由、長文の途中として受け付けた場合は `continued`（[task-model.md](task-model.md) §8。終了コード 0。続きは次の `st next` で同じタスクの継続のカードとして渡される）。
 
 ### `st status`
 
