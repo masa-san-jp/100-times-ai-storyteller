@@ -36,3 +36,64 @@ P1-01 → P1-02 → P1-03 → P1-04 → P1-05 → (P1-06 ∥ P1-07) → P1-08 �
 P1-12, P1-13 は P0-15 の後、S 系列と並行して進められる
 P1-11 + P1-12 + P1-13 → P1-15
 ```
+
+## 素材の書き手とレビュー
+
+- テーブルの行（プロット型の中身、要素、名前の音など）と、タスク定義のカードの文面（`card.role`・`card.steps`）は、物語の素材そのものである。これらは、各作業項目の中で実装者が、LINEAGE.md の出典と spec の原則（P1〜P5）に従って書く。
+- 書いたファイルが原本になる（[docs/README.md](../README.md) §2.1）。オーケストレータがレビューし、テーブル（P1-01）は所有者も一度確認する。
+- 各テーブル・各タスクの出力の JSON Schema は、spec に列挙した項目をそのまま形式にしたものとし、実装者が書き、オーケストレータがレビューする。spec にない項目を加えない。
+
+## Phase 1 の DAG
+
+自由入力の run は、次のタスクで構成する。`[C]` はコードタスク、`[L]` は LLM タスク。
+
+| タスク | kind | 依存 | 作るもの |
+|---|---|---|---|
+| `S1.extract-p<3桁>` | L | — | 段落ごとの素材 |
+| `S2.plan` | C | S1 すべて | S2.expand と S2.merge を追加 |
+| `S2.expand-m<3桁>-<axis>` | L | S2.plan | 要素5件と対極要素 |
+| `S2.merge` | C | S2.expand すべて | 入力由来プール（ID つき） |
+| `S3.assign` | C | S2.merge | assignment。S4・S5・S6 を追加 |
+| `S4.section-<section id>` | L | S3.assign | 世界セクション |
+| `S5.name-c<n>` | L | S3.assign | 名前 |
+| `S5.profile-c<n>` | L | S5.name-c<n> | プロフィール |
+| `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて | 動機 |
+| `S6.expand` | C | S4 すべて、S5.motive すべて | slots。S7・S8・S9 を追加 |
+| `S7.event-e<3桁>` | L | S6.expand、同じ筋の直前のスロットの S8.judge | 出来事 |
+| `S8.compare-e<3桁>-k<n>` | L | そのスロットと比較対象の S7 | 矛盾の有無 |
+| `S8.judge-e<3桁>` | C | そのスロットの S8.compare すべて（比較対象がなければ S7） | 必要なら S7 を無効化 |
+| `S9.assemble` | C | S8.judge すべて | story.json、story.md |
+
+- S0 はタスクではなく、`st new` の中で同期的に行う（入力の検証・正規化・規模の計算・manifest と最初のタスクの作成）。
+- Phase 1 では `candidates: 1` のため、候補を選ぶタスクはない。S2 の run 間共有と増補テーブルへの追記は行わない（P2-04）。
+
+## ファイル形式
+
+| ファイル | 形式 |
+|---|---|
+| `input.json`（自由入力） | `{"kind": "free", "source_sha256": 文字列, "paragraphs": [{"id": "p001", "text": 文字列}]}`。段落の分割は input §3。1200字を超える段落は、1200字以内で最後の文末記号（`。！？!?.`）の直後で分け、文末記号がなければ1200字で分ける |
+| manifest の `scale` | `{"preset": 文字列, "axes": {軸: 値}, "overrides": {軸: 値}, "derived": {"events": 整数, "threads": 整数, "cast": 整数, "parts": 整数または null, "world_sections": [セクションID], "pool_need": {要素の軸: 整数}}}` |
+| manifest の `table_snapshot` | `{要素の軸: 増補テーブルの行数}`。Phase 1 は増補テーブルがないため、すべて0 |
+| `tables/scales.yaml` | `axes`（規模の軸ごとの値の列）、`level_min_events`（`[3, 6, 12, 24, 36]`）、`presets`（ID ごとに名前・軸の値・出来事数の範囲）、`world_sections_by_level`（段階ごとのセクションID）、`parts`（`min: 2, max: 6, default: [2, 4]`）、`subthread_events`（`[4, 6]`）、`input_ratio`（`[0.5, 0.9]`）、`candidate_multiplier`（3） |
+| `tables/structures.yaml` | `templates`：ID ごとに `stages`（`id`・`name`・`definition`・`weight`・`roles`・`absent_role_note`・`world_sections`・`object`） |
+| `tables/plot_types.yaml` | `types`：`id`・`name`・`core`・`structure`・`required_events`（`description`・`stage`）。Phase 1 は `structure: standard` の14型だけを置き、P2-08 で7型を加える |
+| `tables/world_sections.yaml` | `sections`：`id`・`name`・`definition`・`viewpoints`・`level`（規模の段階。`level` が n 以下のものを生成する） |
+| `tables/element_axes.yaml` | `axes`：`key`・`name`・`definition` |
+| `tables/elements/<axis>.yaml` | `items`：文字列の配列。ID は `<axis>:t<1から始まる行番号>` |
+| `tables/name_sounds.yaml` | `sets`：`id`・`description`・`sounds`（カタカナの音節、12個以上） |
+| `tables/common_words.yaml` | `words`：文字列の配列 |
+| `config/models.yaml` | `models`：モデル名ごとに `provider`・`endpoint`（既定 `http://127.0.0.1:11434`）・`temperature`・`max_tokens`・`context_length`・`json_mode` |
+| `adapters/state.json` | `{"models": {モデル名: {"json_mode": 値, "empty_streak": 整数}}}`。更新は `adapters.lock`（data-layout §5 のロック）を取ってから行う。`empty_streak` はプロセスをまたいでモデル単位で数え、空でない応答で0に戻す |
+
+## 作業項目ごとの決定事項
+
+| 作業項目 | 決定事項 |
+|---|---|
+| P1-02 | 規模の派生値の計算は5つのプリセットすべてについて実装する。`st new` が受け付けるプリセットは Phase 1 では `vignette` と `short` だけとし、他は終了コード 1（「Phase 2 で対応」と表示） |
+| P1-05 | 受け入れ条件の「別の seed で別の割当」は、10個の異なる seed の割当がすべて同一にはならないことで確認する |
+| P1-09 | 受け入れ条件の「入力が限られている」は、S7 のカードに、story-pipeline S7 に列挙した入力以外（直前以外の出来事、割り当てていない人物、3件目以降の世界セクション）が含まれないことで確認する |
+| P1-11 | 受け入れ条件に、正本のすべての ID 参照（`who`・`thread`・`sources`）が正本の中に実在することの検査を加える。`story.md` は、題（プロット型の名前と主人公の名前から作る）、登場人物の一覧、世界の一覧、出来事の順に並べ、出来事は「<when>、<where>で、<who の名前>が、<why>ために、<what>。その結果、<result>。」の文型で書く |
+| P1-12 | Claude Code は、ワークスペースの `.claude/settings.json` の権限設定で、`st next`・`st submit` の実行とワークスペース内の `out.txt` の書き込みだけを許可し、それ以外の読み取りを拒否する。Codex は、読み取りを拒否する設定がない場合、隔離の種類を `placement` とする。検証は、各エージェントを非対話モードでワークスペースから起動し、リポジトリの `AGENTS.md` を読むよう指示して、拒否されることを確かめる。使った製品のバージョンと設定を architecture §4 に記録する |
+| P1-13 | Ollama には `POST /api/chat` に `{"model", "messages": [{"role": "user", "content": カード}], "stream": false, "format": スキーマ・"json"・省略, "options": {"temperature", "num_predict", "num_ctx"}}` を送り、`message.content` を提出する。`done_reason` が `length` のときは `--truncated` を付ける。接続エラー・HTTP エラーは3回まで再試行し、なお失敗した場合は提出せずに claim を lease 切れに任せ、次のタスクに進む |
+| P1-14 | 誤検出率は、P1-15 の run（3本以上）の `warn` の記録について、オーケストレータが各候補を固有名詞か否か判定して求める。タスク種別ごとに「誤検出を1つ以上含む出力の数 ÷ 出力の数」とし、出力が20以上あり5%未満の種別を `fail` に切り替える。判定結果はプルリクエストに記録する |
+| P1-15 | ローカルモデルは Ollama の `gpt-oss:20b`。入力は開発者が書いた自由入力 `examples/inputs/free-01.md`（3〜5段落、個人情報を含まない）。規模は `short`。完走の判定は、run が `completed` で、正本がスキーマと ID 参照の検査に通り、出来事数が派生値の範囲内であること。Claude Code と Codex の完走は、オーケストレータが実行者ワークスペースから非対話モードで起動して確かめる |
