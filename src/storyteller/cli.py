@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from .adapter import register_auto_command
 from .dev.dummy import create_dummy_orchestrator
 from .orchestrator import (
     ClaimError,
@@ -59,6 +60,7 @@ def _configure_stdio() -> None:
 
 def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
     subparsers = parser.add_subparsers(dest="command", title="commands")
+    register_auto_command(subparsers)
 
     next_parser = subparsers.add_parser("next", help="claim and print one task card")
     next_parser.add_argument("--run", dest="run_id")
@@ -134,6 +136,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _run_command(args: argparse.Namespace) -> int:
+    command_handler = getattr(args, "_command_handler", None)
+    if command_handler is not None:
+        return command_handler(args)
     if args.command == "next":
         return _next(args)
     if args.command == "submit":
