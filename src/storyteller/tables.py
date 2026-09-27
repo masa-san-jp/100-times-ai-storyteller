@@ -45,6 +45,14 @@ _TABLE_SPECS: dict[str, tuple[Path, Path]] = {
         Path("tables/common_words.yaml"),
         _TABLE_SCHEMA_ROOT / "common_words.schema.json",
     ),
+    "roles": (
+        Path("tables/roles.yaml"),
+        _TABLE_SCHEMA_ROOT / "roles.schema.json",
+    ),
+    "cliches": (
+        Path("tables/cliches.yaml"),
+        _TABLE_SCHEMA_ROOT / "cliches.schema.json",
+    ),
 }
 _ELEMENT_SCHEMA = _TABLE_SCHEMA_ROOT / "elements.schema.json"
 
@@ -90,18 +98,40 @@ def load_element_table(
     axis: str,
     *,
     repository_root: str | Path | None = None,
-) -> dict[str, list[str]]:
+) -> dict[str, list[dict[str, str]]]:
     """Read and validate the default element table for ``axis``."""
 
     value = load_table(f"elements/{axis}", repository_root=repository_root)
     return value
 
 
+def element_id(axis: str, row_number: int) -> str:
+    """Return the stable default-table ID for a one-based row number."""
+
+    if not axis.isidentifier() or row_number < 1:
+        raise ValueError("axis must be an identifier and row_number must be positive")
+    return f"{axis}:t{row_number}"
+
+
+def element_rows(
+    axis: str,
+    *,
+    repository_root: str | Path | None = None,
+) -> tuple[dict[str, str | None], ...]:
+    """Return element rows with IDs derived from their immutable row numbers."""
+
+    table = load_element_table(axis, repository_root=repository_root)
+    return tuple(
+        {"id": element_id(axis, index), **row}
+        for index, row in enumerate(table["items"], start=1)
+    )
+
+
 def load_all_tables(
     *,
     repository_root: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Read and validate every default table, including all seven axes.
+    """Read and validate every default table, including all ten axes.
 
     The result uses the non-element table names as keys and stores element
     tables below ``elements`` keyed by their axis.  In particular, the axis

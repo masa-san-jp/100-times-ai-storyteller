@@ -4,156 +4,213 @@ templates:
       - id: setup
         name: 導入
         definition: 主人公の日常と未解決の課題を示し、物語が始まる前の状態を基準点として置く。
+        guidance: 欠点や不満、未解決の課題を示し、骨子Aの日常の世界と主人公の欠落、変化の前の基準点を具体化する。
+        act: 1
         weight: 1
         roles: [protagonist]
         absent_role_note: 主人公が不在なら、中心となる視点人物の課題を場面の変化として示す。
         world_sections: [place, customs]
         object: false
+        climax: false
       - id: turn
         name: 転換
         definition: 呼びかけや障害によって現状を揺さぶり、主人公が戻れない選択へ向かう。
+        guidance: 予兆と使者を置き、骨子Aの非日常への入口と召喚を示す。主人公が選択を迫られる出来事にする。
+        act: 2
         weight: 2
         roles: [messenger]
         absent_role_note: 使者が不在なら、事件や環境の変化が呼びかけの役割を担う。
         world_sections: [place, people, organizations]
         object: false
+        climax: false
       - id: resolution
         name: 決着
         definition: 対立の核心で選択の結果を受け止め、人物や周囲に生じた変化を示す。
+        guidance: 骨子Dの帰還と代償、骨子Eの変化と残る問いを、対立の結果と周囲への影響として収束させる。
+        act: 3
         weight: 2
         roles: [adversary, supporter]
         absent_role_note: 敵対者または支援者が不在なら、状況や内面の力がその役割を担う。
         world_sections: [place, social_structure, future]
         object: true
+        climax: true
   kishotenketsu:
     stages:
       - id: ki
         name: 起
         definition: 人物と場の前提を置き、日常の課題や関係性を静かに立ち上げる。
+        guidance: 骨子Aの日常の世界、主人公の欠落、前兆の種を置き、人物と場の前提を具体化する。
+        act: 1
         weight: 1
         roles: [protagonist]
         absent_role_note: 主人公が不在なら、中心となる人物の課題を場の状態から示す。
         world_sections: [place, customs]
         object: false
+        climax: false
       - id: sho
         name: 承
         definition: 前提を展開し、小さな試練や関係の変化を積み重ねて次の転換を準備する。
+        guidance: 使者からの呼びかけと贈り物、骨子Bのパーティー形成と小さな挫折を積み重ね、転換の材料を残す。
+        act: 1
         weight: 2
         roles: [supporter]
         absent_role_note: 支援者が不在なら、道具や環境に宿る助けが展開を支える。
         world_sections: [place, people, organizations]
         object: false
+        climax: false
       - id: ten
         name: 転
         definition: 新しい視点や予想外の出来事で前提を反転させ、人物に決断を迫る。
+        guidance: 骨子Cの最も危険な場所と敵対者、骨子Dの最大の試練と代償を反転の核にし、戻れない決断を迫る。
+        act: 2
         weight: 2
         roles: [adversary]
         absent_role_note: 敵対者が不在なら、状況の反転や内面の抵抗が転換を生む。
         world_sections: [place, social_structure, past_events]
         object: true
+        climax: false
       - id: ketsu
         name: 結
         definition: 転換の意味を人物の行動と結果に結び、関係や世界に残る変化を収束させる。
+        guidance: 骨子Eの帰結、得たもの、変化後の世界を示し、骨子Dの代償を含む結末として関係を結び直す。
+        act: 3
         weight: 2
         roles: [protagonist, supporter]
         absent_role_note: 主人公または支援者が不在なら、選択の結果を場と残された関係から示す。
         world_sections: [people, future]
         object: true
+        climax: true
   heros-journey-12:
     stages:
       - id: ordinary-world
         name: 日常世界
         definition: 主人公の普段の生活、環境、価値観、現状維持の姿勢を描き、変化前の基準点を置く。
+        guidance: 欠点や不満、未解決の課題、読者が理解できる生活を示す。骨子Aの日常の世界と主人公の欠落を、環境と価値観の基準点として置く。
+        act: 1
         weight: 1
         roles: [protagonist]
         absent_role_note: 主人公が不在なら、中心となる視点人物の日常と未解決の課題を示す。
         world_sections: [place, customs, people]
         object: false
+        climax: false
       - id: call-to-adventure
         name: 冒険への呼びかけ
         definition: 異常事態や出会いで現状を揺るがし、主人公に選択を迫るきっかけを提示する。
+        guidance: 骨子Aの予兆と使者を主人公の前に現し、非日常の世界への召喚と、拒否しても残る具体的な課題を示す。
+        act: 1
         weight: 2
         roles: [messenger]
         absent_role_note: 使者が不在なら、事件や環境の変化が冒険への呼びかけを担う。
         world_sections: [place, people, organizations]
         object: false
+        climax: false
       - id: refusal
         name: 拒否
         definition: 恐れ、不安、責任感、無力感などの葛藤によって冒険への参加をためらう理由を描く。
+        guidance: 召喚の重大さを強調し、主人公の恐れ、不安、責任感、無力感と、拒否理由を納得できる形で示す。骨子Aの拒絶を置く。
+        act: 1
         weight: 1
         roles: [protagonist]
         absent_role_note: 主人公が不在なら、中心となる人物の抵抗や未決の選択を内面の力として示す。
         world_sections: [place, customs]
         object: false
+        climax: false
       - id: mentor
         name: 師との出会い
         definition: 指導者との出会いによって勇気や知恵を得て、主人公の内面に変化の種を置く。
+        guidance: 師または支援者が勇気と知恵を渡し、骨子Aの使者からの贈り物を具体化する。主人公の内面に変化の種を残す。
+        act: 1
         weight: 1
         roles: [supporter]
         absent_role_note: 支援者が不在なら、記憶や道具、環境から得た知恵が師の役割を担う。
         world_sections: [people, organizations]
         object: true
+        climax: false
       - id: threshold
         name: 第一関門の突破
         definition: 戻れない一線を越え、未知の環境、規則、危険へ足を踏み入れる決定的な行動を描く。
+        guidance: 骨子Aの非日常の世界へ入り、戻れない一線、新しい規則と危険を受け入れる。主人公の決定的な行動を描く。
+        act: 2
         weight: 2
         roles: [protagonist]
         absent_role_note: 主人公が不在なら、中心人物の決断を環境の変化として示す。
         world_sections: [place, social_structure]
         object: true
+        climax: false
       - id: trials
         name: 試練、仲間、敵
         definition: 小さな成功と失敗を重ね、友情、信頼、裏切りを通じて仲間と敵との関係を築く。
+        guidance: 骨子Bのパーティーを構成し、仲間と敵との友情、信頼、裏切り、小さな成功と挫折を段階的に示す。
+        act: 2
         weight: 3
         roles: [supporter, adversary]
         absent_role_note: 仲間または敵が不在なら、状況や内面の力が関係の試練を担う。
         world_sections: [people, organizations, social_structure]
         object: false
+        climax: false
       - id: approach
         name: 最も危険な場所への接近
         definition: 最大の試練に備え、危険の中心へ近づきながら最後の葛藤と緊張を高める。
+        guidance: 骨子Cの最も危険な場所と敵対者へ接近し、最大の試練を前に最後の葛藤、予兆、準備を積み上げる。
+        act: 2
         weight: 2
         roles: [adversary]
         absent_role_note: 敵対者が不在なら、危険な場所や内面の抵抗が接近を妨げる。
         world_sections: [place, social_structure, past_events]
         object: true
+        climax: false
       - id: ordeal
         name: 最大の試練
         definition: 肉体的または精神的に最も厳しい挑戦に直面し、死と再生を象徴する変化を経験する。
+        guidance: 骨子Cの最大の試練で敵対者と対峙し、骨子Dの挫折と代償を通って古い自己の死と再生を経験する。
+        act: 2
         weight: 3
         roles: [adversary, protagonist]
         absent_role_note: 敵対者または主人公が不在なら、状況と内面の力の衝突として最大の試練を描く。
         world_sections: [place, past_events]
         object: true
+        climax: true
       - id: reward
         name: 報酬
         definition: 試練を越えた結果として、物理的な宝、知恵、自己理解、仲間との絆を受け取る。
+        guidance: 骨子Bの使者から得たものと、試練の後に得た宝、知恵、自己理解、仲間との絆を示す。同時に新たな課題や責任を見せる。
+        act: 3
         weight: 1
         roles: [supporter]
         absent_role_note: 支援者が不在なら、獲得した知恵や道具そのものが報酬を手渡す役割を担う。
         world_sections: [people, future]
         object: true
+        climax: false
       - id: road-back
         name: 帰路
         definition: 得たものを持って元の世界へ帰る決意を固め、途中の障害で緊張を再構築する。
+        guidance: 骨子Dの帰還途中のイベントと代償を置き、得たものを持って戻る決意、再び現れる障害、残る葛藤を示す。
+        act: 3
         weight: 2
         roles: [adversary]
         absent_role_note: 敵対者が不在なら、帰還途中の障害や未解決の葛藤が帰路を揺さぶる。
         world_sections: [place, past_events]
         object: false
+        climax: false
       - id: resurrection
         name: 復活
         definition: 最後の試練で古い自分を手放し、新しい理解や価値観を選び取る瞬間を示す。
+        guidance: 骨子Dの最後の試練と代償を、骨子Eの新しい理解・価値観・行動へ転換する。古い自己を手放すクライマックスにする。
+        act: 3
         weight: 2
         roles: [protagonist, adversary]
         absent_role_note: 主人公または敵対者が不在なら、内面の力と状況の転換として復活を示す。
         world_sections: [social_structure, future]
         object: true
+        climax: true
       - id: return-with-elixir
         name: 宝を持ち帰る
         definition: 冒険で得た宝や成長を日常世界で活かし、主人公の変化が周囲にも及ぶことを示す。
+        guidance: 骨子Eの宝を持ち帰る帰結として、主人公の成長と変化が日常世界、仲間、共同体へ及ぶ様子を示し、物語を締めくくる。
+        act: 3
         weight: 1
         roles: [protagonist, supporter]
         absent_role_note: 主人公または支援者が不在なら、変化の影響を周囲の人々と場の状態から示す。
         world_sections: [people, future]
         object: true
+        climax: true

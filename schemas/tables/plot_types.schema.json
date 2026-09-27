@@ -16,12 +16,19 @@
     "type": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "core", "structure", "required_events"],
+      "required": ["id", "name", "core", "structure", "character_requirements", "time_design", "conflict", "climax", "pacing", "typical_setting", "customization_notes", "required_events"],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
         "name": {"type": "string", "minLength": 1},
         "core": {"type": "string", "minLength": 1},
         "structure": {"type": "string", "minLength": 1},
+        "character_requirements": {"type": "string", "minLength": 1},
+        "time_design": {"type": "string", "minLength": 1},
+        "conflict": {"type": "string", "minLength": 1},
+        "climax": {"type": "string", "minLength": 1},
+        "pacing": {"type": "string", "minLength": 1},
+        "typical_setting": {"type": "string", "minLength": 1},
+        "customization_notes": {"type": "string", "minLength": 1},
         "required_events": {
           "type": "array",
           "minItems": 1,

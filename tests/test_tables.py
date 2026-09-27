@@ -8,6 +8,8 @@ import pytest
 
 from storyteller.tables import (
     TableNameError,
+    element_id,
+    element_rows,
     load_all_tables,
     load_table,
     table_names,
@@ -29,6 +31,8 @@ def test_all_phase_one_tables_are_loaded_and_schema_validated():
         "element_axes",
         "name_sounds",
         "common_words",
+        "roles",
+        "cliches",
     }
     assert set(tables["elements"]) == {
         "want",
@@ -38,6 +42,9 @@ def test_all_phase_one_tables_are_loaded_and_schema_validated():
         "place",
         "era",
         "object",
+        "age",
+        "gender",
+        "species",
     }
     assert all(tables["elements"][axis]["items"] for axis in tables["elements"])
 
@@ -101,6 +108,40 @@ def test_plot_and_structure_tables_have_phase_one_shape():
         "heros-journey-12",
     }
     assert len(structures["templates"]["heros-journey-12"]["stages"]) == 12
+    assert all(
+        {"character_requirements", "time_design", "conflict", "climax", "pacing", "typical_setting", "customization_notes"}
+        <= set(plot)
+        for plot in plot_types["types"]
+    )
+    assert all(
+        {"guidance", "act", "climax"} <= set(stage)
+        for template in structures["templates"].values()
+        for stage in template["stages"]
+    )
+
+
+def test_roles_cliches_world_sections_and_world_counts_are_complete():
+    roles = load_table("roles", repository_root=ROOT)["roles"]
+    assert [role["id"] for role in roles] == [
+        "protagonist", "messenger", "supporter", "adversary", "bystander",
+    ]
+    assert all(role["definition"] for role in roles)
+
+    cliches = load_table("cliches", repository_root=ROOT)["phrases"]
+    assert {"運命", "闇", "守るべきもの"} <= set(cliches)
+
+    sections = load_table("world_sections", repository_root=ROOT)["sections"]
+    section_ids = {section["id"] for section in sections}
+    assert {"past_events", "social_groups", "people", "future"} <= section_ids
+    assert {section["id"] for section in sections if section["kind"] == "list"} == {
+        "past_events", "social_groups", "people", "future",
+    }
+    assert all(len(section["viewpoints"]) >= 3 for section in sections)
+    assert all(set(section["prerequisites"]) <= section_ids for section in sections)
+
+    counts = load_table("scales", repository_root=ROOT)["world_counts"]
+    assert set(counts) == {"past_events", "social_groups", "people", "future"}
+    assert all(len(values) == 5 for values in counts.values())
 
 
 def test_required_events_assign_a_stage_in_each_standard_template():
@@ -138,30 +179,65 @@ def test_name_sound_schema_rejects_standalone_small_kana_and_long_mark(
 
 
 def test_default_element_tables_are_japanese():
-    for axis in ("want", "ability", "duty"):
+    for axis in ("want", "ability", "duty", "age", "gender", "species"):
         table = load_table(f"elements/{axis}", repository_root=ROOT)
         assert all(
-            not any(char.isascii() and char.isalpha() for char in item)
+            not any(char.isascii() and char.isalpha() for char in text)
             for item in table["items"]
+            for text in [item["text"]]
         )
 
 
-def test_default_element_tables_have_100_unique_items_and_normalized_uniqueness():
-    axes = ("want", "ability", "duty", "taboo", "place", "era", "object")
+def test_default_element_tables_have_expected_unique_items_and_normalized_uniqueness():
+    axes = (
+        "want", "ability", "duty", "taboo", "place", "era", "object",
+        "age", "gender", "species",
+    )
     normalized_items: set[str] = set()
 
     for axis in axes:
         items = load_table(f"elements/{axis}", repository_root=ROOT)["items"]
-        assert len(items) == 100
-        assert len(set(items)) == 100
-
-        start = 8 if axis in {"want", "ability", "duty"} else 0
-        assert all(10 <= len(item) <= 40 for item in items[start:])
+        expected = {"want": 100, "ability": 100, "duty": 99, "age": 16,
+                    "gender": 10, "species": 50}.get(axis, 100)
+        assert len(items) == expected
+        texts = [item["text"] for item in items]
+        assert len(set(texts)) == expected
 
         for item in items:
-            normalized = "".join(unicodedata.normalize("NFKC", item).split())
+            if axis in {"want", "ability", "duty", "age", "gender", "species"}:
+                assert item.get("source")
+            else:
+                assert set(item) == {"text"}
+
+        for item in items:
+            normalized = "".join(unicodedata.normalize("NFKC", item["text"]).split())
             assert normalized not in normalized_items
             normalized_items.add(normalized)
+
+
+def test_heroes_sources_are_preserved_and_ids_are_stable():
+    source_axes = {
+        "want": (100, "I want to find the person who stole my shadow on my tenth birthday.", "I want to teach the world to see ghosts without fear."),
+        "ability": (100, "Can reverse causality through rhythmic movement", "Can turn memories into edible sweets"),
+        "duty": (99, "Nostalgic Experience Designer. Designs shared memories people can revisit like theme parks", "Mushroom Forest Postmaster. Delivers mail through underground fungal networks"),
+        "age": (16, "Prepubescent", "Frozen at nineteen for two hundred years"),
+        "gender": (10, "Male", "Two-spirit"),
+        "species": (50, "Human", "Yokai living in a public bath"),
+    }
+    for axis, (count, first_source, last_source) in source_axes.items():
+        rows = element_rows(axis, repository_root=ROOT)
+        assert len(rows) == count
+        assert [row["id"] for row in rows] == [f"{axis}:t{i}" for i in range(1, count + 1)]
+        assert rows[0]["source"] == first_source
+        assert rows[-1]["source"] == last_source
+        assert all(row["text"] for row in rows)
+        assert len({row["source"] for row in rows}) == count
+
+
+def test_element_id_requires_one_based_row_number():
+    assert element_id("want", 1) == "want:t1"
+    with pytest.raises(ValueError):
+        element_id("want", 0)
 
 
 def test_unknown_table_name_is_rejected():

@@ -29,11 +29,13 @@
     "stage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "definition", "weight", "roles", "absent_role_note", "world_sections", "object"],
+      "required": ["id", "name", "definition", "guidance", "act", "weight", "roles", "absent_role_note", "world_sections", "object", "climax"],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
         "name": {"type": "string", "minLength": 1},
         "definition": {"type": "string", "minLength": 1},
+        "guidance": {"type": "string", "minLength": 1},
+        "act": {"type": "integer", "minimum": 1, "maximum": 3},
         "weight": {"type": "number", "exclusiveMinimum": 0},
         "roles": {
           "type": "array",
@@ -46,7 +48,8 @@
           "items": {"type": "string", "minLength": 1},
           "uniqueItems": true
         },
-        "object": {"type": "boolean"}
+        "object": {"type": "boolean"},
+        "climax": {"type": "boolean"}
       }
     }
   }

@@ -4,7 +4,7 @@
   "title": "Story scale table",
   "type": "object",
   "additionalProperties": false,
-  "required": ["axes", "level_min_events", "presets", "world_sections_by_level", "parts", "subthread_events", "input_ratio", "candidate_multiplier"],
+  "required": ["axes", "level_min_events", "presets", "world_sections_by_level", "world_counts", "parts", "subthread_events", "input_ratio", "candidate_multiplier"],
   "properties": {
     "axes": {
       "type": "object",
@@ -38,6 +38,15 @@
         "type": "array",
         "items": {"type": "string", "minLength": 1},
         "uniqueItems": true
+      }
+    },
+    "world_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 5,
+        "maxItems": 5,
+        "items": {"type": "integer", "minimum": 1}
       }
     },
     "parts": {

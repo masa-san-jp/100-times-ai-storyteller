@@ -20,3 +20,12 @@ axes:
   - key: object
     name: 象徴的な事物
     definition: 願望、禁忌、記憶、関係の変化を物として具体化する要素。
+  - key: age
+    name: 年齢
+    definition: 人物の生物学的・社会的な年齢、または時間からずれた年齢を表す要素。
+  - key: gender
+    name: 性別
+    definition: 人物が自認する性別、性別のあり方、または性別が変化する条件を表す要素。
+  - key: species
+    name: 種族
+    definition: 人物の生物種、人工的な存在、精霊や怪異としての出自を表す要素。

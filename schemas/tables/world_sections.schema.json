@@ -13,7 +13,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "name", "definition", "viewpoints", "level"],
+        "required": ["id", "name", "definition", "viewpoints", "level", "kind", "max_chars", "prerequisites"],
         "properties": {
           "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
           "name": {"type": "string", "minLength": 1},
@@ -23,7 +23,15 @@
             "minItems": 1,
             "items": {"type": "string", "minLength": 1}
           },
-          "level": {"type": "integer", "minimum": 0, "maximum": 4}
+          "level": {"type": "integer", "minimum": 0, "maximum": 4},
+          "kind": {"type": "string", "enum": ["single", "list"]},
+          "max_chars": {"type": "integer", "minimum": 1},
+          "prerequisites": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+            "uniqueItems": true
+          }
         }
       }
     }

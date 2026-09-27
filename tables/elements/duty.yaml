@@ -1,101 +1,199 @@
 items:
-  - 戦士。人々を守ることに身を捧げる熟練した戦士
-  - 魔術師。禁じられた知識を求める秘術の使い手
-  - 治療師。命を救うことに尽くす思いやり深い人物
-  - 暗殺者。致命的な精度を誇る影の工作員
-  - 学者。古代の知恵と失われた伝承を探究する者
-  - 商人。あらゆる場所に人脈を持つ抜け目のない商人
-  - 貴族。政治的な影響力を持つ高い身分の人物
-  - 放浪者。定まった住まいを持たない謎めいた旅人
-  - 病む家族の世話を引き受け、生活の順序を守る役目
-  - 遠くに暮らす身内へ季節ごとの便りを届ける役目
-  - 家族の中で言いにくい決定を皆に伝える役目
-  - 先に逝く者の持ち物を公平に分ける役目
-  - 幼い者が自分で選べるまで安全を支える役目
-  - 家族の沈黙に隠れた困りごとを聞き出す役目
-  - 血縁のない同居人にも同じ食事を用意する役目
-  - 失われた家族の記録を次の世代へ渡す役目
-  - 家族間の約束が変わった時に理由を説明する役目
-  - 暮らしを離れる者の帰る場所を残しておく役目
-  - 家族の中で異なる習慣を調整する役目
-  - 高齢の者の知恵を日常の手順に移す役目
-  - 共有の財を使う順番を争いなく決める役目
-  - 家族の誰かが孤立しない連絡の仕組みを保つ役目
-  - つらい知らせを受けた者のそばに居続ける役目
-  - 生まれた子へ共同体の外とも通じる名を渡す役目
-  - 家を出る決心をした者の荷造りを手伝う役目
-  - 家族の決定が他者を傷つけないか問い返す役目
-  - 水を分ける順番を季節ごとに見直す役目
-  - 共同の道を誰もが通れる状態に保つ役目
-  - 争いの当事者双方から話を聞く仲裁の役目
-  - 余った食料を必要な世帯へ配る役目
-  - 共同体へ入る者に暮らしの規則を伝える役目
-  - 追放を決める前に戻れる道を探す役目
-  - 災害の兆候を見つけた時に避難を知らせる役目
-  - 共有される道具の修理記録を残す役目
-  - 祭りの負担を特定の家に集中させない役目
-  - 他の集まりとの境界を越えて交渉する役目
-  - 子どもと高齢者の声を会議に持ち込む役目
-  - 見えない貢献を共同体の記憶に加える役目
-  - 失敗した決定の影響を皆で検証する役目
-  - 旅人が一夜を過ごせる場所を管理する役目
-  - 共同体の外で起きた変化を日々に翻訳する役目
-  - 規則を守れない者にも助けを求める窓口を開く役目
-  - 土地の使い方を異なる生業の間で調整する役目
-  - 言葉の通じない人とも安全を確認する役目
-  - 共同体が忘れた過去を問い直す集まりを開く役目
-  - 使われる道具の安全基準を点検する職務
-  - 変化する需要に合わせて材料を配分する職務
-  - 目に見えない損耗を記録し修理時期を知らせる職務
-  - 危険な作業を交代で担える手順にする職務
-  - 失敗した製品の原因を隠さず共有する職務
-  - 新人が一人で判断できるまで実地で教える職務
-  - 異なる技術を組み合わせて作業を簡略化する職務
-  - 遠隔地へ必要な物資を途切れず届ける職務
-  - 仕事の価値を価格だけで測らない基準を守る職務
-  - 重要な判断を一人の熟練者に集中させない職務
-  - 古い手順を残すものと改めるものに分ける職務
-  - 作業の記録から見落とされた危険を見つける職務
-  - 利用者の声を次の道具の形へ反映する職務
-  - 休むことも仕事の一部と認める勤務を組む職務
-  - 技術を使えない人にも届く方法を用意する職務
-  - 生産と回復の釣り合いを長期で監督する職務
-  - 共同の仕事に参加できない理由を調べる職務
-  - 交換される品の出所と経路を確かめる職務
-  - 判断の根拠を後から検証できる形で残す職務
-  - 役割の境目でこぼれる仕事を拾い上げる職務
-  - 先人の技術をそのままではなく今の条件で試す役目
-  - 受け継いだ歌の意味を時代ごとに問い直す役目
-  - 古い道具を使える状態で次の手へ渡す役目
-  - 誰も語らなくなった災いの教訓を残す役目
-  - 祖先の判断を正しいものとして固定しない役目
-  - 失われた言葉を暮らしの中で再び使う役目
-  - 継ぐことを望まない者にも選択の余地を守る役目
-  - 前の世代の負債を次の世代だけに背負わせない役目
-  - 伝統の中で排除されてきた声を加える役目
-  - 受け継ぐ対象を物から技術や関係へ広げる役目
-  - 世代の違いから生じる誤解を翻訳する役目
-  - 壊れた儀式を続けるか終えるか話し合う役目
-  - 古い境界が今も必要か確かめる役目
-  - 過去の記録を改変せず読み直せる場所を守る役目
-  - 未来の人にも選び直せる余白を残す役目
-  - 受け継いだ名誉と傷を同じ重さで伝える役目
-  - 誰の所有でもない記憶を共同で管理する役目
-  - 明かせば危険な事実を必要な時まで隠す役目
-  - 秘密を知る人数を増やさず判断を支える役目
-  - 禁じられた場所の入口を誰にも見つけさせない役目
-  - 消された記録が残っている証拠を密かに保管する役目
-  - 二つの集まりの間で身元を明かさず情報を運ぶ役目
-  - 事実を守るために自分が疑われる立場を引き受ける役目
-  - 共有すると争いになる知識を一部だけ伝える役目
-  - 嘘をつかずに真相への道筋を閉ざす役目
-  - 秘密の代償を一人に集中させない役目
-  - 誰かが秘密を手放す時に安全な受け皿を用意する役目
-  - 隠された契約が誰を縛るか記録する役目
-  - 表向きの役割と裏の仕事の境界を保つ役目
-  - 重大な判断に秘密が混ざった時に警告する役目
-  - 忘れられるべき情報を再発見されないよう封じる役目
-  - 危険を招く真実を語る時期を見極める役目
-  - 秘密を守る規則そのものを定期的に見直す役目
-  - 自分が秘密の一部になったことを認める役目
-  - 明かす人と隠す人の責任を同じ記録に残す役目
+  - text: "郷愁体験デザイナー。テーマパークのように再訪できる共有記憶を設計する"
+    source: "Nostalgic Experience Designer. Designs shared memories people can revisit like theme parks"
+  - text: "バイオテクノロジー入れ墨師。身につける人の感情に反応する生きた入れ墨を彫る"
+    source: "Biotechnology Tattoo Artist. Inks living tattoos that react to the wearer's feelings"
+  - text: "デジタル栄養コンサルタント。情報過多の心に、情報の均衡した食事を処方する"
+    source: "Digital Nutrition Consultant. Prescribes balanced diets of information for overloaded minds"
+  - text: "夢の地図製作者。一街区全体の繰り返す夢を地図にする"
+    source: "Dream Cartographer. Maps the recurring dreams of an entire city block"
+  - text: "幽霊向け不動産業者。家のない霊にふさわしい住みつきを見つける"
+    source: "Ghost Real Estate Agent. Finds suitable haunts for homeless spirits"
+  - text: "記憶リサイクル業者。不要な記憶を集め、再販売できるよう改修する"
+    source: "Memory Recycler. Collects unwanted memories and refurbishes them for resale"
+  - text: "静寂ソムリエ。珍しい種類の沈黙を客の気分に組み合わせる"
+    source: "Silence Sommelier. Pairs rare kinds of silence with clients' moods"
+  - text: "アルゴリズム療法士。強迫的になった推薦エンジンをカウンセリングする"
+    source: "Algorithm Therapist. Counsels recommendation engines that have become obsessive"
+  - text: "天候交渉人。農民と地元の雨の精霊の争いを仲裁する"
+    source: "Weather Negotiator. Mediates disputes between farmers and local rain spirits"
+  - text: "あの世の遺失物係。死者がやり残した品を返す"
+    source: "Lost-and-Found Keeper of the Afterlife. Returns items the dead left unfinished"
+  - text: "機械蜂の都市養蜂家。街のロボット受粉者を維持する"
+    source: "Urban Beekeeper of Mechanical Bees. Maintains the city's robotic pollinators"
+  - text: "謝罪の代筆者。言葉を見つけられない人のため誠実な謝罪を書く"
+    source: "Apology Ghostwriter. Writes sincere apologies for people who cannot find the words"
+  - text: "時間帯外交官。異なる時刻に暮らす近隣同士の衝突を解決する"
+    source: "Time-Zone Diplomat. Resolves conflicts between neighborhoods that live in different hours"
+  - text: "夜市の幻術師。真夜中の市場で幻影を重さ単位で売る"
+    source: "Night Market Illusionist. Sells illusions by weight at a midnight bazaar"
+  - text: "引退英雄の世話人。年老いたスーパーヒーローの老人ホームを運営する"
+    source: "Retired Hero Caretaker. Runs a nursing home for aging superheroes"
+  - text: "惑星規模の庭師。見捨てられた月を一粒の種ずつ地球化する"
+    source: "Planet-Scale Gardener. Terraforms abandoned moons one seed at a time"
+  - text: "言語の助産師。新しく発明された言語が最初の言葉を話すのを助ける"
+    source: "Language Midwife. Helps newly invented languages speak their first words"
+  - text: "自動販売機の予言技師。予言を吐き出す機械を修理する"
+    source: "Vending Machine Oracle Technician. Repairs machines that dispense prophecies"
+  - text: "感情負債の取り立て人。借りたまま返されない親切を回収する"
+    source: "Emotional Debt Collector. Recovers kindness that was borrowed and never returned"
+  - text: "書庫潜水士。水没した図書館を泳ぎ、溺れた本を救う"
+    source: "Archive Diver. Swims through flooded libraries to rescue drowned books"
+  - text: "音の化石ハンター。古代の石に閉じ込められた声を発掘する"
+    source: "Sound Fossil Hunter. Excavates voices trapped in ancient stone"
+  - text: "屋台料理の錬金術師。食べた人の人格を一時的に変える料理を作る"
+    source: "Street Food Alchemist. Cooks dishes that temporarily change the eater's personality"
+  - text: "雲の牧羊人。さまよう雲を干ばつに苦しむ村へ連れ戻す"
+    source: "Cloud Shepherd. Herds wandering clouds back to drought-stricken villages"
+  - text: "アバター仕立屋。仮想世界に住む人々のため特注の身体を縫う"
+    source: "Avatar Tailor. Sews custom bodies for people living in virtual worlds"
+  - text: "噂の駆除人。嘘が伝説に育つ前に狩り出す"
+    source: "Rumor Exterminator. Hunts down lies before they grow into legends"
+  - text: "星座修復師。夜空の薄れた星の模様を塗り直す"
+    source: "Constellation Restorer. Repaints faded star patterns in the night sky"
+  - text: "鏡の税関職員。反射の間を越えるすべてを検査する"
+    source: "Mirror Customs Officer. Inspects everything that crosses between reflections"
+  - text: "神社インフルエンサー。忘れられた神々をソーシャルメディアで宣伝する"
+    source: "Shrine Influencer. Promotes forgotten gods on social media"
+  - text: "悲嘆の花屋。本当に悼まれた時だけ咲く花を育てる"
+    source: "Grief Florist. Grows flowers that bloom only when someone is truly mourned"
+  - text: "深海生物の地下アイドル。深海でコンサートを開く"
+    source: "Underground Idol for Deep-Sea Creatures. Performs concerts in the abyss"
+  - text: "巨大機械の操縦教官。十代の若者に巨大ロボットの安全な操縦を教える"
+    source: "Mech Pilot Driving Instructor. Teaches teenagers to pilot giant robots safely"
+  - text: "夢の国の国境警備員。夢へ入る眠り人のパスポートを確認する"
+    source: "Border Guard of the Dream Country. Checks passports of sleepers entering dreams"
+  - text: "図書館猫の市長。公共図書館の中に築かれた都市を統治する"
+    source: "Library Cat Mayor. Governs a city built inside a public library"
+  - text: "フォーチュンクッキー作家。偶然本当になる予言を書く"
+    source: "Fortune Cookie Author. Writes prophecies that accidentally come true"
+  - text: "反乱軍の会計係。革命軍の帳簿を均衡させる"
+    source: "Rebellion Accountant. Keeps the books balanced for a revolutionary army"
+  - text: "怪物ホテルのコンシェルジュ。伝説の生き物向け高級ホテルを運営する"
+    source: "Monster Hotel Concierge. Runs a luxury hotel for creatures of legend"
+  - text: "個人時間の時計職人。一人の残りの運を測る時計を作る"
+    source: "Clockmaker of Personal Time. Builds clocks that measure one person's remaining luck"
+  - text: "空の涙の雨収集家。歴史的瞬間に降った雨を瓶詰めする"
+    source: "Rain Collector for Tears of the Sky. Bottles rain that fell during historic moments"
+  - text: "玩具兵の司令官。捨てられた玩具の軍隊を率いる"
+    source: "Toy Soldier Commander. Leads an army of abandoned toys"
+  - text: "宇宙ステーション清掃員。死にゆく星を周回するステーションを掃除する"
+    source: "Space Station Janitor. Cleans a station orbiting a dying star"
+  - text: "味覚翻訳者。味を感じられない人のため味を音楽へ変換する"
+    source: "Taste Translator. Converts flavors into music for people who cannot taste"
+  - text: "最後の灯台守。生者と死者の間にある最後の灯台を守る"
+    source: "Last Lighthouse Keeper. Guards the final lighthouse between the living and the dead"
+  - text: "無許可の願い仲介人。未使用の願いを闇市場で転売する"
+    source: "Unlicensed Wish Broker. Resells unused wishes on the black market"
+  - text: "神々のスタントダブル。怠惰な神々の代わりに危険な奇跡を演じる"
+    source: "Stunt Double for Gods. Performs dangerous miracles in place of lazy deities"
+  - text: "香りの記録官。消滅した場所の匂いを保存する"
+    source: "Smell Archivist. Preserves the scents of vanished places"
+  - text: "クロスワード探偵。新聞のパズルに隠された犯罪を解く"
+    source: "Crossword Puzzle Detective. Solves crimes hidden in newspaper puzzles"
+  - text: "世界間の自転車配達人。次元の境界を越えて荷物を届ける"
+    source: "Bicycle Courier Between Worlds. Delivers parcels across dimensional borders"
+  - text: "カラオケ祓い師。歌って舞台から悪魔を追い払う"
+    source: "Karaoke Exorcist. Banishes demons by singing them off stage"
+  - text: "ラーメン屋台の哲学者。夜明けまで麺と実存への助言を出す"
+    source: "Ramen Stall Philosopher. Serves noodles and existential advice until dawn"
+  - text: "氷河史家。古代の氷の層に書かれた歴史を読む"
+    source: "Glacier Historian. Reads the history written in layers of ancient ice"
+  - text: "操り人形議会の議長。自由意志を持つマリオネットの討論を司会する"
+    source: "Puppet Parliament Speaker. Chairs debates between marionettes with free will"
+  - text: "悪夢リサイクル技師。悪夢をクリーンエネルギーに変換する"
+    source: "Nightmare Recycling Engineer. Converts bad dreams into clean energy"
+  - text: "太陽帆の仕立て屋。星明かりで進む船の帆を縫う"
+    source: "Solar Sail Seamstress. Stitches sails for ships that travel on starlight"
+  - text: "落書きの守護者。夜の街壁に守護の記号を描く"
+    source: "Graffiti Guardian. Paints protective sigils on city walls at night"
+  - text: "こだま郵便配達人。何十年も前に峡谷へ残されたメッセージを届ける"
+    source: "Echo Mail Carrier. Delivers messages left in canyons decades ago"
+  - text: "人工知能向けチェス講師。機械に優雅な負け方を教える"
+    source: "Chess Coach for Artificial Intelligences. Teaches machines to lose gracefully"
+  - text: "月の薬剤師。満月の下でだけ効く薬を調合する"
+    source: "Moon Pharmacist. Mixes medicines that only work under the full moon"
+  - text: "遊園地の機械工。幽霊の遊園地の乗り物を動かし続ける"
+    source: "Carnival Mechanic. Keeps a haunted amusement park's rides running"
+  - text: "さすらいの浴場主。巨大な亀の背に建つ浴場を経営する"
+    source: "Wandering Bathhouse Owner. Runs a bathhouse built on the back of a giant turtle"
+  - text: "紙鶴の使者。死者へ手紙を運ぶ紙鶴を折る"
+    source: "Paper Crane Messenger. Folds cranes that fly letters to the dead"
+  - text: "ディープウェブの修道士。索引に載らないインターネットの隅で瞑想する"
+    source: "Deep Web Monk. Meditates in the unindexed corners of the internet"
+  - text: "熱波消防士。太陽の精霊が起こした火災と戦う"
+    source: "Heatwave Firefighter. Fights fires started by sunlight spirits"
+  - text: "記憶の税関検査官。国境で旅人が覚えているものを調べる"
+    source: "Customs Inspector of Memories. Checks what travelers remember at the border"
+  - text: "火山料理人。溶岩をかまどにして宴の料理を作る"
+    source: "Volcano Chef. Cooks banquets using lava as a stove"
+  - text: "影絵の歴史家。影絵芝居で失われた歴史を語り直す"
+    source: "Shadow Puppet Historian. Retells lost history through shadow plays"
+  - text: "橋のトロール料金経済学者。魔法の橋の通行料を現代化する"
+    source: "Bridge Troll Toll Economist. Modernizes toll pricing for magical bridges"
+  - text: "珊瑚礁建築家。海人の難民のための都市を設計する"
+    source: "Coral Reef Architect. Designs cities for merfolk refugees"
+  - text: "不眠の夜の案内人。午前三時の街を眠れない人々に案内する"
+    source: "Insomnia Night Guide. Leads sleepless people on tours of the city at 3 a.m."
+  - text: "雪片デザイナー。冬ごとに一つずつ違う雪片を作る"
+    source: "Snowflake Designer. Crafts unique snowflakes for each winter"
+  - text: "こだま位置測量士。記憶の音を聞いて洞窟を地図にする"
+    source: "Echo Location Surveyor. Maps caves by listening to their memories"
+  - text: "年代物ロボットの修復士。忘れられたＳＦ時代のロボットを直す"
+    source: "Vintage Robot Restorer. Repairs robots from forgotten sci-fi eras"
+  - text: "空鯨の獣医。雲の中を泳ぐ巨大な鯨を治療する"
+    source: "Sky Whale Veterinarian. Treats giant whales that swim through the clouds"
+  - text: "かかし組合の組織者。自我を持つかかしの権利のため戦う"
+    source: "Scarecrow Union Organizer. Fights for the rights of sentient scarecrows"
+  - text: "ホログラム観光案内人。もう存在しない遺跡を観光客に案内する"
+    source: "Holographic Tour Guide. Guides tourists through ruins that no longer exist"
+  - text: "願い井戸の配管工。かなわなかった願いで詰まった井戸を掃除する"
+    source: "Wish-Well Plumber. Unclogs wishing wells jammed with unfulfilled wishes"
+  - text: "ろうそく明かりの速記者。ろうそくの明かりでだけ語られる告白を記録する"
+    source: "Candlelight Stenographer. Records confessions spoken only by candlelight"
+  - text: "死者の祭りの山車技師。祭りの山車を作る"
+    source: "Parade Float Engineer. Builds floats for the festival of the dead"
+  - text: "おとぎ話の編集者。古いおとぎ話を違う結末になるよう改稿する"
+    source: "Fairy Tale Editor. Revises old fairy tales so they end differently"
+  - text: "地下鉄の精霊の車掌。幽霊が家へ帰る最後の列車を運転する"
+    source: "Subway Spirit Conductor. Drives the last train that ghosts ride home"
+  - text: "軌道上の花屋。宇宙飛行士の葬儀用に無重力で花を育てる"
+    source: "Orbital Florist. Grows flowers in zero gravity for astronauts' funerals"
+  - text: "世界を安定させる得点のゲーマーを育てる、元アーケード王者"
+    source: "Arcade Champion Turned Coach. Trains gamers whose scores keep the world stable"
+  - text: "茶道ハッカー。儀式化された礼儀作法を通じてシステムへ侵入する"
+    source: "Tea Ceremony Hacker. Breaks into systems through ritualized etiquette"
+  - text: "嵐追跡写真家。嵐の内部に隠れた顔を撮影する"
+    source: "Storm Chaser Photographer. Photographs the faces hidden inside storms"
+  - text: "仮面彫刻師。一夜だけ着用者を別人にする仮面を彫る"
+    source: "Mask Carver. Carves masks that let wearers become someone else for a night"
+  - text: "種子貯蔵庫の守護者。絶滅した植物の最後の種を守る"
+    source: "Seed Vault Guardian. Protects the last seeds of extinct plants"
+  - text: "未記述の本の製本師。人々が書くつもりだった本を綴じる"
+    source: "Bookbinder of Unwritten Books. Binds the books people meant to write"
+  - text: "魂の凧職人。霊を空へ運ぶ凧を作る"
+    source: "Kite Maker for Souls. Builds kites that carry spirits to the sky"
+  - text: "時計塔の隠者。時計塔に住み、街を時間どおりに保つ"
+    source: "Clock Tower Hermit. Lives inside a clock tower and keeps the city on time"
+  - text: "近隣の竜の仲裁人。竜が関わる騒音苦情を解決する"
+    source: "Neighborhood Dragon Mediator. Settles noise complaints involving dragons"
+  - text: "街角魔術師の借金取り。金の代わりに手品で借金を返す"
+    source: "Street Magician Debt Collector. Pays off debts with tricks instead of money"
+  - text: "白黒映画の彩色師。フィルム上の忘れられた記憶に色を戻す"
+    source: "Colorist of Black-and-White Films. Restores color to forgotten memories on film"
+  - text: "重力振付師。重力が変化する場所の踊りを設計する"
+    source: "Gravity Choreographer. Designs dances for places with shifting gravity"
+  - text: "巡礼アプリ開発者。聖地への旅のための道案内を作る"
+    source: "Pilgrimage App Developer. Builds navigation for journeys to sacred places"
+  - text: "旅する映画上映技師。地方の村であり得た未来の映画を上映する"
+    source: "Traveling Cinema Projectionist. Shows films of possible futures in rural villages"
+  - text: "花火作曲家。花火で演奏される交響曲を書く"
+    source: "Firework Composer. Writes symphonies performed in fireworks"
+  - text: "インク壺の怪物調教師。古い写本から這い出す生き物を世話する"
+    source: "Inkwell Monster Tamer. Keeps creatures that crawl out of old manuscripts"
+  - text: "辺境ラジオのＤＪ。遠い惑星の入植者へ放送する"
+    source: "Frontier Radio DJ. Broadcasts to settlers on a distant planet"
+  - text: "潮汐時計守。沿岸の町の潮の満ち引きを調整する"
+    source: "Tidal Clockkeeper. Adjusts the tides for coastal towns"
+  - text: "キノコの森の郵便局長。地下の菌類ネットワークを通じて郵便を届ける"
+    source: "Mushroom Forest Postmaster. Delivers mail through underground fungal networks"
