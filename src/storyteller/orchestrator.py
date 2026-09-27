@@ -801,12 +801,6 @@ class Orchestrator:
                 )
                 task["error"] = None
                 manifest["warnings"].extend(recorded_warnings)
-                _skip_redundant_story_s2_tasks(
-                    manifest,
-                    run_dir,
-                    task_id,
-                    at,
-                )
                 _refresh_blocked_tasks(manifest, at)
                 _update_run_status(manifest)
                 _touch_manifest(manifest, at)
@@ -1550,12 +1544,6 @@ class Orchestrator:
                 reason="キャッシュの出力を再利用",
             )
             task["error"] = None
-            _skip_redundant_story_s2_tasks(
-                manifest,
-                self.run_dir(run_id),
-                task_id,
-                self._now(),
-            )
             _remove_partial_output(self.task_dir(run_id, task_id))
             changed = True
         return changed
@@ -2141,23 +2129,6 @@ def _postprocess_accepted_output(task: Mapping[str, Any], value: Any) -> Any:
     result = dict(value)
     result["materials"] = materials
     return result
-
-
-def _skip_redundant_story_s2_tasks(
-    manifest: dict[str, Any],
-    run_dir: Path,
-    task_id: str,
-    at: str,
-) -> None:
-    """Apply S2's run-local early-stop rule after an expansion is accepted."""
-
-    if manifest["tasks"].get(task_id, {}).get("type") != "S2.expand":
-        return
-    # Import lazily so the generic orchestrator remains usable without the
-    # story harness and to avoid a module import cycle.
-    from .story_s2 import skip_redundant_expansions
-
-    skip_redundant_expansions(manifest, run_dir, task_id, at)
 
 
 def _normalise_invalidation_requests(value: Any) -> list[tuple[str, str]]:

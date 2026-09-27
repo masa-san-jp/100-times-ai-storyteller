@@ -28,6 +28,7 @@ def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
         raise ValueError("S1 の素材がありません")
 
     axes = load_table("element_axes", repository_root=_REPOSITORY_ROOT)["axes"]
+    cliches = load_table("cliches", repository_root=_REPOSITORY_ROOT)
     manifest = load_manifest(context.run_dir / "manifest.json")
     pool_need = (
         manifest.get("scale", {}).get("derived", {}).get("pool_need", {})
@@ -68,7 +69,7 @@ def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
         deps=(context.task_id, *expand_ids),
     )
     return CodeTaskResult(
-        output={"plans": plans},
+        output={"plans": plans, "cliches": cliches},
         add_tasks=[*expand_tasks, merge_task],
     )
 
@@ -124,75 +125,6 @@ def normalize_element_text(value: str) -> str:
     return "".join(unicodedata.normalize("NFKC", value).split())
 
 
-def skip_redundant_expansions(
-    manifest: dict[str, Any],
-    run_dir: Path,
-    completed_task_id: str,
-    at: str,
-) -> list[str]:
-    """Skip not-yet-started expansions once an axis has enough unique items."""
-
-    task = manifest["tasks"].get(completed_task_id)
-    if not isinstance(task, Mapping) or task.get("type") != "S2.expand":
-        return []
-    index = task.get("index")
-    if not isinstance(index, list) or len(index) != 1:
-        return []
-    axis_key = _axis_from_plan(run_dir, index[0])
-    need = manifest.get("scale", {}).get("derived", {}).get("pool_need", {}).get(axis_key)
-    if isinstance(need, bool) or not isinstance(need, int) or need < 1:
-        return []
-
-    unique: set[str] = set()
-    for task_id, candidate in manifest["tasks"].items():
-        if candidate.get("type") != "S2.expand" or candidate.get("state") != "done":
-            continue
-        candidate_index = candidate.get("index")
-        if not isinstance(candidate_index, list) or len(candidate_index) != 1:
-            continue
-        if _axis_from_plan(run_dir, candidate_index[0]) != axis_key:
-            continue
-        output_path = run_dir / "tasks" / task_id / "output.json"
-        try:
-            with output_path.open("r", encoding="utf-8") as stream:
-                output = json.load(stream)
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            continue
-        if isinstance(output, Mapping) and isinstance(output.get("items"), list):
-            unique.update(
-                normalize_element_text(item)
-                for item in output["items"]
-                if isinstance(item, str) and normalize_element_text(item)
-            )
-    if len(unique) < need:
-        return []
-
-    skipped: list[str] = []
-    for task_id, candidate in manifest["tasks"].items():
-        if candidate.get("type") != "S2.expand" or candidate.get("state") not in {
-            "blocked",
-            "ready",
-        }:
-            continue
-        candidate_index = candidate.get("index")
-        if not isinstance(candidate_index, list) or len(candidate_index) != 1:
-            continue
-        if _axis_from_plan(run_dir, candidate_index[0]) != axis_key:
-            continue
-        old_state = candidate["state"]
-        candidate["state"] = "skipped"
-        candidate["history"].append(
-            {
-                "at": at,
-                "from": old_state,
-                "to": "skipped",
-                "reason": "必要量に達したためS2の展開を省略",
-            }
-        )
-        skipped.append(task_id)
-    return skipped
-
-
 def _materials_from_s1(outputs: Mapping[str, Any]) -> list[dict[str, Any]]:
     materials: list[dict[str, Any]] = []
     for output in outputs.values():
@@ -237,7 +169,6 @@ def _axis_from_plan(run_dir: Path, plan_key: Any) -> str:
 
 __all__ = [
     "normalize_element_text",
-    "skip_redundant_expansions",
     "story_s2_merge",
     "story_s2_plan",
 ]

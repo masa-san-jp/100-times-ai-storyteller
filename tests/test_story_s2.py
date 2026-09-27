@@ -70,7 +70,7 @@ def test_s2_task_definitions_and_schema_are_valid() -> None:
     ).is_file()
 
 
-def test_s2_plan_expand_merge_deduplicate_and_skip_after_need(
+def test_s2_plan_expand_merge_deduplicate_without_skip(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "free.md"
@@ -92,15 +92,20 @@ def test_s2_plan_expand_merge_deduplicate_and_skip_after_need(
     first_want = "S2.expand-m001-want"
     card = orchestrator.claim_task(run_id, first_want, executor_id="dummy")
     assert "運命" in card["card"]
+    assert "generation_rules:" in card["card"]
+    assert "具体的な相手・場所・物・期限" in card["card"]
+    assert "発動条件と制約" not in card["card"]
     assert "m001" in card["card"]
     assert "m002" not in card["card"]
+    steps = card["card"].split("## 手順", 1)[1].split("## 出力形式", 1)[0]
+    assert "運命" not in steps
     assert orchestrator.submit(
         card["ticket"],
         json.dumps(_expand_output("want", "m001"), ensure_ascii=False),
     ).accepted
 
     manifest = orchestrator.load_run(run_id)
-    assert manifest["tasks"]["S2.expand-m002-want"]["state"] == "skipped"
+    assert manifest["tasks"]["S2.expand-m002-want"]["state"] == "ready"
 
     for task_id in expand_ids:
         task = orchestrator.load_run(run_id)["tasks"][task_id]
