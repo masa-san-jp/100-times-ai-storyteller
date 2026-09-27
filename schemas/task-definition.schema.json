@@ -193,10 +193,8 @@
       "additionalProperties": false,
       "properties": {
         "schema": {
-          "anyOf": [
-            {"type": "object"},
-            {"type": "boolean"}
-          ]
+          "type": "string",
+          "pattern": "^(?![/\\\\])(?![A-Za-z]:[/\\\\])(?!.*(?:^|/)\\.\\.?(?:/|$))(?:[^/\\\\]+/)*[^/\\\\]+\\.schema\\.json$"
         },
         "checks": {
           "type": "array",

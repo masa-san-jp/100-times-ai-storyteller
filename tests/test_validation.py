@@ -41,6 +41,7 @@ def test_load_yaml_validates_a_task_definition(tmp_path):
             - プロフィールを書く。
           output_example: '{"profile": "...", "sources": ["want:i007"]}'
         validate:
+          schema: schemas/tasks/S1.profile.schema.json
           checks:
             - sources_exist
             - max_chars:
@@ -59,6 +60,40 @@ def test_load_yaml_validates_a_task_definition(tmp_path):
 
     assert value["id"] == "S1.profile"
     assert value["inputs"]["character"]["required"] is True
+    assert value["validate"]["schema"] == "schemas/tasks/S1.profile.schema.json"
+
+
+@pytest.mark.parametrize(
+    "schema_value",
+    [
+        "{type: object}",
+        "true",
+        "schemas/tasks/S1.profile.json",
+        "/schemas/tasks/S1.profile.schema.json",
+        "../schemas/tasks/S1.profile.schema.json",
+    ],
+)
+def test_task_definition_validate_schema_is_a_relative_schema_path(
+    tmp_path, schema_value
+):
+    path = write_yaml(
+        tmp_path,
+        "invalid-schema-path.yaml",
+        f"""
+        id: S1.profile
+        version: 1
+        kind: llm
+        output: text
+        card:
+          role: プロフィールを書く。
+          steps: [write]
+        validate:
+          schema: {schema_value}
+        """,
+    )
+
+    with pytest.raises(SchemaValidationError):
+        load_yaml(path, TASK_SCHEMA)
 
 
 def test_task_definition_requires_kind_specific_fields(tmp_path):
