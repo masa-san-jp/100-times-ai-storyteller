@@ -39,6 +39,7 @@ _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _TICKET = re.compile(r"^[a-f0-9]{32}$")
 _EXECUTOR_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
+_TERMINAL_RUN_STATUSES = frozenset({"halted", "completed", "duplicate"})
 _MISSING: Final = object()
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -46,7 +47,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "ready": frozenset({"claimed", "done", "failed", "skipped"}),
     "claimed": frozenset({"done", "ready", "failed"}),
     "done": frozenset(),
-    "failed": frozenset({"ready"}),
+    "failed": frozenset({"ready", "blocked"}),
     "skipped": frozenset(),
 }
 
@@ -196,15 +197,21 @@ class Orchestrator:
         *,
         clock: Callable[[], datetime] | None = None,
         harness_root: str | Path | None = None,
+        repository_root: str | Path | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
         self.task_definitions = _validate_task_definitions(task_definitions)
         self.code_handlers = dict(code_handlers or {})
         self._clock = clock or (lambda: datetime.now(timezone.utc))
-        self.harness_root = (
+        self.definition_root = (
             Path(harness_root).expanduser().resolve(strict=False)
             if harness_root is not None
             else Path(__file__).resolve().parents[2]
+        )
+        self.repository_root = (
+            Path(repository_root).expanduser().resolve(strict=False)
+            if repository_root is not None
+            else _repository_root_for_definition_root(self.definition_root)
         )
 
     def create_run(
@@ -269,7 +276,10 @@ class Orchestrator:
             resolved_harness = (
                 dict(harness)
                 if harness is not None
-                else _discover_harness_files(self.harness_root)
+                else _discover_harness_files(
+                    self.definition_root,
+                    repository_root=self.repository_root,
+                )
             )
             manifest: dict[str, Any] = {
                 "schema_version": 1,
@@ -331,12 +341,11 @@ class Orchestrator:
         while True:
             with manifest_lock(run_dir):
                 manifest = load_manifest(run_dir / "manifest.json")
-                if manifest["status"] == "active" and self._harness_changed(manifest):
-                    _halt_run(manifest)
+                if self._halt_if_harness_changed(manifest):
                     _touch_manifest(manifest, self._now())
                     write_manifest(run_dir / "manifest.json", manifest)
                     return manifest
-                if manifest["status"] in {"halted", "duplicate"}:
+                if manifest["status"] in _TERMINAL_RUN_STATUSES:
                     _touch_manifest(manifest, self._now())
                     write_manifest(run_dir / "manifest.json", manifest)
                     return manifest
@@ -390,10 +399,7 @@ class Orchestrator:
                 try:
                     with manifest_lock(run_dir):
                         manifest = load_manifest(run_dir / "manifest.json")
-                        if manifest["status"] == "active" and self._harness_changed(
-                            manifest
-                        ):
-                            _halt_run(manifest)
+                        if self._halt_if_harness_changed(manifest):
                             _touch_manifest(manifest, self._now())
                             write_manifest(run_dir / "manifest.json", manifest)
                             break
@@ -466,8 +472,7 @@ class Orchestrator:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
-            if manifest["status"] == "active" and self._harness_changed(manifest):
-                _halt_run(manifest)
+            if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
                 write_manifest(run_dir / "manifest.json", manifest)
                 raise HaltedRunError(f"run は停止中です: {run_id}")
@@ -519,38 +524,23 @@ class Orchestrator:
     accept_harness_change = resume_harness_change
 
     def _current_harness(self, manifest: Mapping[str, Any]) -> dict[str, str]:
-        """Return the current snapshot for the files tracked by this run.
+        """Return a freshly enumerated snapshot of the current harness files."""
 
-        A normal run tracks every file below the four harness directories.  A
-        caller may also provide a synthetic snapshot in tests or in an
-        embedding application; for paths that do not exist, retaining the
-        supplied mapping keeps that explicit snapshot meaningful.
-        """
-
-        stored = manifest.get("harness")
-        if not isinstance(stored, Mapping) or not stored:
-            return {}
-        discovered = _discover_harness_files(self.harness_root)
-        stored_keys = {str(path) for path in stored}
-        if set(discovered) == stored_keys:
-            return discovered
-        if stored_keys and all(
-            Path(path).parts and Path(path).parts[0]
-            in {"harness", "tables", "schemas", "formats"}
-            for path in stored_keys
-        ):
-            return discovered
-        existing_stored = {
-            path: _sha256_file(self.harness_root / Path(path))
-            for path in stored_keys
-            if (self.harness_root / Path(path)).is_file()
-        }
-        if len(existing_stored) == len(stored_keys):
-            return existing_stored
-        return {str(path): str(value) for path, value in stored.items()}
+        return _discover_harness_files(
+            self.definition_root,
+            repository_root=self.repository_root,
+        )
 
     def _harness_changed(self, manifest: Mapping[str, Any]) -> bool:
         return self._current_harness(manifest) != dict(manifest.get("harness", {}))
+
+    def _halt_if_harness_changed(self, manifest: dict[str, Any]) -> bool:
+        if manifest["status"] in _TERMINAL_RUN_STATUSES:
+            return False
+        if not self._harness_changed(manifest):
+            return False
+        _halt_run(manifest)
+        return True
 
     def validate_claim(self, ticket: str) -> dict[str, Any]:
         """Return claim metadata when *ticket* is currently valid.
@@ -570,6 +560,12 @@ class Orchestrator:
         run_dir = self.run_dir(found_run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
+            if self._halt_if_harness_changed(manifest):
+                _touch_manifest(manifest, self._now())
+                write_manifest(run_dir / "manifest.json", manifest)
+                raise HaltedRunError(f"run は停止中です: {found_run_id}")
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {found_run_id}")
             task = _get_task(manifest, found_task_id)
             claim = task.get("claim")
             claim_path = self.task_dir(found_run_id, found_task_id) / "claim.json"
@@ -616,8 +612,7 @@ class Orchestrator:
 
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
-            if manifest["status"] == "active" and self._harness_changed(manifest):
-                _halt_run(manifest)
+            if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
                 write_manifest(run_dir / "manifest.json", manifest)
                 raise HaltedRunError(f"run は停止中です: {run_id}")
@@ -636,8 +631,8 @@ class Orchestrator:
             definition,
             raw_output,
             inputs=inputs,
-            harness_root=self.harness_root,
-            common_words_path=self.harness_root / "tables" / "common_words.yaml",
+            harness_root=self.definition_root,
+            common_words_path=self.repository_root / "tables" / "common_words.yaml",
         )
         return self._commit_submission(
             ticket,
@@ -662,8 +657,7 @@ class Orchestrator:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
-            if manifest["status"] == "active" and self._harness_changed(manifest):
-                _halt_run(manifest)
+            if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
                 write_manifest(run_dir / "manifest.json", manifest)
                 raise HaltedRunError(f"run は停止中です: {run_id}")
@@ -680,6 +674,9 @@ class Orchestrator:
             at = self._now()
             errors = tuple(str(error) for error in validation.errors)
             warnings = tuple(str(warning) for warning in validation.warnings)
+            recorded_warnings = tuple(
+                f"{task_id}: {warning}" for warning in warnings
+            )
             if validation.passed:
                 _write_submitted_output(
                     self.task_dir(run_id, task_id),
@@ -696,7 +693,7 @@ class Orchestrator:
                     executor_id=claim["executor_id"],
                 )
                 task["error"] = None
-                manifest["warnings"].extend(warnings)
+                manifest["warnings"].extend(recorded_warnings)
                 _refresh_blocked_tasks(manifest, at)
                 _update_run_status(manifest)
                 _touch_manifest(manifest, at)
@@ -706,11 +703,15 @@ class Orchestrator:
                     run_id,
                     task_id,
                     value=validation.value,
-                    warnings=warnings,
+                    warnings=recorded_warnings,
                 )
 
             reason = "；".join(errors) or "提出が検証に不合格"
             next_attempt = int(task["attempt"]) + 1
+            next_tries = int(task["tries"]) + 1
+            attempt_number = _next_attempt_number(
+                self.task_dir(run_id, task_id) / "attempts"
+            )
             attempt_record = {
                 "output": raw_output,
                 "errors": list(errors) or [reason],
@@ -719,15 +720,13 @@ class Orchestrator:
                 "ticket": ticket,
                 "executor_id": claim["executor_id"],
                 "at": at,
+                "attempt": next_attempt,
+                "tries": next_tries,
             }
-            atomic_write_json(
-                self.task_dir(run_id, task_id) / "attempts" / f"{next_attempt}.json",
-                attempt_record,
-            )
             task["attempt"] = next_attempt
-            task["tries"] = int(task["tries"]) + 1
+            task["tries"] = next_tries
             task["error"] = reason
-            _release_claim(run_dir, task_id, task)
+            task["claim"] = None
             max_attempts = int(self.task_definitions[task["type"]].get("max_attempts", 3))
             next_state = "failed" if task["tries"] >= max_attempts else "ready"
             _set_task_state(
@@ -738,10 +737,17 @@ class Orchestrator:
                 reason=reason,
                 executor_id=claim["executor_id"],
             )
-            manifest["warnings"].extend(warnings)
             _update_run_status(manifest)
             _touch_manifest(manifest, at)
             write_manifest(run_dir / "manifest.json", manifest)
+            _release_claim(run_dir, task_id, task)
+            _remove_task_outputs(run_dir, task_id)
+            atomic_write_json(
+                self.task_dir(run_id, task_id)
+                / "attempts"
+                / f"{attempt_number}.json",
+                attempt_record,
+            )
             return SubmissionResult(
                 False,
                 run_id,
@@ -775,6 +781,10 @@ class Orchestrator:
             task["continuation_step"] = 0
             task["cache_key"] = None
             task["error"] = None
+            dependencies_ready = all(
+                _get_task(manifest, dependency)["state"] in {"done", "skipped"}
+                for dependency in task["deps"]
+            )
             partial = self.task_dir(run_id, task_id) / "partial.md"
             try:
                 partial.unlink()
@@ -783,7 +793,7 @@ class Orchestrator:
             _set_task_state(
                 manifest,
                 task_id,
-                "ready",
+                "ready" if dependencies_ready else "blocked",
                 self._now(),
                 reason="failed タスクを再試行",
             )
@@ -911,7 +921,7 @@ class Orchestrator:
             except (OSError, ValueError) as error:
                 _warn_skipped_run(entry.name, error)
                 continue
-            if manifest["status"] == "active":
+            if manifest["status"] in {"active", "stalled"}:
                 records.append((manifest["created_at"], entry.name))
         records.sort(key=lambda item: (item[0], item[1]))
         return [entry[1] for entry in records]
@@ -1199,6 +1209,10 @@ class Orchestrator:
                 normalised.skip_tasks,
                 self.task_definitions,
             )
+            normalised.invalidations = _select_invalidation_requests(
+                manifest,
+                normalised.invalidations,
+            )
             for invalidated_id, reason in normalised.invalidations:
                 _validate_invalidation_request(manifest, invalidated_id, reason)
             created_dirs = _create_dynamic_task_dirs(
@@ -1310,6 +1324,7 @@ def create_run(
     task_definitions: Mapping[str, Mapping[str, Any]],
     *,
     harness_root: str | Path | None = None,
+    repository_root: str | Path | None = None,
     **kwargs: Any,
 ) -> str:
     """Convenience wrapper for creating one run."""
@@ -1321,6 +1336,7 @@ def create_run(
         code_handlers,
         clock=clock,
         harness_root=harness_root,
+        repository_root=repository_root,
     ).create_run(**kwargs)
 
 
@@ -1332,6 +1348,7 @@ def advance_run(
     code_handlers: Mapping[str, CodeTaskHandler] | None = None,
     clock: Callable[[], datetime] | None = None,
     harness_root: str | Path | None = None,
+    repository_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Convenience wrapper for advancing one run's code tasks."""
     return Orchestrator(
@@ -1340,6 +1357,7 @@ def advance_run(
         code_handlers,
         clock=clock,
         harness_root=harness_root,
+        repository_root=repository_root,
     ).advance(run_id)
 
 
@@ -1805,6 +1823,33 @@ def _normalise_invalidation_requests(value: Any) -> list[tuple[str, str]]:
     return requests
 
 
+def _select_invalidation_requests(
+    manifest: Mapping[str, Any],
+    requests: Sequence[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Deduplicate requests and keep only the outermost invalidations."""
+
+    unique: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for task_id, reason in requests:
+        _get_task(manifest, task_id)
+        if task_id in seen:
+            continue
+        seen.add(task_id)
+        unique.append((task_id, reason))
+
+    excluded = {
+        task_id
+        for task_id, _ in unique
+        if any(
+            task_id in _dependency_closure(manifest, other_id)
+            for other_id, _ in unique
+            if other_id != task_id
+        )
+    }
+    return [request for request in unique if request[0] not in excluded]
+
+
 def _validate_invalidation_request(
     manifest: Mapping[str, Any],
     task_id: str,
@@ -1828,32 +1873,36 @@ def _apply_invalidation(
     """Apply one invalidation; callers hold the manifest lock."""
 
     target = _get_task(manifest, task_id)
+    if target["state"] != "done":
+        return
     definition = definitions[target["type"]]
     max_invalidations = int(definition.get("max_invalidations", 2))
-    target["error"] = reason
-    target["cache_key"] = None
-    _remove_task_outputs(run_dir, task_id)
     current_count = int(target["invalidations"])
     if current_count >= max_invalidations:
+        target["error"] = reason
         _force_task_state(manifest, task_id, "failed", at, reason=reason)
-    else:
-        next_count = current_count + 1
-        target["attempt"] = int(target["attempt"]) + 1
-        target["invalidations"] = next_count
-        _force_task_state(manifest, task_id, "ready", at, reason=reason)
+        _update_run_status(manifest)
+        _touch_manifest(manifest, at)
+        write_manifest(run_dir / "manifest.json", manifest)
+        return
+
+    next_count = current_count + 1
+    target["error"] = reason
+    target["cache_key"] = None
+    target["attempt"] = int(target["attempt"]) + 1
+    target["invalidations"] = next_count
+    _force_task_state(manifest, task_id, "ready", at, reason=reason)
 
     descendants = _dependent_closure(manifest, task_id)
+    cleanup_outputs = [task_id]
+    revoked_claims: list[str] = []
     for dependent_id in descendants:
         dependent = _get_task(manifest, dependent_id)
-        if dependent["state"] == "claimed":
-            _release_claim(
-                run_dir,
-                dependent_id,
-                dependent,
-                archive_prefix="claim.revoked",
-            )
         if dependent["state"] in {"done", "ready", "claimed"}:
-            _remove_task_outputs(run_dir, dependent_id)
+            if dependent["state"] == "claimed":
+                revoked_claims.append(dependent_id)
+                dependent["claim"] = None
+            cleanup_outputs.append(dependent_id)
             dependent["cache_key"] = None
             _force_task_state(
                 manifest,
@@ -1862,6 +1911,21 @@ def _apply_invalidation(
                 at,
                 reason=f"依存タスク {task_id} が無効化された",
             )
+
+    # Persist the state transition first.  The output and claim files are
+    # cleanup artifacts and must not be removed before this durable boundary.
+    _update_run_status(manifest)
+    _touch_manifest(manifest, at)
+    write_manifest(run_dir / "manifest.json", manifest)
+    for cleanup_id in cleanup_outputs:
+        _remove_task_outputs(run_dir, cleanup_id)
+    for revoked_id in revoked_claims:
+        _release_claim(
+            run_dir,
+            revoked_id,
+            _get_task(manifest, revoked_id),
+            archive_prefix="claim.revoked",
+        )
 
 
 def _dependent_closure(manifest: Mapping[str, Any], task_id: str) -> list[str]:
@@ -1879,6 +1943,18 @@ def _dependent_closure(manifest: Mapping[str, Any], task_id: str) -> list[str]:
         seen.add(current)
         result.append(current)
         queue.extend(reverse.get(current, []))
+    return result
+
+
+def _dependency_closure(manifest: Mapping[str, Any], task_id: str) -> set[str]:
+    result: set[str] = set()
+    queue = list(_get_task(manifest, task_id)["deps"])
+    while queue:
+        current = queue.pop(0)
+        if current in result:
+            continue
+        result.add(current)
+        queue.extend(_get_task(manifest, current)["deps"])
     return result
 
 
@@ -1909,6 +1985,15 @@ def _remove_task_outputs(run_dir: Path, task_id: str) -> None:
             (task_dir / name).unlink()
         except FileNotFoundError:
             pass
+
+
+def _next_attempt_number(attempts_dir: Path) -> int:
+    """Return the smallest unused durable attempt-file number."""
+
+    for number in range(1, 2**31):
+        if not (attempts_dir / f"{number}.json").exists():
+            return number
+    raise OrchestrationError(f"試行履歴の番号を割り当てられません: {attempts_dir}")
 
 
 def _rename_claim(path: Path, prefix: str) -> Path:
@@ -2429,17 +2514,41 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _discover_harness_files(root: Path) -> dict[str, str]:
-    """Hash the repository files that form the run's harness snapshot."""
+def _is_dummy_harness_root(root: Path) -> bool:
+    return root.parts[-4:] == ("src", "storyteller", "dev", "dummy")
 
+
+def _repository_root_for_definition_root(root: Path) -> Path:
+    if _is_dummy_harness_root(root):
+        return root.parents[3]
+    return root
+
+
+def _discover_harness_files(
+    root: Path,
+    *,
+    repository_root: Path | None = None,
+) -> dict[str, str]:
+    """Hash the files covered by a real or dummy harness snapshot."""
+
+    repository_root = repository_root or root
+    if _is_dummy_harness_root(root):
+        directories = (root,)
+        relative_root = (
+            repository_root if root.is_relative_to(repository_root) else root
+        )
+    else:
+        directories = tuple(
+            root / name for name in ("harness", "tables", "schemas", "formats")
+        )
+        relative_root = root
     files: dict[str, str] = {}
-    for directory_name in ("harness", "tables", "schemas", "formats"):
-        directory = root / directory_name
+    for directory in directories:
         if not directory.is_dir():
             continue
         for path in sorted(directory.rglob("*")):
             if path.is_file():
-                relative = path.relative_to(root).as_posix()
+                relative = path.relative_to(relative_root).as_posix()
                 files[relative] = _sha256_file(path)
     return files
 
