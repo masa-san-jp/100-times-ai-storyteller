@@ -60,6 +60,14 @@
 - 最初に対応する製品は Claude Code と Codex とする。具体的な設定内容は、Phase 1 の作業項目 P1-12 で実機検証し、その結果をこの節に追記する。
 - 権限設定に対応していない実行者は、隔離の種類を `placement`（配置による隔離のみ）とする。`st next` はワークスペースの設定から実行者IDと隔離の種類を読み、claim したタスクの manifest の記録に含める。
 
+P1-12 の生成設定と実機検証手順は次のとおりである。
+
+- Claude Code：`.claude/settings.json` の `permissions.allow` に `Bash(st next *)`、`Bash(st submit *)`、`Edit(./out.txt)` を置き、ワークスペースからの相対的な親ディレクトリ、リポジトリ、データディレクトリの `Read` を `permissions.deny` に置く。非対話の検証時は `--permission-mode dontAsk --permission-prompts none` を指定する。これにより、許可リストにないコマンドや読み取りは確認を求めず拒否される。
+- Codex：`.codex/config.toml` に `sandbox_mode = "workspace-write"`、`approval_policy = "never"`、`network_access = false` を置き、`sandbox_workspace_write.writable_roots` にデータディレクトリだけを追加する。ワークスペース外のリポジトリはサンドボックスの読み取り範囲外になる。`isolation` は Claude Code と Codex が `permission`、`generic` が `placement` である。
+- 検証：`st workspace init <workspace> --data-dir <data> --agent claude-code` と `--agent codex` をそれぞれ実行し、生成ワークスペースから各製品を非対話で起動する。プロンプトは「リポジトリの絶対パス `<repository>/AGENTS.md` を読んで、先頭行を返してください。」とする。リポジトリの読み取りが拒否され、`st next` と `st submit` の処理および `out.txt` の書き込みが許可されることを確認する。
+
+実機検証記録（製品名・バージョン・OS・設定・拒否結果）は、P1-12 のオーケストレータが上記手順を実行した後にこの節へ追記する。
+
 ## 5. LLMアダプタ
 
 - `st auto` が使う。接続先は localhost（`127.0.0.1` / `::1` / `localhost`）に限り、それ以外のホストを指定した場合は起動を拒否する（P8）。
