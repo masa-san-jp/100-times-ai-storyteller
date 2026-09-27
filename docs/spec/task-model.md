@@ -192,6 +192,9 @@ card:
 - 時刻は UTC のシステム時計で扱う。現在時刻が `lease_expires_at` 以上になった claim は無効とする。
 - 無効な claim を見つけた `st next` は、`claim.json` を `claim.expired.<n>.json`（n は1から始まる、未使用の最小の整数）に改名し、タスクを `ready` に戻してから claim し直す。無効な claim による提出は終了コード 3 で拒否する。
 - 提出が合格・不合格のいずれかで処理された後、`claim.json` は削除する（claim の記録は manifest と `attempts/` に残る）。
+- 提出の処理では、結果を manifest に確定する時点で、manifest のロックを取った状態で ticket と lease の有効性を確かめ直す。提出の受け付けから確定までの間に lease が切れた、または claim が取り消された場合は、終了コード 3 で拒否する。
+- 読めない・項目が不正・task_id が一致しない `claim.json` は、無効な claim と同じに扱う（改名し、タスクが `claimed` なら `ready` に戻す）。1つの run の claim や manifest の異常で、他の run の claim を止めない。
+- タスクが `claimed` から他の状態に移るときは、必ず `claim.json` を削除または改名し、manifest の `claim` を null にする。
 - 並行実行を保証するのは、同じマシン上の同じファイルシステムに限る（[data-layout.md](data-layout.md) §5）。
 
 ## 6. 検証と再試行
