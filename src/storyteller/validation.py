@@ -86,6 +86,9 @@ _PROPER_NOUN_PATTERNS = (
 )
 _COMPLETE_ENDINGS = frozenset("。．.！!？?」』）)】…")
 _DEFAULT_HARNESS_ROOT = Path(__file__).resolve().parents[2]
+_SCHEMA_CACHE: dict[
+    tuple[Path, int, int], tuple[Any, Draft202012Validator]
+] = {}
 
 
 def validate_output(
@@ -576,19 +579,45 @@ def validate_document(
     if isinstance(schema, (str, Path)):
         schema_path = Path(schema)
         try:
-            with schema_path.open("r", encoding="utf-8") as stream:
-                schema_document = json.load(stream)
-        except (OSError, json.JSONDecodeError) as error:
+            resolved_schema_path = schema_path.resolve()
+            schema_stat = resolved_schema_path.stat()
+        except OSError as error:
             raise YamlLoadError(f"{schema_path}: {error}") from error
+
+        cache_key = (
+            resolved_schema_path,
+            schema_stat.st_mtime_ns,
+            schema_stat.st_size,
+        )
+        cached = _SCHEMA_CACHE.get(cache_key)
+        if cached is not None:
+            schema_document, validator = cached
+        else:
+            try:
+                with resolved_schema_path.open("r", encoding="utf-8") as stream:
+                    schema_document = json.load(stream)
+            except (OSError, json.JSONDecodeError) as error:
+                raise YamlLoadError(f"{schema_path}: {error}") from error
+
+            try:
+                validator = Draft202012Validator(schema_document)
+                validator.check_schema(schema_document)
+            except SchemaError as error:
+                raise YamlLoadError(
+                    f"{schema_path}: invalid JSON Schema: {error.message}"
+                ) from error
+            _SCHEMA_CACHE[cache_key] = (schema_document, validator)
     else:
         schema_document = schema
 
-    try:
-        validator = Draft202012Validator(schema_document)
-        validator.check_schema(schema_document)
-    except SchemaError as error:
-        schema_name = str(schema) if isinstance(schema, (str, Path)) else "schema"
-        raise YamlLoadError(f"{schema_name}: invalid JSON Schema: {error.message}") from error
+        try:
+            validator = Draft202012Validator(schema_document)
+            validator.check_schema(schema_document)
+        except SchemaError as error:
+            schema_name = str(schema) if isinstance(schema, (str, Path)) else "schema"
+            raise YamlLoadError(
+                f"{schema_name}: invalid JSON Schema: {error.message}"
+            ) from error
 
     errors = sorted(
         validator.iter_errors(document),
