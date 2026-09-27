@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/manifest.schema.json",
+  "title": "Storyteller run manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "batch_id",
+    "created_at",
+    "updated_at",
+    "status",
+    "seed",
+    "seed_source",
+    "input",
+    "scale",
+    "harness",
+    "table_snapshot",
+    "tasks",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$"
+    },
+    "batch_id": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "created_at": {
+      "$ref": "#/$defs/utc-timestamp"
+    },
+    "updated_at": {
+      "$ref": "#/$defs/utc-timestamp"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "stalled", "halted", "completed", "duplicate"]
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "seed_source": {
+      "type": "string",
+      "enum": ["argument", "batch", "generated"]
+    },
+    "input": {
+      "$ref": "#/$defs/input"
+    },
+    "scale": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "harness": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(?![/\\\\])(?![A-Za-z]:[/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "table_snapshot": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "utc-timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "input": {
+      "oneOf": [
+        {
+          "type": "object",
+          "maxProperties": 0
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "sha256"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["narrative", "free"]
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      ]
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "kind",
+        "state",
+        "deps",
+        "index",
+        "attempt",
+        "tries",
+        "invalidations",
+        "continuation_step",
+        "cache_key",
+        "claim",
+        "history",
+        "error"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["code", "llm"]
+        },
+        "state": {
+          "type": "string",
+          "enum": ["blocked", "ready", "claimed", "done", "failed", "skipped"]
+        },
+        "deps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "index": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "invalidations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "continuation_step": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_key": {
+          "type": ["string", "null"]
+        },
+        "claim": {
+          "anyOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/manifest-claim"}
+          ]
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "error": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "manifest-claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticket", "executor_id", "isolation", "lease_expires_at"],
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "executor_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,64}$"
+        },
+        "isolation": {
+          "type": "string",
+          "enum": ["permission", "placement", "adapter", "none"]
+        },
+        "lease_expires_at": {
+          "$ref": "#/$defs/utc-timestamp"
+        }
+      }
+    }
+  }
+}
