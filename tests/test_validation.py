@@ -9,6 +9,7 @@ import storyteller.validation as validation_module
 from storyteller.validation import (
     OutputParseError,
     SchemaValidationError,
+    TaskDefinitionValidationError,
     YamlLoadError,
     load_yaml,
     parse_json_object,
@@ -70,6 +71,62 @@ def test_load_yaml_validates_a_task_definition(tmp_path):
     assert value["id"] == "S1.profile"
     assert value["inputs"]["character"]["required"] is True
     assert value["validate"]["schema"] == "schemas/tasks/S1.profile.schema.json"
+
+
+def test_task_definition_output_example_allows_placeholders_enums_and_source_ids(
+    tmp_path,
+):
+    path = write_yaml(
+        tmp_path,
+        "task.yaml",
+        """
+        id: S1.extract
+        version: 1
+        kind: llm
+        output: json
+        card:
+          role: 素材を抽出する。
+          steps: [抽出する。]
+          output_example: '{"materials": [{"text": "...", "kind": "conflict"}], "sources": ["p001"]}'
+        validate:
+          schema: schemas/tasks/S1.extract.schema.json
+        """,
+    )
+
+    value = load_yaml(path, TASK_SCHEMA)
+
+    assert value["card"]["output_example"]
+
+
+@pytest.mark.parametrize(
+    "output_example",
+    [
+        '{"materials": [{"text": "具体的な文例", "kind": "conflict"}], "sources": ["p001"]}',
+        '{"materials": [{"text": "...", "kind": "具体的な種類"}], "sources": ["p001"]}',
+    ],
+)
+def test_task_definition_rejects_concrete_output_example_strings(
+    tmp_path, output_example
+):
+    path = write_yaml(
+        tmp_path,
+        "task.yaml",
+        f"""
+        id: S1.extract
+        version: 1
+        kind: llm
+        output: json
+        card:
+          role: 素材を抽出する。
+          steps: [抽出する。]
+          output_example: '{output_example}'
+        validate:
+          schema: schemas/tasks/S1.extract.schema.json
+        """,
+    )
+
+    with pytest.raises(TaskDefinitionValidationError, match="output_example"):
+        load_yaml(path, TASK_SCHEMA)
 
 
 @pytest.mark.parametrize(

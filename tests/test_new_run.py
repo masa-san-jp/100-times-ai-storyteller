@@ -9,7 +9,7 @@ from storyteller.new_run import create_free_run
 ROOT = Path(__file__).parents[1]
 
 
-def test_create_free_run_writes_input_scale_and_one_s1_task_per_paragraph(
+def test_create_free_run_writes_input_and_one_s1_task_per_paragraph(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "free.md"
@@ -34,7 +34,12 @@ def test_create_free_run_writes_input_scale_and_one_s1_task_per_paragraph(
     assert [paragraph["id"] for paragraph in input_value["paragraphs"]] == [
         "p001", "p002"
     ]
-    assert manifest["scale"]["plot_type"] == "quest"
+    assert manifest["input"] == {
+        "kind": "free",
+        "source_sha256": input_value["source_sha256"],
+        "plot_type": "quest",
+    }
+    assert "plot_type" not in manifest["scale"]
     assert set(manifest["tasks"]) == {
         "S1.extract-p001", "S1.extract-p002"
     }

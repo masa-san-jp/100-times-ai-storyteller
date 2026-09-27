@@ -40,6 +40,7 @@ from .validation import (
     ValidationResult,
     text_is_truncated,
     validate_document,
+    validate_task_definition_output_example,
     validate_output,
 )
 
@@ -217,9 +218,6 @@ class Orchestrator:
         repository_root: str | Path | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
-        self.task_definitions = _validate_task_definitions(task_definitions)
-        self.code_handlers = dict(code_handlers or {})
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
         self.definition_root = (
             Path(harness_root).expanduser().resolve(strict=False)
             if harness_root is not None
@@ -230,6 +228,12 @@ class Orchestrator:
             if repository_root is not None
             else _repository_root_for_definition_root(self.definition_root)
         )
+        self.task_definitions = _validate_task_definitions(
+            task_definitions,
+            schema_root=self.definition_root,
+        )
+        self.code_handlers = dict(code_handlers or {})
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def create_run(
         self,
@@ -245,6 +249,7 @@ class Orchestrator:
         seed_source: str | None = None,
         input_data: Any = None,
         input_type: str = "free",
+        plot_type: str | None = None,
         harness: Mapping[str, str] | None = None,
         scale: Mapping[str, Any] | None = None,
         table_snapshot: Mapping[str, Any] | None = None,
@@ -283,12 +288,26 @@ class Orchestrator:
             input_value = {} if input_data is None else input_data
             input_path = run_dir / "input.json"
             atomic_write_json(input_path, input_value)
-            input_record: dict[str, str] = {}
+            input_record: dict[str, Any] = {}
             if input_data is not None:
-                input_record = {
-                    "type": input_type,
-                    "sha256": _sha256_file(input_path),
-                }
+                source_sha256 = _sha256_file(input_path)
+                if (
+                    input_type == "free"
+                    and isinstance(input_data, Mapping)
+                    and isinstance(input_data.get("source_sha256"), str)
+                ):
+                    source_sha256 = input_data["source_sha256"]
+                if input_type == "free":
+                    input_record = {
+                        "kind": "free",
+                        "source_sha256": source_sha256,
+                        "plot_type": plot_type,
+                    }
+                else:
+                    input_record = {
+                        "type": input_type,
+                        "sha256": source_sha256,
+                    }
 
             resolved_harness = (
                 dict(harness)
@@ -758,16 +777,17 @@ class Orchestrator:
                 f"{task_id}: {warning}" for warning in warnings
             )
             if validation.passed:
+                stored_value = _postprocess_accepted_output(task, validation.value)
                 key = self._cache_key_for_task(
                     manifest,
                     task_id,
                     card_inputs,
                 )
-                save_cache(self.data_dir, key, validation.value)
+                save_cache(self.data_dir, key, stored_value)
                 _write_submitted_output(
                     self.task_dir(run_id, task_id),
                     self.task_definitions[task["type"]],
-                    validation.value,
+                    stored_value,
                 )
                 task["cache_key"] = key
                 _release_claim(run_dir, task_id, task)
@@ -790,7 +810,7 @@ class Orchestrator:
                     True,
                     run_id,
                     task_id,
-                    value=validation.value,
+                    value=stored_value,
                     warnings=recorded_warnings,
                 )
 
@@ -1510,6 +1530,7 @@ class Orchestrator:
             if not hit:
                 changed = True
                 continue
+            output = _postprocess_accepted_output(task, output)
             _write_submitted_output(
                 self.task_dir(run_id, task_id),
                 self.task_definitions[task["type"]],
@@ -1602,6 +1623,8 @@ def advance_run(
 
 def _validate_task_definitions(
     definitions: Mapping[str, Mapping[str, Any]],
+    *,
+    schema_root: str | Path | None = None,
 ) -> dict[str, dict[str, Any]]:
     if not isinstance(definitions, Mapping) or not definitions:
         raise ValueError("task_definitions must be a non-empty mapping")
@@ -1613,6 +1636,14 @@ def _validate_task_definitions(
             raise ValueError(f"task definition must be a mapping: {key}")
         copied = dict(definition)
         validate_document(copied, TASK_DEFINITION_SCHEMA_PATH)
+        validate_task_definition_output_example(
+            copied,
+            schema_root=(
+                schema_root
+                if schema_root is not None
+                else TASK_DEFINITION_SCHEMA_PATH.resolve().parents[1]
+            ),
+        )
         if copied["id"] != key:
             raise ValueError(f"task definition key does not match id: {key}")
         result[key] = copied
@@ -2071,6 +2102,33 @@ def _write_submitted_output(
             pass
     else:
         raise OrchestrationError("task definition output must be json or text")
+
+
+def _postprocess_accepted_output(task: Mapping[str, Any], value: Any) -> Any:
+    """Add code-owned IDs to accepted S1 materials before they are stored."""
+
+    if task.get("type") != "S1.extract":
+        return value
+    if not isinstance(value, Mapping) or not isinstance(value.get("materials"), list):
+        return value
+    index = task.get("index")
+    if not isinstance(index, list) or len(index) != 1:
+        return value
+    paragraph_id = index[0]
+    if not isinstance(paragraph_id, str) or not re.fullmatch(r"p[0-9]{3}", paragraph_id):
+        return value
+
+    paragraph_number = int(paragraph_id[1:])
+    materials = []
+    for offset, material in enumerate(value["materials"], start=1):
+        if not isinstance(material, Mapping):
+            return value
+        copied = dict(material)
+        copied["id"] = f"m{(paragraph_number - 1) * 5 + offset:03d}"
+        materials.append(copied)
+    result = dict(value)
+    result["materials"] = materials
+    return result
 
 
 def _normalise_invalidation_requests(value: Any) -> list[tuple[str, str]]:

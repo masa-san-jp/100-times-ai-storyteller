@@ -101,6 +101,23 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["kind", "source_sha256", "plot_type"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "free"
+            },
+            "source_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "plot_type": {
+              "type": ["string", "null"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["type", "sha256"],
           "properties": {
             "type": {

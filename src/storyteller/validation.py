@@ -39,6 +39,10 @@ class SchemaValidationError(YamlValidationError):
         super().__init__(f"{path}: {details}")
 
 
+class TaskDefinitionValidationError(YamlValidationError):
+    """A task definition violates the output-example placeholder rule."""
+
+
 class OutputValidationError(ValueError):
     """Base error for output validation configuration or parsing."""
 
@@ -577,6 +581,12 @@ def load_yaml(
 
     if schema_path is not None:
         validate_document(document, schema_path, source_path=yaml_path)
+        if Path(schema_path).name == "task-definition.schema.json":
+            validate_task_definition_output_example(
+                document,
+                schema_root=Path(schema_path).resolve().parents[1],
+                source_path=yaml_path,
+            )
     return document
 
 
@@ -653,6 +663,116 @@ def load_and_validate_yaml(
     """Explicit alias for the common read-and-validate operation."""
 
     return load_yaml(path, schema_path)
+
+
+def validate_task_definition_output_example(
+    definition: Any,
+    *,
+    schema_root: str | Path,
+    source_path: str | Path | None = None,
+) -> None:
+    """Check that a JSON task-card example contains no concrete prose.
+
+    The example may contain the ``...`` placeholder, enum values from its
+    output schema, and the literal IDs in its ``sources`` arrays.  Other
+    string values would steer an executor toward the example and are rejected
+    when the task definition is loaded.
+    """
+
+    if not isinstance(definition, Mapping) or definition.get("kind") != "llm":
+        return
+    card = definition.get("card")
+    if not isinstance(card, Mapping) or "output_example" not in card:
+        return
+
+    example = card["output_example"]
+    output_kind = definition.get("output")
+    if output_kind != "json":
+        return
+    if not isinstance(example, str):
+        return
+
+    try:
+        parsed = json.loads(example)
+    except json.JSONDecodeError as error:
+        raise TaskDefinitionValidationError(
+            _task_definition_error_prefix(source_path)
+            + f"card.output_example は JSON でなければなりません: {error.msg}"
+        ) from error
+
+    schema_ref = (definition.get("validate") or {}).get("schema")
+    enum_values: set[str] = set()
+    if isinstance(schema_ref, str):
+        output_schema_path = Path(schema_root) / schema_ref
+        if output_schema_path.is_file():
+            try:
+                with output_schema_path.open("r", encoding="utf-8") as stream:
+                    output_schema = json.load(stream)
+            except (OSError, json.JSONDecodeError) as error:
+                raise TaskDefinitionValidationError(
+                    _task_definition_error_prefix(source_path)
+                    + f"出力スキーマを読めません: {output_schema_path}"
+                ) from error
+            enum_values = _string_enum_values(output_schema)
+
+    source_ids = _source_example_ids(parsed)
+    for path, value in _string_values(parsed):
+        if value == "..." or value in enum_values or value in source_ids:
+            continue
+        raise TaskDefinitionValidationError(
+            _task_definition_error_prefix(source_path)
+            + f"card.output_example の {path} に具体的な文字列があります: {value!r}"
+        )
+
+
+def _task_definition_error_prefix(source_path: str | Path | None) -> str:
+    return f"{Path(source_path)}: " if source_path is not None else ""
+
+
+def _string_enum_values(schema: Any) -> set[str]:
+    values: set[str] = set()
+    if isinstance(schema, Mapping):
+        enum = schema.get("enum")
+        if isinstance(enum, list):
+            values.update(value for value in enum if isinstance(value, str))
+        for value in schema.values():
+            values.update(_string_enum_values(value))
+    elif isinstance(schema, list):
+        for value in schema:
+            values.update(_string_enum_values(value))
+    return values
+
+
+def _source_example_ids(value: Any, *, in_sources: bool = False) -> set[str]:
+    ids: set[str] = set()
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            ids.update(
+                _source_example_ids(child, in_sources=in_sources or key == "sources")
+            )
+    elif isinstance(value, list):
+        for child in value:
+            if in_sources and isinstance(child, str):
+                ids.add(child)
+            else:
+                ids.update(_source_example_ids(child, in_sources=in_sources))
+    return ids
+
+
+def _string_values(value: Any, path: str = "$") -> list[tuple[str, str]]:
+    if isinstance(value, str):
+        return [(path, value)]
+    if isinstance(value, Mapping):
+        result: list[tuple[str, str]] = []
+        for key, child in value.items():
+            result.extend(_string_values(child, f"{path}.{key}"))
+        return result
+    if isinstance(value, list):
+        result = []
+        for index, child in enumerate(value):
+            result.extend(_string_values(child, f"{path}[{index}]"))
+        return result
+    return []
 
 
 def _format_validation_error(error: ValidationError) -> str:
