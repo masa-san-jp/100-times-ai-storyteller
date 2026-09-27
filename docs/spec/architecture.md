@@ -70,7 +70,7 @@
 | `ollama` | Ollama の `/api/chat` | 1 |
 | `openai-compatible` | OpenAI 互換の `/v1/chat/completions`（LM Studio、llama.cpp server、vLLM 等のローカルサーバー） | 4 |
 
-- モデルごとの設定は `config/models.yaml` に置く（温度、最大出力長、コンテキスト長、JSON の出させ方）。JSON の出させ方は [task-model.md](task-model.md) §6.1 に従う。
+- モデルごとの設定は `config/models.yaml` に置く（温度、最大出力長、コンテキスト長、JSON の出させ方）。JSON の出させ方は [task-model.md](task-model.md) §6.5 に従う。
 - アダプタが実行中に変更した設定（JSON の出させ方の切り替え）は、データディレクトリの `adapters/state.json` にモデルごとに保存し、`st auto` の全プロセスで共有する。
 - アダプタは、応答が長さの上限で打ち切られたかどうか（`done_reason` 等）を、提出時にオーケストレータへ渡す（[task-model.md](task-model.md) §8）。
 
