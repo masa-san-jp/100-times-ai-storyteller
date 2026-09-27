@@ -2,7 +2,7 @@
 
 - 所有範囲：`st` のコマンド・引数・出力・終了コード
 
-`st` は `pyproject.toml` の `[project.scripts]` に登録する。開発者はリポジトリ内で `uv run st <command>` として、実行者は `uv tool install --editable <リポジトリのパス>` で導入した `st <command>` として実行する（[architecture.md](architecture.md) §4）。すべてのコマンドは、データディレクトリ（[data-layout.md](data-layout.md) §2）を対象にする。データディレクトリは、カレントディレクトリの `.storyteller-workspace.yaml` → 環境変数 `STORYTELLER_HOME` → リポジトリの `private/` の順に決める。
+`st` は `pyproject.toml` の `[project.scripts]` に登録する。開発者はリポジトリ内で `uv run st <command>` として、実行者は `uv tool install --editable <リポジトリのパス>` で導入した `st <command>` として実行する（[architecture.md](architecture.md) §4）。すべてのコマンドは、データディレクトリ（[data-layout.md](data-layout.md) §2）を対象にする。`st` の標準入力・標準出力・標準エラー出力は、OS の既定の文字コードによらず常に UTF-8（改行 LF）とする。データディレクトリは、カレントディレクトリの `.storyteller-workspace.yaml` → 環境変数 `STORYTELLER_HOME` → リポジトリの `private/` の順に決める。
 
 ## 1. コマンド一覧
 

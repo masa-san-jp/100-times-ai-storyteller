@@ -21,7 +21,32 @@ class _EncodingVisitor(ast.NodeVisitor):
                 self._check_text_method(node)
             elif node.func.attr == "open" and not self._is_os_open(node):
                 self._check_open_call(node)
+            elif self._is_text_subprocess_call(node):
+                self._check_subprocess_encoding(node)
         self.generic_visit(node)
+
+    def _check_subprocess_encoding(self, node: ast.Call) -> None:
+        if not self._has_encoding_keyword(node):
+            self.violations.append(
+                f"{self.path.relative_to(REPOSITORY_ROOT)}:{node.lineno}: "
+                "text subprocess calls must specify an encoding keyword"
+            )
+
+    @staticmethod
+    def _is_text_subprocess_call(node: ast.Call) -> bool:
+        if not (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "subprocess"
+            and node.func.attr in {"run", "Popen", "check_output"}
+        ):
+            return False
+        return any(
+            keyword.arg in {"text", "universal_newlines"}
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True
+            for keyword in node.keywords
+        )
 
     def _check_text_method(self, node: ast.Call) -> None:
         if not self._has_encoding_keyword(node):

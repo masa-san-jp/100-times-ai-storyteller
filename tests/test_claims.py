@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import storyteller.orchestrator as orchestrator_module
 from storyteller.orchestrator import (
     ClaimError,
     InvalidClaimError,
@@ -83,6 +84,37 @@ def test_claim_writes_manifest_claim_file_and_card(tmp_path: Path) -> None:
     assert claim_file["claimed_at"] == "2026-09-27T03:15:00Z"
     assert (task_dir / "card.md").read_text(encoding="utf-8") == result["card"]
     assert orchestrator.validate_claim(result["ticket"])["task_id"] == "D1.echo"
+
+
+def test_default_executor_id_replaces_invalid_hostname_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        orchestrator_module.socket,
+        "gethostname",
+        lambda: "ci/runner:name with spaces",
+    )
+
+    executor_id = orchestrator_module._resolve_executor_id(None)
+
+    assert executor_id == f"ci-runner-name-with-spaces-{orchestrator_module.os.getpid()}"
+
+
+def test_default_executor_id_truncates_long_hostname(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hostname = "a" * 100
+    monkeypatch.setattr(
+        orchestrator_module.socket,
+        "gethostname",
+        lambda: hostname,
+    )
+    pid_suffix = f"-{orchestrator_module.os.getpid()}"
+
+    executor_id = orchestrator_module._resolve_executor_id(None)
+
+    assert executor_id == f"{hostname[:64 - len(pid_suffix)]}{pid_suffix}"
+    assert len(executor_id) <= 64
 
 
 def test_claim_selection_uses_run_order_then_depth_then_task_id(
