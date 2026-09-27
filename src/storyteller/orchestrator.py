@@ -40,6 +40,7 @@ from .validation import (
     ValidationResult,
     text_is_truncated,
     validate_document,
+    validate_task_definition_output_example,
     validate_output,
 )
 
@@ -217,9 +218,6 @@ class Orchestrator:
         repository_root: str | Path | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
-        self.task_definitions = _validate_task_definitions(task_definitions)
-        self.code_handlers = dict(code_handlers or {})
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
         self.definition_root = (
             Path(harness_root).expanduser().resolve(strict=False)
             if harness_root is not None
@@ -230,6 +228,12 @@ class Orchestrator:
             if repository_root is not None
             else _repository_root_for_definition_root(self.definition_root)
         )
+        self.task_definitions = _validate_task_definitions(
+            task_definitions,
+            schema_root=self.definition_root,
+        )
+        self.code_handlers = dict(code_handlers or {})
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def create_run(
         self,
@@ -1619,6 +1623,8 @@ def advance_run(
 
 def _validate_task_definitions(
     definitions: Mapping[str, Mapping[str, Any]],
+    *,
+    schema_root: str | Path | None = None,
 ) -> dict[str, dict[str, Any]]:
     if not isinstance(definitions, Mapping) or not definitions:
         raise ValueError("task_definitions must be a non-empty mapping")
@@ -1630,6 +1636,14 @@ def _validate_task_definitions(
             raise ValueError(f"task definition must be a mapping: {key}")
         copied = dict(definition)
         validate_document(copied, TASK_DEFINITION_SCHEMA_PATH)
+        validate_task_definition_output_example(
+            copied,
+            schema_root=(
+                schema_root
+                if schema_root is not None
+                else TASK_DEFINITION_SCHEMA_PATH.resolve().parents[1]
+            ),
+        )
         if copied["id"] != key:
             raise ValueError(f"task definition key does not match id: {key}")
         result[key] = copied

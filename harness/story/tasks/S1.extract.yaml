@@ -15,7 +15,7 @@ card:
     - 原文の表現をそのまま引用せず、意味を保ったまま抽象化する。段落にない事実を補わず、断定や診断をしない。
     - 各素材に、desire（切望）、fear（恐れ）、suppression（抑圧）、conflict（自己矛盾と葛藤）、image（心象）、value（価値）、theme（主題）、mood（雰囲気）のいずれか1つを kind として付ける。
     - 判断できない情報を勝手に確定せず、段落に書かれた意図を保つ。素材の sources には入力された段落のIDを1件だけ書く。
-  output_example: '{"materials": [{"text": "変化を望みながら守り続ける日常", "kind": "conflict"}, {"text": "遠い場所へ向かうことへの静かな憧れ", "kind": "desire"}, {"text": "言葉にならない不安が残る夕暮れ", "kind": "mood"}, {"text": "記憶の隙間に浮かぶ光景の断片", "kind": "image"}, {"text": "誰かと分かち合いたい小さな価値", "kind": "value"}], "sources": ["p001"]}'
+  output_example: '{"materials": [{"text": "...", "kind": "conflict"}, {"text": "...", "kind": "desire"}, {"text": "...", "kind": "mood"}, {"text": "...", "kind": "image"}, {"text": "...", "kind": "value"}], "sources": ["p001"]}'
 validate:
   schema: schemas/tasks/S1.extract.schema.json
   checks:
