@@ -7,6 +7,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import socket
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,12 @@ from .storage import atomic_write_text, resolve_data_dir
 
 _EXECUTOR_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _SUPPORTED_AGENTS = frozenset({"claude-code", "codex", "generic"})
-_PERMISSION_AGENTS = frozenset({"claude-code", "codex"})
+_PERMISSION_AGENTS = frozenset({"claude-code"})
+_CLAUDE_ALLOWED_TOOLS = (
+    '"Bash(st next *)"',
+    '"Bash(st submit *)"',
+    '"Edit(./out.txt)"',
+)
 
 
 class WorkspaceError(ValueError):
@@ -112,6 +118,20 @@ def _workspace_config(data_dir: Path, executor_id: str, agent: str) -> str:
     )
 
 
+def _launch_command(workspace: Path, agent: str) -> str | None:
+    """Return the copyable product-specific command shown after init."""
+    workspace_literal = shlex.quote(workspace.as_posix())
+    if agent == "claude-code":
+        allowed_tools = " ".join(_CLAUDE_ALLOWED_TOOLS)
+        return (
+            f"(cd {workspace_literal} && claude -p \"<指示>\" "
+            f"--allowedTools {allowed_tools})"
+        )
+    if agent == "codex":
+        return f'codex exec -C {workspace_literal} "<指示>"'
+    return None
+
+
 def init_workspace(
     path: str | os.PathLike[str],
     *,
@@ -177,6 +197,9 @@ def _run_init_command(args: argparse.Namespace) -> int:
         agent=args.agent,
     )
     print(workspace)
+    command = _launch_command(workspace, args.agent)
+    if command is not None:
+        print(f"起動コマンド: {command}")
     return 0
 
 

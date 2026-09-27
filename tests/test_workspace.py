@@ -107,7 +107,33 @@ def test_codex_config_uses_workspace_sandbox_and_data_root(tmp_path: Path) -> No
     workspace_config = load_and_validate_yaml(
         target / ".storyteller-workspace.yaml", WORKSPACE_SCHEMA
     )
-    assert workspace_config["isolation"] == "permission"
+    assert workspace_config["isolation"] == "placement"
+
+
+def test_codex_workspace_records_placement_in_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    target = tmp_path / "codex-executor"
+    data_dir = tmp_path / "storyteller-data"
+    workspace.init_workspace(
+        target,
+        data_dir=data_dir,
+        executor_id="codex.worker",
+        agent="codex",
+    )
+
+    monkeypatch.chdir(target)
+    assert main(["dev", "new-dummy"]) == 0
+    run_id = capsys.readouterr().out.strip()
+    assert main(["next", "--run", run_id, "--json"]) == 0
+    capsys.readouterr()
+
+    manifest = json.loads(
+        (data_dir / "runs" / run_id / "manifest.json").read_text(encoding="utf-8")
+    )
+    claims = [task["claim"] for task in manifest["tasks"].values() if task["claim"]]
+    assert len(claims) == 1
+    assert claims[0]["isolation"] == "placement"
 
 
 def test_workspace_init_rejects_a_path_inside_the_repository(tmp_path: Path) -> None:
@@ -142,3 +168,36 @@ def test_cli_registers_workspace_init_without_implementing_it_in_cli(
         ]
     ) == 0
     assert capsys.readouterr().out == f"{target.resolve()}\n"
+
+
+@pytest.mark.parametrize(
+    ("agent", "expected_command"),
+    [
+        (
+            "claude-code",
+            'claude -p "<指示>" --allowedTools "Bash(st next *)" '
+            '"Bash(st submit *)" "Edit(./out.txt)"',
+        ),
+        ("codex", 'codex exec -C {workspace} "<指示>"'),
+    ],
+)
+def test_cli_workspace_init_prints_agent_launch_command(
+    tmp_path: Path, capsys, agent: str, expected_command: str
+) -> None:
+    target = tmp_path / f"{agent}-executor"
+
+    assert main(
+        [
+            "workspace",
+            "init",
+            str(target),
+            "--data-dir",
+            str(tmp_path / "data"),
+            "--agent",
+            agent,
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    assert output.startswith(f"{target.resolve()}\n起動コマンド: ")
+    assert expected_command.format(workspace=target.resolve()) in output

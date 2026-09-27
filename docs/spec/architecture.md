@@ -55,18 +55,16 @@
 - `st workspace init <path>` は、リポジトリの外に実行者ワークスペースを作る。ワークスペースに置くのは次のものだけである。
   - `AGENTS.md` / `CLAUDE.md`：実行者プロトコル（[executor-protocol.md](executor-protocol.md) §2 から生成）
   - `.storyteller-workspace.yaml`：データディレクトリの場所、実行者ID、エージェントの種類（`claude-code` / `codex` / `generic`）、隔離の種類（`permission` / `placement`）
-  - 製品ごとの権限設定：ワークスペースの外の読み取りを禁止し、コマンドは `st next` と `st submit` の実行だけを許可する（`st status` などはタスクIDや全体の構造を表示するため、実行者には許可しない）
+  - 製品ごとの権限設定：対応製品の仕様に従ってワークスペースの外の読み取りまたは書き込みを制限し、コマンドは `st next` と `st submit` の実行だけを許可する（`st status` などはタスクIDや全体の構造を表示するため、実行者には許可しない）
 - 実行者のマシンでは、`st` を `uv tool install --editable <リポジトリのパス>` で PATH に導入する。これにより、ワークスペースからは `st` という1つのコマンドだけで実行でき、権限設定で許可するコマンドを `st next` と `st submit` に限定できる。`st` は、ハーネスのファイルをパッケージの位置（editable 導入によりリポジトリ）から読み、データディレクトリをカレントディレクトリの `.storyteller-workspace.yaml` から読む。
-- 最初に対応する製品は Claude Code と Codex とする。具体的な設定内容は、Phase 1 の作業項目 P1-12 で実機検証し、その結果をこの節に追記する。
+- 最初に対応する製品は Claude Code と Codex とする。具体的な設定内容は、Phase 1 の作業項目 P1-12 で実機検証し、その結果をこの節に記録する。
 - 権限設定に対応していない実行者は、隔離の種類を `placement`（配置による隔離のみ）とする。`st next` はワークスペースの設定から実行者IDと隔離の種類を読み、claim したタスクの manifest の記録に含める。
 
 P1-12 の生成設定と実機検証手順は次のとおりである。
 
-- Claude Code：`.claude/settings.json` の `permissions.allow` に `Bash(st next *)`、`Bash(st submit *)`、`Edit(./out.txt)` を置き、ワークスペースからの相対的な親ディレクトリ、リポジトリ、データディレクトリの `Read` を `permissions.deny` に置く。非対話の検証時は `--permission-mode dontAsk --permission-prompts none` を指定する。これにより、許可リストにないコマンドや読み取りは確認を求めず拒否される。
-- Codex：`.codex/config.toml` に `sandbox_mode = "workspace-write"`、`approval_policy = "never"`、`network_access = false` を置き、`sandbox_workspace_write.writable_roots` にデータディレクトリだけを追加する。ワークスペース外のリポジトリはサンドボックスの読み取り範囲外になる。`isolation` は Claude Code と Codex が `permission`、`generic` が `placement` である。
-- 検証：`st workspace init <workspace> --data-dir <data> --agent claude-code` と `--agent codex` をそれぞれ実行し、生成ワークスペースから各製品を非対話で起動する。プロンプトは「リポジトリの絶対パス `<repository>/AGENTS.md` を読んで、先頭行を返してください。」とする。リポジトリの読み取りが拒否され、`st next` と `st submit` の処理および `out.txt` の書き込みが許可されることを確認する。
-
-実機検証記録（製品名・バージョン・OS・設定・拒否結果）は、P1-12 のオーケストレータが上記手順を実行した後にこの節へ追記する。
+- Claude Code：`.claude/settings.json` の `permissions.allow` に `Bash(st next *)`、`Bash(st submit *)`、`Edit(./out.txt)` を置き、ワークスペースからの相対的な親ディレクトリ、リポジトリ、データディレクトリの `Read` を `permissions.deny` に置く。実機確認では Claude Code 2.1.283 (Claude Code)（macOS）を使用した。`deny` によりワークスペース外のファイルの Read が「File is in a directory that is denied by your permission settings.」で拒否され、Bash による読み取りも拒否された。一方、新しいワークスペースは信頼済みでないため、`permissions.allow` の3項目は無視された（「Ignoring 3 permissions.allow entries ... this workspace has not been trusted」）。そのため、起動時に `--allowedTools "Bash(st next *)" "Bash(st submit *)" "Edit(./out.txt)"` を渡して `st` の実行を許可する。隔離の種類は `permission` とする。
+- Codex：`.codex/config.toml` に `sandbox_mode = "workspace-write"`、`approval_policy = "never"`、`network_access = false` を置き、`sandbox_workspace_write.writable_roots` にデータディレクトリだけを追加する。実機確認では codex-cli 0.155.1（macOS）を使用した。生成される config.toml は書き込みの制限だけで、読み取りは制限しない。そのため、隔離の種類は `placement` とし、ワークスペースをリポジトリの外に置く。起動コマンドは `codex exec -C <ワークスペース> "<指示>"` とする。`st next` が読み取った `placement` は claim の manifest に記録される。
+- 検証：`st workspace init <workspace> --data-dir <data> --agent claude-code` と `--agent codex` をそれぞれ実行し、生成ワークスペースから各製品を非対話で起動する。プロンプトは「リポジトリの絶対パス `<repository>/AGENTS.md` を読んで、先頭行を返してください。」とする。Claude Code ではリポジトリの読み取りが拒否され、Codex では読み取り制限がないことを確認した。Claude Code の `st next` と `st submit` は起動時の `--allowedTools` で許可する。Codex の隔離種別は `placement` として `.storyteller-workspace.yaml` および manifest に記録する。
 
 ## 5. LLMアダプタ
 
