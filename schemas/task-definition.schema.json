@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/task-definition.schema.json",
+  "title": "Storyteller task definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "kind"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z][0-9]+\\.[a-z][a-z0-9_]*$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["code", "llm"]
+    },
+    "handler": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputs": {
+      "type": "object",
+      "default": {},
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/input-slot"
+      }
+    },
+    "output": {
+      "type": "string",
+      "enum": ["json", "text"]
+    },
+    "card": {
+      "$ref": "#/$defs/card"
+    },
+    "validate": {
+      "$ref": "#/$defs/validation"
+    },
+    "max_input_chars": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3000
+    },
+    "candidates": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1
+    },
+    "select_candidate": {
+      "type": "string",
+      "enum": ["random", "least_similar"],
+      "default": "random"
+    },
+    "max_attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3
+    },
+    "max_invalidations": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 2
+    },
+    "share_across_runs": {
+      "type": "boolean",
+      "default": false
+    },
+    "lease_minutes": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "default": 30
+    },
+    "continuation": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {"const": "code"}
+        }
+      },
+      "then": {
+        "required": ["handler"],
+        "not": {
+          "anyOf": [
+            {"required": ["output"]},
+            {"required": ["card"]},
+            {"required": ["validate"]},
+            {"required": ["max_input_chars"]},
+            {"required": ["candidates"]},
+            {"required": ["select_candidate"]},
+            {"required": ["max_attempts"]},
+            {"required": ["max_invalidations"]},
+            {"required": ["share_across_runs"]},
+            {"required": ["lease_minutes"]},
+            {"required": ["continuation"]}
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {"const": "llm"}
+        }
+      },
+      "then": {
+        "required": ["output", "card"],
+        "not": {
+          "required": ["handler"]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {"const": "llm"},
+          "output": {"const": "json"}
+        }
+      },
+      "then": {
+        "properties": {
+          "card": {
+            "required": ["output_example"]
+          },
+          "continuation": {"const": false}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "input-slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "from", "select"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^(?:input|[A-Z][0-9]+\\.[a-z][a-z0-9_]*)$"
+        },
+        "select": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "truncate": {
+          "type": "string",
+          "enum": ["none", "head", "tail", "drop"],
+          "default": "none"
+        }
+      }
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "steps"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "output_example": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "type": "string",
+          "pattern": "^(?![/\\\\])(?![A-Za-z]:[/\\\\])(?!.*(?:^|/)\\.\\.?(?:/|$))(?:[^/\\\\]+/)*[^/\\\\]+\\.schema\\.json$"
+        },
+        "checks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/check"}
+        }
+      }
+    },
+    "check": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "sources_exist",
+            "max_chars",
+            "min_chars",
+            "count",
+            "ids_subset",
+            "uses_given",
+            "ends_complete",
+            "no_new_proper_nouns"
+          ]
+        },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "sources_exist": {},
+            "max_chars": {"$ref": "#/$defs/char-check"},
+            "min_chars": {"$ref": "#/$defs/char-check"},
+            "count": {"$ref": "#/$defs/count-check"},
+            "ids_subset": {"$ref": "#/$defs/ids-subset-check"},
+            "uses_given": {"$ref": "#/$defs/uses-given-check"},
+            "ends_complete": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "field": {"type": "string", "minLength": 1}
+              }
+            },
+            "no_new_proper_nouns": {"$ref": "#/$defs/proper-nouns-check"}
+          }
+        }
+      ]
+    },
+    "char-check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n"],
+      "properties": {
+        "field": {"type": "string", "minLength": 1},
+        "n": {"type": "integer", "minimum": 0}
+      }
+    },
+    "count-check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "field": {"type": "string", "minLength": 1},
+        "n": {"type": "integer", "minimum": 0},
+        "min": {"type": "integer", "minimum": 0},
+        "max": {"type": "integer", "minimum": 0}
+      },
+      "required": ["field"],
+      "anyOf": [
+        {
+          "required": ["n"],
+          "not": {
+            "anyOf": [
+              {"required": ["min"]},
+              {"required": ["max"]}
+            ]
+          }
+        },
+        {
+          "anyOf": [
+            {"required": ["min"]},
+            {"required": ["max"]}
+          ],
+          "not": {"required": ["n"]}
+        }
+      ]
+    },
+    "ids-subset-check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "slot"],
+      "properties": {
+        "field": {"type": "string", "minLength": 1},
+        "slot": {"type": "string", "minLength": 1}
+      }
+    },
+    "uses-given-check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "slot", "n"],
+      "properties": {
+        "field": {"type": "string", "minLength": 1},
+        "slot": {"type": "string", "minLength": 1},
+        "n": {"type": "integer", "minimum": 1}
+      }
+    },
+    "proper-nouns-check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["warn", "fail"]
+        }
+      }
+    }
+  }
+}

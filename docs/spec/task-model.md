@@ -199,7 +199,7 @@ card:
 ### 6.1 検証の順序
 
 1. **形式**：`output: json` の場合、JSON のオブジェクトとして解析できること。解析できない場合は、出力の中から最初の `{` と、JSON の文字列リテラル内の括弧を無視して数えた対応する `}` までを取り出し、再度解析する。配列は救済の対象にしない。
-2. **スキーマ**：`validate.schema` の JSON Schema（Draft 2020-12）に適合すること。
+2. **スキーマ**：`validate.schema` に指定した JSON Schema（Draft 2020-12）に適合すること。`validate.schema` は、ハーネスのルート（本物のハーネスはリポジトリのルート、ダミーのハーネスは `src/storyteller/dev/dummy/`）からの相対パスの文字列で書き、`.schema.json` で終わるものとする（例：`schemas/tasks/S5.profile.schema.json`）。定義の中に JSON Schema を直接書かない。
 3. **チェック**：`validate.checks` に書いた検査（§6.2）。
 
 ### 6.2 チェック
