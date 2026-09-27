@@ -232,6 +232,13 @@ def _input_char_count(definition: Mapping[str, Any], values: Mapping[str, Any]) 
     return _char_len(_render_input_body(definition, values))
 
 
+def input_char_count(
+    definition: Mapping[str, Any], values: Mapping[str, Any]
+) -> int:
+    """Return the NFC character count of the rendered input section."""
+    return _input_char_count(definition, values)
+
+
 def _render_input_body(
     definition: Mapping[str, Any], values: Mapping[str, Any]
 ) -> str:

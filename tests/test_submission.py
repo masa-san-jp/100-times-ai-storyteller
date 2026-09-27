@@ -52,6 +52,24 @@ def llm_definition(task_id: str = "D1.echo", **extra: object) -> dict:
     return definition
 
 
+def continuation_definition(**extra: object) -> dict:
+    definition = {
+        "id": "D1.story",
+        "version": 1,
+        "kind": "llm",
+        "output": "text",
+        "continuation": True,
+        "card": {
+            "role": "入力を確認して本文を書く。",
+            "steps": ["本文を書き、最後は完結させる。"],
+        },
+        "validate": {"checks": ["ends_complete", {"min_chars": {"n": 2}}]},
+        "max_input_chars": 3000,
+    }
+    definition.update(extra)
+    return definition
+
+
 def test_submit_uses_the_truncated_card_input_and_records_rejection(tmp_path: Path) -> None:
     clock = Clock()
     orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition()}, clock=clock)
@@ -86,6 +104,127 @@ def test_submit_uses_the_truncated_card_input_and_records_rejection(tmp_path: Pa
     )
     assert accepted.accepted
     assert orchestrator.load_run(run_id)["status"] == "completed"
+
+
+def test_continuation_appends_chunks_and_caches_only_the_complete_output(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    orchestrator = Orchestrator(
+        tmp_path,
+        {"D1.story": continuation_definition()},
+        clock=clock,
+    )
+    run_id = orchestrator.create_run(seed=1)
+
+    first = orchestrator.claim_next(run_id, executor_id="worker")
+    assert first is not None
+    first_result = orchestrator.submit(first["ticket"], "はじまり", truncated=True)
+    assert first_result.accepted
+    task_dir = tmp_path / "runs" / run_id / "tasks" / "D1.story"
+    assert (task_dir / "partial.md").read_text(encoding="utf-8") == "はじまり"
+    task = orchestrator.load_run(run_id)["tasks"]["D1.story"]
+    assert task["continuation_step"] == 1
+    assert task["tries"] == 0
+    assert not (tmp_path / "cache").exists()
+
+    second = orchestrator.claim_next(run_id, executor_id="worker-2")
+    assert second is not None
+    assert "## これまでの出力の末尾\nはじまり" in second["card"]
+    assert "既出の文章を繰り返さず" in second["card"]
+    accepted = orchestrator.submit(second["ticket"], "、おわり。")
+
+    assert accepted.accepted
+    assert accepted.value == "はじまり、おわり。"
+    assert (task_dir / "output.md").read_text(encoding="utf-8") == "はじまり、おわり。"
+    assert not (task_dir / "partial.md").exists()
+    assert orchestrator.load_run(run_id)["tasks"]["D1.story"]["continuation_step"] == 1
+    task = orchestrator.load_run(run_id)["tasks"]["D1.story"]
+    assert task["cache_key"] is not None
+    assert orchestrator.load_run(run_id)["status"] == "completed"
+
+
+def test_long_incomplete_text_is_detected_without_the_flag(tmp_path: Path) -> None:
+    orchestrator = Orchestrator(
+        tmp_path,
+        {"D1.story": continuation_definition()},
+    )
+    run_id = orchestrator.create_run(seed=1)
+    claim = orchestrator.claim_next(run_id, executor_id="worker")
+    assert claim is not None
+
+    result = orchestrator.submit(claim["ticket"], "あ" * 400)
+
+    assert result.accepted
+    task_dir = tmp_path / "runs" / run_id / "tasks" / "D1.story"
+    assert (task_dir / "partial.md").read_text(encoding="utf-8") == "あ" * 400
+    assert orchestrator.load_run(run_id)["tasks"]["D1.story"]["continuation_step"] == 1
+    assert not (tmp_path / "cache").exists()
+
+
+def test_third_incomplete_chunk_is_one_normal_rejection_and_discards_partial(
+    tmp_path: Path,
+) -> None:
+    orchestrator = Orchestrator(
+        tmp_path,
+        {"D1.story": continuation_definition()},
+    )
+    run_id = orchestrator.create_run(seed=1)
+    for chunk in ("一", "二"):
+        claim = orchestrator.claim_next(run_id, executor_id="worker")
+        assert claim is not None
+        assert orchestrator.submit(claim["ticket"], chunk, truncated=True).accepted
+
+    claim = orchestrator.claim_next(run_id, executor_id="worker")
+    assert claim is not None
+    result = orchestrator.submit(claim["ticket"], "三" * 400)
+
+    assert not result.accepted
+    task_dir = tmp_path / "runs" / run_id / "tasks" / "D1.story"
+    assert not (task_dir / "partial.md").exists()
+    task = orchestrator.load_run(run_id)["tasks"]["D1.story"]
+    assert task["state"] == "ready"
+    assert task["tries"] == 1
+    assert task["attempt"] == 1
+
+
+def test_continuation_budget_shortage_fails_before_claim(tmp_path: Path) -> None:
+    definition = continuation_definition(
+        max_input_chars=1200,
+        inputs={
+            "given": {
+                "label": "入力",
+                "from": "input",
+                "select": "input.given",
+                "required": True,
+            }
+        },
+    )
+    orchestrator = Orchestrator(tmp_path, {"D1.story": definition})
+    run_id = orchestrator.create_run(seed=1, input_data={"given": "あ" * 300})
+    first = orchestrator.claim_next(run_id, executor_id="worker")
+    assert first is not None
+    assert orchestrator.submit(first["ticket"], "途中", truncated=True).accepted
+
+    assert orchestrator.claim_next(run_id, executor_id="worker-2") is None
+    task = orchestrator.load_run(run_id)["tasks"]["D1.story"]
+    assert task["state"] == "failed"
+    assert task["error"] == "継続の予算が足りない"
+
+
+def test_truncated_flag_rejects_a_non_continuation_text_task(tmp_path: Path) -> None:
+    definition = continuation_definition(continuation=False)
+    orchestrator = Orchestrator(tmp_path, {"D1.story": definition})
+    run_id = orchestrator.create_run(seed=1)
+    claim = orchestrator.claim_next(run_id, executor_id="worker")
+    assert claim is not None
+
+    result = orchestrator.submit(claim["ticket"], "本文", truncated=True)
+
+    assert not result.accepted
+    task = orchestrator.load_run(run_id)["tasks"]["D1.story"]
+    assert task["state"] == "ready"
+    assert task["tries"] == 1
 
 
 def test_submit_reaches_failed_at_max_attempts_and_retry_resets_counters(
