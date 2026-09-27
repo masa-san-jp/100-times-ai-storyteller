@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 
+import storyteller.validation as validation_module
 from storyteller.validation import (
     OutputParseError,
     SchemaValidationError,
     YamlLoadError,
     load_yaml,
     parse_json_object,
+    validate_document,
     validate_output,
 )
 
@@ -362,3 +364,62 @@ def test_no_new_proper_nouns_excludes_input_and_allowed_words(tmp_path: Path):
     )
 
     assert result.passed
+
+
+def test_validate_document_caches_file_schema_and_validator(tmp_path, monkeypatch):
+    schema_path = tmp_path / "output.schema.json"
+    schema_path.write_text(
+        json.dumps({"type": "string"}),
+        encoding="utf-8",
+    )
+    load_calls = 0
+    validator_calls = 0
+    original_load = validation_module.json.load
+    original_validator = validation_module.Draft202012Validator
+
+    def counting_load(stream):
+        nonlocal load_calls
+        load_calls += 1
+        return original_load(stream)
+
+    def counting_validator(*args, **kwargs):
+        nonlocal validator_calls
+        validator_calls += 1
+        return original_validator(*args, **kwargs)
+
+    monkeypatch.setattr(validation_module.json, "load", counting_load)
+    monkeypatch.setattr(validation_module, "Draft202012Validator", counting_validator)
+
+    assert validate_document("first", schema_path) == "first"
+    assert validate_document("second", schema_path) == "second"
+
+    assert load_calls == 1
+    assert validator_calls == 1
+
+
+def test_validate_document_reloads_file_schema_when_it_changes(tmp_path, monkeypatch):
+    schema_path = tmp_path / "output.schema.json"
+    schema_path.write_text(
+        json.dumps({"type": "string"}),
+        encoding="utf-8",
+    )
+    load_calls = 0
+    original_load = validation_module.json.load
+
+    def counting_load(stream):
+        nonlocal load_calls
+        load_calls += 1
+        return original_load(stream)
+
+    monkeypatch.setattr(validation_module.json, "load", counting_load)
+
+    assert validate_document("value", schema_path) == "value"
+    schema_path.write_text(
+        json.dumps({"type": "integer"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SchemaValidationError):
+        validate_document("value", schema_path)
+
+    assert load_calls == 2
