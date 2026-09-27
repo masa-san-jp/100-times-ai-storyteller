@@ -11,7 +11,7 @@
 | 先行リポジトリとの関係を知る | [LINEAGE.md](LINEAGE.md) |
 | 実装・改修する | [spec/architecture.md](spec/architecture.md) → 担当箇所の spec → [plan/ROADMAP.md](plan/ROADMAP.md) → 担当フェーズの計画書 |
 | なぜそう決めたのかを知る | [adr/](adr/) |
-| 文書・コードの変更手順を知る | [../CONTRIBUTING.md](../CONTRIBUTING.md) |
+| 文書・コードの変更手順を知る | [../CONTRIBUTING.md](../CONTRIBUTING.md)、[process/implementation.md](process/implementation.md) |
 
 ## 2. 原本の所有範囲
 
@@ -37,6 +37,7 @@
 | 開発フェーズと完了条件 | [plan/ROADMAP.md](plan/ROADMAP.md) |
 | 各フェーズの作業項目 | `plan/phase-N.md` |
 | 設計判断とその理由 | `adr/NNNN-*.md` |
+| 実装の役割・受け渡し・レビューの基準 | [process/implementation.md](process/implementation.md) |
 
 ### 2.1 データが原本になる事柄
 
@@ -62,7 +63,7 @@
 | 層 | 対象 | 変更の条件 |
 |---|---|---|
 | 原則層 | [VISION.md](VISION.md)、[adr/](adr/) | リポジトリ所有者の決定が必要。変更は新しい ADR として記録する |
-| 仕様層 | 上記以外のすべての文書 | 開発者（人・エージェント）が変更してよい。ただし原則層に反しないこと、[CONTRIBUTING.md](../CONTRIBUTING.md) の手順（spec を先に変える、整合を検査する）に従うこと |
+| 仕様層 | 上記以外のすべての文書 | オーケストレータ（[process/implementation.md](process/implementation.md) §1）が変更する。原則層に反しないこと、[CONTRIBUTING.md](../CONTRIBUTING.md) の手順（spec を先に変える、整合を検査する）に従うこと。実装者は仕様を変更せず、不明点を報告する |
 
 - 原則層に反するかどうか判断が分かれる変更は、ADR を Proposed として起票し、所有者の決定を待つ。
 - 置き換えた文書は、冒頭に `Superseded：<置き換え先へのリンク>` と書く。
