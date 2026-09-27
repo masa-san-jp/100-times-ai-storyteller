@@ -1,0 +1,10 @@
+# ユーザーの入力と生成物（データディレクトリの既定）
+private/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
