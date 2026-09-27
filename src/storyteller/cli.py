@@ -170,7 +170,7 @@ def _next(args: argparse.Namespace) -> int:
         )
         if result is not None:
             if args.as_json:
-                print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+                _print_json(result)
             else:
                 print(result["card"], end="" if result["card"].endswith("\n") else "\n")
             return EXIT_OK
@@ -217,7 +217,7 @@ def _status(args: argparse.Namespace) -> int:
     else:
         payload = {"runs": _all_run_statuses(data_dir)}
     if args.as_json:
-        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        _print_json(payload)
     else:
         _print_human_status(payload)
     return EXIT_OK
@@ -353,6 +353,11 @@ def _print_human_status(payload: dict[str, Any]) -> None:
 
 def _print_error(error: BaseException) -> None:
     print(f"st: error: {error}", file=sys.stderr)
+
+
+def _print_json(value: Any) -> None:
+    """Print one valid, UTF-8-friendly JSON document for CLI consumers."""
+    print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
 
 
 if __name__ == "__main__":

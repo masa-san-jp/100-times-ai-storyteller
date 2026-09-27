@@ -1,7 +1,87 @@
 import io
 import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import jsonschema
 
 from storyteller.cli import build_parser, main
+from storyteller.orchestrator import SubmissionResult
+
+
+def _st_command() -> list[str]:
+    executable = shutil.which("st")
+    if executable is not None:
+        return [executable]
+    return [sys.executable, "-m", "storyteller.cli"]
+
+
+def _run_st(
+    data_dir: Path,
+    *arguments: str,
+    input: str | None = None,
+    cwd: Path | None = None,
+    timeout: float = 30,
+) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    environment["STORYTELLER_HOME"] = str(data_dir)
+    return subprocess.run(
+        [*_st_command(), *arguments],
+        input=input,
+        text=True,
+        capture_output=True,
+        cwd=cwd,
+        env=environment,
+        check=False,
+        timeout=timeout,
+    )
+
+
+def _new_dummy(data_dir: Path, seed: int = 7) -> str:
+    result = _run_st(data_dir, "dev", "new-dummy", "--seed", str(seed))
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def _claim(data_dir: Path, run_id: str) -> dict[str, str]:
+    result = _run_st(data_dir, "next", "--run", run_id, "--json")
+    assert result.returncode == 0, result.stderr
+    claim = json.loads(result.stdout)
+    _extend_claim_lease(data_dir, run_id)
+    return claim
+
+
+def _manifest_path(data_dir: Path, run_id: str) -> Path:
+    return data_dir / "runs" / run_id / "manifest.json"
+
+
+def _load_manifest(data_dir: Path, run_id: str) -> dict:
+    return json.loads(_manifest_path(data_dir, run_id).read_text(encoding="utf-8"))
+
+
+def _save_manifest(data_dir: Path, run_id: str, manifest: dict) -> None:
+    _manifest_path(data_dir, run_id).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _extend_claim_lease(data_dir: Path, run_id: str) -> None:
+    """Keep subprocess fixtures independent of the dummy's three-second lease."""
+    task_dir = data_dir / "runs" / run_id / "tasks" / "D1.echo"
+    claim_path = task_dir / "claim.json"
+    claim_payload = json.loads(claim_path.read_text(encoding="utf-8"))
+    claim_payload["lease_expires_at"] = "2099-01-01T00:00:00Z"
+    claim_path.write_text(json.dumps(claim_payload) + "\n", encoding="utf-8")
+
+    manifest = _load_manifest(data_dir, run_id)
+    manifest["tasks"]["D1.echo"]["claim"]["lease_expires_at"] = (
+        "2099-01-01T00:00:00Z"
+    )
+    _save_manifest(data_dir, run_id, manifest)
 
 
 def test_cli_help_lists_the_command_section(capsys):
@@ -60,3 +140,196 @@ def test_submit_invalid_ticket_uses_exit_code_three(tmp_path, monkeypatch, capsy
 
     assert main(["submit", "0" * 32]) == 3
     assert "ticket" in capsys.readouterr().err
+
+
+def test_subprocess_json_and_status_outputs_are_machine_readable(tmp_path):
+    data_dir = tmp_path / "data"
+    run_id = _new_dummy(data_dir)
+
+    claim_result = _run_st(data_dir, "next", "--run", run_id, "--json")
+    assert claim_result.returncode == 0
+    claim = json.loads(claim_result.stdout)
+    assert "\\n" in claim_result.stdout
+    assert "短い確認文" in claim_result.stdout
+    assert set(claim) == {"ticket", "card", "lease_expires_at"}
+
+    accepted = _run_st(
+        data_dir,
+        "submit",
+        claim["ticket"],
+        input='{"text":"ok"}',
+    )
+    assert accepted.returncode == 0
+    assert accepted.stdout == "accepted\n"
+
+    schema_path = Path(__file__).parents[1] / "schemas" / "status.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    status_result = _run_st(data_dir, "status", "--run", run_id, "--json")
+    assert status_result.returncode == 0
+    status = json.loads(status_result.stdout)
+    jsonschema.validate(status, schema)
+
+    all_status_result = _run_st(data_dir, "status", "--json")
+    assert all_status_result.returncode == 0
+    jsonschema.validate(json.loads(all_status_result.stdout), schema)
+
+
+def test_subprocess_exit_codes_cover_success_no_task_and_submission_states(tmp_path):
+    empty_data = tmp_path / "empty"
+    assert _run_st(empty_data, "next").returncode == 2
+    assert _run_st(empty_data, "next", "--wait", "0").returncode == 2
+
+    data_dir = tmp_path / "data"
+    run_id = _new_dummy(data_dir, seed=8)
+    claim = _claim(data_dir, run_id)
+    rejected = _run_st(data_dir, "submit", claim["ticket"], input="not json")
+    assert rejected.returncode == 5
+    assert rejected.stdout.startswith("rejected: ")
+
+    replacement = _claim(data_dir, run_id)
+    accepted = _run_st(
+        data_dir,
+        "submit",
+        replacement["ticket"],
+        input='{"text":"ok"}',
+    )
+    assert accepted.returncode == 0
+    assert accepted.stdout == "accepted\n"
+    assert _run_st(data_dir, "status").returncode == 0
+    assert _run_st(data_dir, "next", "--run", run_id).returncode == 2
+
+    failed_data = tmp_path / "failed"
+    failed_run = _new_dummy(failed_data, seed=9)
+    for _ in range(3):
+        failed_claim = _claim(failed_data, failed_run)
+        failed = _run_st(
+            failed_data,
+            "submit",
+            failed_claim["ticket"],
+            input="not json",
+        )
+        assert failed.returncode == 5
+    assert _run_st(failed_data, "retry", "D1.echo").returncode == 0
+
+
+def test_subprocess_exit_code_one_covers_invalid_arguments_and_state(tmp_path):
+    data_dir = tmp_path / "data"
+    assert _run_st(data_dir, "resume").returncode == 1
+    assert _run_st(data_dir, "next", "--wait", "-1").returncode == 1
+    assert _run_st(data_dir, "next", "--run", "not-a-run").returncode == 1
+    assert _run_st(data_dir, "next", "--run", "20260101-000000-abcdef").returncode == 1
+    assert _run_st(data_dir, "retry", "D1.echo").returncode == 1
+
+    run_id = _new_dummy(data_dir, seed=10)
+    claim = _claim(data_dir, run_id)
+    truncated = _run_st(
+        data_dir,
+        "submit",
+        claim["ticket"],
+        "--truncated",
+        input='{"text":"ok"}',
+    )
+    assert truncated.returncode == 1
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / ".storyteller-workspace.yaml").write_text(
+        "data_dir: [broken\n", encoding="utf-8"
+    )
+    broken_config = _run_st(
+        tmp_path / "ignored-data",
+        "status",
+        cwd=workspace,
+    )
+    assert broken_config.returncode == 1
+
+
+def test_subprocess_exit_code_three_covers_missing_and_expired_tickets(tmp_path):
+    missing_data = tmp_path / "missing"
+    missing = _run_st(missing_data, "submit", "0" * 32, input="{}")
+    assert missing.returncode == 3
+
+    expired_data = tmp_path / "expired"
+    run_id = _new_dummy(expired_data, seed=11)
+    claim = _claim(expired_data, run_id)
+    claim_path = expired_data / "runs" / run_id / "tasks" / "D1.echo" / "claim.json"
+    claim_payload = json.loads(claim_path.read_text(encoding="utf-8"))
+    claim_payload["lease_expires_at"] = "2000-01-01T00:00:00Z"
+    claim_path.write_text(json.dumps(claim_payload) + "\n", encoding="utf-8")
+    expired = _run_st(expired_data, "submit", claim["ticket"], input="{}")
+    assert expired.returncode == 3
+
+
+def test_subprocess_exit_code_six_covers_halted_next_and_submit_and_resume(tmp_path):
+    data_dir = tmp_path / "data"
+    run_id = _new_dummy(data_dir, seed=12)
+    claim = _claim(data_dir, run_id)
+    manifest = _load_manifest(data_dir, run_id)
+    manifest["status"] = "halted"
+    _save_manifest(data_dir, run_id, manifest)
+
+    assert _run_st(data_dir, "next", "--run", run_id).returncode == 6
+    halted_submit = _run_st(
+        data_dir,
+        "submit",
+        claim["ticket"],
+        input='{"text":"ok"}',
+    )
+    assert halted_submit.returncode == 6
+    assert _run_st(
+        data_dir,
+        "resume",
+        "--accept-harness-change",
+        run_id,
+    ).returncode == 0
+
+
+def test_subprocess_exit_code_ten_covers_manifest_lock_timeout(tmp_path):
+    data_dir = tmp_path / "data"
+    run_id = _new_dummy(data_dir, seed=13)
+    manifest = _load_manifest(data_dir, run_id)
+    manifest["status"] = "stalled"
+    _save_manifest(data_dir, run_id, manifest)
+    lock_path = data_dir / "runs" / run_id / "manifest.lock"
+    lock_path.write_text("{}\n", encoding="utf-8")
+    timed_out = _run_st(
+        data_dir,
+        "next",
+        "--run",
+        run_id,
+        timeout=15,
+    )
+    assert timed_out.returncode == 10
+
+
+def test_sync_folder_warning_is_written_to_stderr(tmp_path):
+    result = _run_st(tmp_path / "Google Drive" / "storyteller", "status")
+
+    assert result.returncode == 0
+    assert "同期フォルダ" in result.stderr
+
+
+def test_submit_prints_continued_for_a_continuation_submission(
+    tmp_path, monkeypatch, capsys
+):
+    class FakeOrchestrator:
+        def submit(self, ticket, raw_output, *, truncated):
+            assert ticket == "ticket"
+            assert raw_output == "chunk"
+            assert truncated is True
+            return SubmissionResult(True, "run", "D1.story")
+
+        def load_run(self, run_id):
+            assert run_id == "run"
+            return {
+                "tasks": {
+                    "D1.story": {"state": "ready", "continuation_step": 1}
+                }
+            }
+
+    monkeypatch.setenv("STORYTELLER_HOME", str(tmp_path / "data"))
+    monkeypatch.setattr("storyteller.cli._orchestrator", lambda data_dir: FakeOrchestrator())
+    monkeypatch.setattr("sys.stdin", io.StringIO("chunk"))
+
+    assert main(["submit", "ticket", "--truncated"]) == 0
+    assert capsys.readouterr().out == "continued\n"

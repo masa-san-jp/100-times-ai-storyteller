@@ -30,7 +30,12 @@ from .cache import cache_key, lookup_cache, save_cache
 from .manifest import load_manifest, write_manifest
 from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
-from .storage import atomic_write_json, atomic_write_text, manifest_lock
+from .storage import (
+    LockTimeoutError,
+    atomic_write_json,
+    atomic_write_text,
+    manifest_lock,
+)
 from .validation import (
     ValidationResult,
     text_is_truncated,
@@ -403,6 +408,8 @@ class Orchestrator:
                 manifest = self.load_run(candidate_run_id)
                 if manifest["status"] == "active":
                     self.advance(candidate_run_id)
+            except LockTimeoutError:
+                raise
             except (OSError, ValueError, ClaimError) as error:
                 _warn_skipped_run(candidate_run_id, error)
 
@@ -456,6 +463,8 @@ class Orchestrator:
                         # A card error or O_EXCL race consumed this candidate.
                         # Re-enter the same run before moving to the next one.
                         retry_same_run = True
+                except LockTimeoutError:
+                    raise
                 except (OSError, ValueError, ClaimError) as error:
                     _warn_skipped_run(candidate_run_id, error)
                     break
