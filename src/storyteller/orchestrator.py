@@ -12,6 +12,8 @@ import hashlib
 import inspect
 import json
 import re
+import shutil
+from copy import deepcopy
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -20,7 +22,7 @@ from typing import Any, Final
 
 from .cards import TaskCardError
 from .manifest import load_manifest, write_manifest
-from .seed import MAX_SEED, generated_seed, task_random
+from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
 from .storage import atomic_write_json, manifest_lock
 from .validation import validate_document
@@ -33,6 +35,7 @@ TASK_DEFINITION_SCHEMA_PATH = (
 )
 
 _TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_TASK_TYPE = re.compile(r"^[A-Z][0-9]+\.[a-z][a-z0-9_]*$")
 _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _MISSING: Final = object()
 
@@ -202,40 +205,47 @@ class Orchestrator:
             raise FileExistsError(f"run already exists: {resolved_run_id}")
 
         run_dir.mkdir(parents=True, exist_ok=False)
-        input_value = {} if input_data is None else input_data
-        input_path = run_dir / "input.json"
-        atomic_write_json(input_path, input_value)
-        input_record: dict[str, str] = {}
-        if input_data is not None:
-            input_record = {
-                "type": input_type,
-                "sha256": _sha256_file(input_path),
-            }
+        try:
+            input_value = {} if input_data is None else input_data
+            input_path = run_dir / "input.json"
+            atomic_write_json(input_path, input_value)
+            input_record: dict[str, str] = {}
+            if input_data is not None:
+                input_record = {
+                    "type": input_type,
+                    "sha256": _sha256_file(input_path),
+                }
 
-        manifest: dict[str, Any] = {
-            "schema_version": 1,
-            "run_id": resolved_run_id,
-            "batch_id": batch_id,
-            "created_at": created_at,
-            "updated_at": created_at,
-            "status": "active",
-            "seed": run_seed,
-            "seed_source": resolved_seed_source,
-            "input": input_record,
-            "scale": dict(scale or {}),
-            "harness": dict(harness or {}),
-            "table_snapshot": dict(table_snapshot or {}),
-            "tasks": {},
-            "warnings": [],
-        }
-        for spec in specs:
-            record = _new_task_record(spec, self.task_definitions[spec.type], manifest)
-            manifest["tasks"][spec.task_id] = record
-            self.task_dir(resolved_run_id, spec.task_id).mkdir(
-                parents=True, exist_ok=False
-            )
-        _update_run_status(manifest)
-        write_manifest(run_dir / "manifest.json", manifest)
+            manifest: dict[str, Any] = {
+                "schema_version": 1,
+                "run_id": resolved_run_id,
+                "batch_id": batch_id,
+                "created_at": created_at,
+                "updated_at": created_at,
+                "status": "active",
+                "seed": run_seed,
+                "seed_source": resolved_seed_source,
+                "input": input_record,
+                "scale": dict(scale or {}),
+                "harness": dict(harness or {}),
+                "table_snapshot": dict(table_snapshot or {}),
+                "tasks": {},
+                "warnings": [],
+            }
+            for spec in specs:
+                record = _new_task_record(
+                    spec, self.task_definitions[spec.type], manifest
+                )
+                manifest["tasks"][spec.task_id] = record
+                self.task_dir(resolved_run_id, spec.task_id).mkdir(
+                    parents=True, exist_ok=False
+                )
+            _update_run_status(manifest)
+            write_manifest(run_dir / "manifest.json", manifest)
+        except BaseException:
+            # Remove the private directory created by this failed run attempt.
+            shutil.rmtree(run_dir, ignore_errors=True)
+            raise
         return resolved_run_id
 
     def run_dir(self, run_id: str) -> Path:
@@ -257,15 +267,19 @@ class Orchestrator:
     def advance(self, run_id: str) -> dict[str, Any]:
         """Execute ready code tasks until only external work remains.
 
-        The manifest lock covers the whole short code-task processing cycle.
-        Code handlers must therefore be deterministic, local operations; an
-        LLM call does not belong here.
+        One manifest lock is held for each code task, including its handler
+        call and durable write.  The lock is deliberately not held across the
+        whole chain.
         """
 
         run_dir = self.run_dir(run_id)
-        with manifest_lock(run_dir):
-            manifest = load_manifest(run_dir / "manifest.json")
-            while True:
+        while True:
+            with manifest_lock(run_dir):
+                manifest = load_manifest(run_dir / "manifest.json")
+                if manifest["status"] in {"halted", "duplicate"}:
+                    _touch_manifest(manifest, self._now())
+                    write_manifest(run_dir / "manifest.json", manifest)
+                    return manifest
                 _refresh_blocked_tasks(manifest, self._now())
                 task_id = _next_ready_code_task(manifest)
                 if task_id is None:
@@ -273,15 +287,18 @@ class Orchestrator:
                     _touch_manifest(manifest, self._now())
                     write_manifest(run_dir / "manifest.json", manifest)
                     return manifest
+                # ハンドラから Orchestrator を呼び戻さないこと。ここでは
+                # 1コードタスクの読み込み・実行・書き込みだけをロックする。
                 self._execute_code_task(manifest, run_id, task_id)
                 _touch_manifest(manifest, self._now())
+                _update_run_status(manifest)
                 write_manifest(run_dir / "manifest.json", manifest)
 
     # This spelling describes the operation in the plan and is convenient for
     # tests without introducing a second implementation.
     process_code_tasks = advance
 
-    def transition_task(
+    def _transition_task(
         self,
         run_id: str,
         task_id: str,
@@ -317,13 +334,15 @@ class Orchestrator:
             )
             if state == "done":
                 task["error"] = None
+            elif state == "failed":
+                task["error"] = reason
             _refresh_blocked_tasks(manifest, self._now())
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
             write_manifest(run_dir / "manifest.json", manifest)
             return manifest
 
-    def complete_task(
+    def _complete_task(
         self,
         run_id: str,
         task_id: str,
@@ -332,14 +351,14 @@ class Orchestrator:
         reason: str | None = None,
     ) -> dict[str, Any]:
         """Persist an output and move a ready/claimed task to ``done``."""
-        return self.transition_task(
+        return self._transition_task(
             run_id, task_id, "done", output=output, reason=reason
         )
 
-    # A descriptive alias for callers that model an external executor.
-    mark_task_done = complete_task
+    # A descriptive internal alias for tests that model an external executor.
+    _mark_task_done = _complete_task
 
-    def skip_task(
+    def _skip_task(
         self,
         run_id: str,
         task_id: str,
@@ -347,11 +366,11 @@ class Orchestrator:
         reason: str | None = None,
     ) -> dict[str, Any]:
         """Move a blocked/ready task to ``skipped``."""
-        return self.transition_task(
+        return self._transition_task(
             run_id, task_id, "skipped", reason=reason or "不要になった"
         )
 
-    def add_tasks(
+    def _add_tasks(
         self,
         run_id: str,
         parent_task_id: str,
@@ -362,14 +381,15 @@ class Orchestrator:
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
             additions = _normalise_task_specs(tasks, self.task_definitions)
-            _add_dynamic_tasks(
+            _validate_result_tasks(
                 manifest,
-                run_id,
                 parent_task_id,
                 additions,
+                (),
                 self.task_definitions,
-                self.task_dir,
             )
+            _create_dynamic_task_dirs(run_id, additions, self.task_dir)
+            _commit_dynamic_tasks(manifest, additions, self.task_definitions)
             _refresh_blocked_tasks(manifest, self._now())
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
@@ -395,40 +415,53 @@ class Orchestrator:
             )
             return
 
+        created_dirs: list[Path] = []
         try:
             context = self._build_context(manifest, run_id, task_id)
             result = _call_handler(handler, context)
             normalised = _normalise_code_result(result, context)
+
+            # Validate the complete result before writing output or changing
+            # any task state.  This includes all additions as one graph.
             _validate_result_tasks(
-                manifest, task_id, normalised.add_tasks, normalised.skip_tasks
-            )
-            self._write_task_output(run_id, task_id, normalised.output)
-            _set_task_state(
                 manifest,
-                task_id,
-                "done",
-                self._now(),
-                reason="コードタスクの実行に成功",
-            )
-            task["error"] = None
-            _add_dynamic_tasks(
-                manifest,
-                run_id,
                 task_id,
                 normalised.add_tasks,
+                normalised.skip_tasks,
                 self.task_definitions,
+            )
+            created_dirs = _create_dynamic_task_dirs(
+                run_id,
+                normalised.add_tasks,
                 self.task_dir,
             )
-            for skipped_id in normalised.skip_tasks:
-                _set_task_state(
-                    manifest,
-                    skipped_id,
-                    "skipped",
-                    self._now(),
-                    reason="コードタスクが不要と判断",
-                )
+            self._write_task_output(run_id, task_id, normalised.output)
         except Exception as error:  # code-task exceptions become failed tasks
+            _remove_created_task_dirs(created_dirs)
             _fail_task(manifest, task_id, self._now(), _error_text(error))
+            return
+
+        _set_task_state(
+            manifest,
+            task_id,
+            "done",
+            self._now(),
+            reason="コードタスクの実行に成功",
+        )
+        task["error"] = None
+        _commit_dynamic_tasks(
+            manifest,
+            normalised.add_tasks,
+            self.task_definitions,
+        )
+        for skipped_id in normalised.skip_tasks:
+            _set_task_state(
+                manifest,
+                skipped_id,
+                "skipped",
+                self._now(),
+                reason="コードタスクが不要と判断",
+            )
 
     def _build_context(
         self,
@@ -438,14 +471,11 @@ class Orchestrator:
     ) -> CodeTaskContext:
         task = _get_task(manifest, task_id)
         definition = self.task_definitions[task["type"]]
-        all_outputs = _read_all_outputs(self.run_dir(run_id), manifest)
-        dependency_outputs = {
-            dependency: all_outputs[dependency]
-            for dependency in task["deps"]
-            if dependency in all_outputs
-        }
+        dependency_outputs = _read_dependency_outputs(
+            self.run_dir(run_id), manifest, task
+        )
         source_outputs = _source_outputs(
-            manifest, task, definition, all_outputs
+            manifest, task, definition, dependency_outputs
         )
         run_input = _read_run_input(self.run_dir(run_id))
         try:
@@ -460,15 +490,17 @@ class Orchestrator:
         return CodeTaskContext(
             run_id=run_id,
             task_id=task_id,
-            task=task,
+            task=deepcopy(task),
             definition=definition,
             inputs=inputs,
             run_input=run_input,
-            outputs=all_outputs,
+            outputs=deepcopy(dependency_outputs),
             dependency_outputs=dependency_outputs,
             data_dir=self.data_dir,
             run_dir=self.run_dir(run_id),
-            seed=int(manifest["seed"]),
+            seed=derive_task_seed(
+                int(manifest["seed"]), task_id, int(task["attempt"])
+            ),
             random=task_random(
                 int(manifest["seed"]), task_id, int(task["attempt"])
             ),
@@ -560,6 +592,7 @@ def _normalise_task_specs(
             raise DAGError(f"duplicate task id: {spec.task_id}")
         if spec.type not in definitions:
             raise DAGError(f"task definition does not exist: {spec.type}")
+        _validate_task_spec_id(spec)
         seen.add(spec.task_id)
         specs.append(spec)
     return specs
@@ -607,8 +640,16 @@ def _validate_graph(
     specs: Sequence[TaskSpec],
     definitions: Mapping[str, Mapping[str, Any]],
 ) -> None:
+    if not specs:
+        raise DAGError("task graph must not be empty")
+    if len({spec.task_id for spec in specs}) != len(specs):
+        raise DAGError("task graph contains duplicate task IDs")
     task_ids = {spec.task_id for spec in specs}
+    specs_by_id = {spec.task_id: spec for spec in specs}
     for spec in specs:
+        if spec.type not in definitions:
+            raise DAGError(f"task definition does not exist: {spec.type}")
+        _validate_task_spec_id(spec)
         if any(dependency not in task_ids for dependency in spec.deps):
             missing = next(
                 dependency for dependency in spec.deps if dependency not in task_ids
@@ -618,6 +659,7 @@ def _validate_graph(
             )
         if definitions[spec.type]["kind"] not in {"code", "llm"}:
             raise DAGError(f"invalid task kind: {spec.type}")
+        _validate_input_dependencies(spec, specs_by_id, definitions[spec.type])
 
     visiting: set[str] = set()
     visited: set[str] = set()
@@ -636,6 +678,47 @@ def _validate_graph(
 
     for spec in specs:
         visit(spec.task_id)
+
+
+def _validate_task_spec_id(spec: TaskSpec) -> None:
+    """Ensure a task ID is exactly its type plus its declared index."""
+    if not _TASK_TYPE.fullmatch(spec.type):
+        raise DAGError(f"invalid task type: {spec.type!r}")
+    expected = spec.type
+    if spec.index:
+        expected = f"{expected}-{'-'.join(spec.index)}"
+    if spec.task_id != expected or not _TASK_ID.fullmatch(spec.task_id):
+        raise DAGError(
+            f"task id {spec.task_id!r} does not match type {spec.type!r} "
+            f"and index {list(spec.index)!r}"
+        )
+
+
+def _validate_input_dependencies(
+    spec: TaskSpec,
+    specs_by_id: Mapping[str, TaskSpec],
+    definition: Mapping[str, Any],
+) -> None:
+    input_slots = definition.get("inputs", {})
+    if not isinstance(input_slots, Mapping):
+        return
+    for slot_name, slot in input_slots.items():
+        if not isinstance(slot, Mapping):
+            continue
+        source = slot.get("from")
+        if source == "input":
+            continue
+        if not isinstance(source, str):
+            raise DAGError(
+                f"task {spec.task_id!r} input slot {slot_name!r} has no valid source"
+            )
+        if not any(
+            specs_by_id[dependency].type == source for dependency in spec.deps
+        ):
+            raise DAGError(
+                f"task {spec.task_id!r} input slot {slot_name!r} requires a "
+                f"dependency of type {source!r}"
+            )
 
 
 def _new_task_record(
@@ -684,8 +767,6 @@ def _validate_transition(
     old_state = task["state"]
     if state not in _ALLOWED_TRANSITIONS[old_state]:
         raise InvalidTransition(f"{old_state} -> {state} is not allowed")
-    if state == "done" and old_state == "ready" and task["kind"] != "code":
-        raise InvalidTransition("ready -> done is reserved for code tasks")
     if state == "ready" and old_state == "blocked":
         if not all(
             _get_task(manifest, dependency)["state"] in {"done", "skipped"}
@@ -708,6 +789,10 @@ def _set_task_state(
     old_state = task["state"]
     if old_state == state:
         return
+    if state == "failed" and (
+        not isinstance(reason, str) or not reason.strip()
+    ):
+        raise InvalidTransition("failed transition requires a non-empty reason")
     _validate_transition(manifest, task_id, state)
     task["state"] = state
     event: dict[str, Any] = {
@@ -769,14 +854,10 @@ def _fail_task(
     manifest: dict[str, Any], task_id: str, at: str, error: str
 ) -> None:
     task = _get_task(manifest, task_id)
-    old_state = task["state"]
-    if task["state"] == "ready":
-        _set_task_state(manifest, task_id, "failed", at, reason=error)
-    else:
-        task["state"] = "failed"
-        task["history"].append(
-            {"at": at, "from": old_state, "to": "failed", "reason": error}
-        )
+    if not isinstance(error, str) or not error.strip():
+        raise InvalidTransition("failed transition requires a non-empty reason")
+    _validate_transition(manifest, task_id, "failed")
+    _set_task_state(manifest, task_id, "failed", at, reason=error)
     task["error"] = error
 
 
@@ -785,36 +866,33 @@ def _validate_result_tasks(
     parent_task_id: str,
     add_tasks: Sequence[TaskSpec],
     skip_tasks: Sequence[str],
+    definitions: Mapping[str, Mapping[str, Any]],
 ) -> None:
+    _get_task(manifest, parent_task_id)
     existing = set(manifest["tasks"])
     added: set[str] = set()
     for spec in add_tasks:
         if spec.task_id in existing or spec.task_id in added:
-            raise DAGError(f"dynamic task already exists: {spec.task_id}")
+            raise DAGError(f"追加タスクのIDが重複しています: {spec.task_id}")
+        if spec.type not in definitions:
+            raise DAGError(f"タスク種別の定義がありません: {spec.type}")
+        _validate_task_spec_id(spec)
         if parent_task_id not in spec.deps:
             raise DAGError(
-                f"dynamic task {spec.task_id!r} must depend on {parent_task_id!r}"
+                f"追加タスク {spec.task_id!r} は追加元 {parent_task_id!r} に依存する必要があります"
             )
         added.add(spec.task_id)
     for task_id in skip_tasks:
+        if not isinstance(task_id, str):
+            raise DAGError("skip task ID must be a string")
         if task_id not in existing:
             raise DAGError(f"task does not exist: {task_id}")
+        if task_id == parent_task_id:
+            raise InvalidTransition("a code task cannot skip itself")
         task = manifest["tasks"][task_id]
         if task["state"] not in {"blocked", "ready"}:
             raise InvalidTransition(f"{task['state']} -> skipped is not allowed")
 
-
-def _add_dynamic_tasks(
-    manifest: dict[str, Any],
-    run_id: str,
-    parent_task_id: str,
-    additions: Sequence[TaskSpec],
-    definitions: Mapping[str, Mapping[str, Any]],
-    task_dir: Callable[[str, str], Path],
-) -> None:
-    if not additions:
-        return
-    _validate_result_tasks(manifest, parent_task_id, additions, ())
     combined_specs = [
         TaskSpec(
             task_id=task_id,
@@ -824,13 +902,46 @@ def _add_dynamic_tasks(
         )
         for task_id, task in manifest["tasks"].items()
     ]
-    combined_specs.extend(additions)
+    combined_specs.extend(add_tasks)
     _validate_graph(combined_specs, definitions)
+
+
+def _create_dynamic_task_dirs(
+    run_id: str,
+    additions: Sequence[TaskSpec],
+    task_dir: Callable[[str, str], Path],
+) -> list[Path]:
+    """Create addition directories before changing the manifest."""
+    created: list[Path] = []
+    try:
+        for spec in additions:
+            path = task_dir(run_id, spec.task_id)
+            path.mkdir(parents=True, exist_ok=False)
+            created.append(path)
+    except BaseException:
+        _remove_created_task_dirs(created)
+        raise
+    return created
+
+
+def _remove_created_task_dirs(paths: Sequence[Path]) -> None:
+    for path in reversed(paths):
+        try:
+            path.rmdir()
+        except (FileNotFoundError, OSError):
+            pass
+
+
+def _commit_dynamic_tasks(
+    manifest: dict[str, Any],
+    additions: Sequence[TaskSpec],
+    definitions: Mapping[str, Mapping[str, Any]],
+) -> None:
+    """Add already-validated tasks after their directories exist."""
     for spec in additions:
         manifest["tasks"][spec.task_id] = _new_task_record(
             spec, definitions[spec.type], manifest
         )
-        task_dir(run_id, spec.task_id).mkdir(parents=True, exist_ok=False)
 
 
 def _normalise_code_result(
@@ -876,7 +987,7 @@ def _source_outputs(
     manifest: Mapping[str, Any],
     task: Mapping[str, Any],
     definition: Mapping[str, Any],
-    all_outputs: Mapping[str, Any],
+    dependency_outputs: Mapping[str, Any],
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
     dependencies = list(task["deps"])
@@ -893,30 +1004,29 @@ def _source_outputs(
             dependency
             for dependency in dependencies
             if manifest["tasks"][dependency]["type"] == slot
+            and manifest["tasks"][dependency]["state"] == "done"
+            and dependency in dependency_outputs
         ]
-        if not matching:
-            matching = [
-                task_id
-                for task_id, record in manifest["tasks"].items()
-                if record["type"] == slot and task_id in all_outputs
-            ]
         if len(matching) > 1 and task["index"]:
             indexed_task_id = f"{slot}-{task['index'][0]}"
             if indexed_task_id in matching:
                 matching = [indexed_task_id]
         if len(matching) == 1:
-            result[slot] = all_outputs[matching[0]]
+            result[slot] = dependency_outputs[matching[0]]
         elif matching:
-            result[slot] = [all_outputs[task_id] for task_id in matching]
+            result[slot] = [dependency_outputs[task_id] for task_id in matching]
     return result
 
 
-def _read_all_outputs(
-    run_dir: Path, manifest: Mapping[str, Any]
+def _read_dependency_outputs(
+    run_dir: Path,
+    manifest: Mapping[str, Any],
+    task: Mapping[str, Any],
 ) -> dict[str, Any]:
     outputs: dict[str, Any] = {}
-    for task_id, task in manifest["tasks"].items():
-        if task["state"] not in {"done", "claimed"}:
+    for task_id in task["deps"]:
+        dependency = manifest["tasks"][task_id]
+        if dependency["state"] != "done":
             continue
         output_json = run_dir / "tasks" / task_id / "output.json"
         output_md = run_dir / "tasks" / task_id / "output.md"
@@ -982,5 +1092,8 @@ def _sha256_file(path: Path) -> str:
 
 
 def _error_text(error: Exception) -> str:
+    if isinstance(error, KeyError):
+        key = error.args[0] if error.args else "不明なキー"
+        return f"必要な値が見つかりません: {key}"
     message = str(error)
     return message or error.__class__.__name__
