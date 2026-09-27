@@ -16,6 +16,11 @@ ROOT = Path(__file__).parents[1]
 WORKSPACE_SCHEMA = ROOT / "schemas" / "workspace.schema.json"
 
 
+def _assert_same_path(actual: str, expected: Path) -> None:
+    """Compare paths by meaning, not by OS-specific spelling."""
+    assert Path(actual).resolve(strict=False) == expected.resolve(strict=False)
+
+
 def _protocol_from_spec() -> str:
     document = (ROOT / "docs" / "spec" / "executor-protocol.md").read_text(
         encoding="utf-8"
@@ -47,12 +52,10 @@ def test_workspace_init_writes_valid_config_and_protocol(tmp_path: Path) -> None
     assert (target / "AGENTS.md").read_text(encoding="utf-8") == _protocol_from_spec()
     assert (target / "CLAUDE.md").read_text(encoding="utf-8") == _protocol_from_spec()
     config = load_and_validate_yaml(target / ".storyteller-workspace.yaml", WORKSPACE_SCHEMA)
-    assert config == {
-        "data_dir": str(data_dir.resolve()),
-        "executor_id": "executor.test-1",
-        "agent": "generic",
-        "isolation": "placement",
-    }
+    _assert_same_path(config["data_dir"], data_dir)
+    assert config["executor_id"] == "executor.test-1"
+    assert config["agent"] == "generic"
+    assert config["isolation"] == "placement"
     assert not (target / ".claude").exists()
     assert not (target / ".codex").exists()
 
@@ -100,10 +103,10 @@ def test_codex_config_uses_workspace_sandbox_and_data_root(tmp_path: Path) -> No
     )
     assert config["sandbox_mode"] == "workspace-write"
     assert config["approval_policy"] == "never"
-    assert config["sandbox_workspace_write"] == {
-        "network_access": False,
-        "writable_roots": [str(data_dir.resolve())],
-    }
+    assert config["sandbox_workspace_write"]["network_access"] is False
+    writable_roots = config["sandbox_workspace_write"]["writable_roots"]
+    assert len(writable_roots) == 1
+    _assert_same_path(writable_roots[0], data_dir)
     workspace_config = load_and_validate_yaml(
         target / ".storyteller-workspace.yaml", WORKSPACE_SCHEMA
     )
@@ -200,4 +203,4 @@ def test_cli_workspace_init_prints_agent_launch_command(
 
     output = capsys.readouterr().out
     assert output.startswith(f"{target.resolve()}\n起動コマンド: ")
-    assert expected_command.format(workspace=target.resolve()) in output
+    assert expected_command.format(workspace=target.resolve().as_posix()) in output
