@@ -1,0 +1,28 @@
+id: S1.extract
+version: 1
+kind: llm
+inputs:
+  paragraph:
+    label: 段落
+    from: input
+    select: input.paragraphs[{slot}]
+    required: true
+output: json
+card:
+  role: 与えられた段落だけを手がかりに、物語に使える素材を抽出する。
+  steps:
+    - 段落の内容から、物語の素材になる短い語句を5個作る。各語句は10〜30字とし、表層的な事実だけでなく、段落から読み取れる意味や印象も含める。
+    - 原文の表現をそのまま引用せず、意味を保ったまま抽象化する。段落にない事実を補わず、断定や診断をしない。
+    - 各素材に、desire（切望）、fear（恐れ）、suppression（抑圧）、conflict（自己矛盾と葛藤）、image（心象）、value（価値）、theme（主題）、mood（雰囲気）のいずれか1つを kind として付ける。
+    - 判断できない情報を勝手に確定せず、段落に書かれた意図を保つ。素材の sources には入力された段落のIDを1件だけ書く。
+  output_example: '{"materials": [{"text": "変化を望みながら守り続ける日常", "kind": "conflict"}, {"text": "遠い場所へ向かうことへの静かな憧れ", "kind": "desire"}, {"text": "言葉にならない不安が残る夕暮れ", "kind": "mood"}, {"text": "記憶の隙間に浮かぶ光景の断片", "kind": "image"}, {"text": "誰かと分かち合いたい小さな価値", "kind": "value"}], "sources": ["p001"]}'
+validate:
+  schema: schemas/tasks/S1.extract.schema.json
+  checks:
+    - sources_exist
+    - count:
+        field: materials
+        n: 5
+    - no_new_proper_nouns:
+        mode: warn
+share_across_runs: true
