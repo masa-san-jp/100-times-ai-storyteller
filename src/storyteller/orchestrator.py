@@ -1812,7 +1812,9 @@ def _resolve_executor_id(executor_id: str | None) -> str:
     if executor_id is None:
         host = re.sub(r"[^A-Za-z0-9._-]", "-", socket.gethostname())
         host = host or "host"
-        executor_id = f"{host}-{os.getpid()}"
+        pid_suffix = f"-{os.getpid()}"
+        host = host[: 64 - len(pid_suffix)]
+        executor_id = f"{host}{pid_suffix}"
     if not isinstance(executor_id, str) or not _EXECUTOR_ID.fullmatch(executor_id):
         raise ClaimError("executor_id は英数字・'.'・'_'・'-' を1〜64文字で指定してください")
     return executor_id

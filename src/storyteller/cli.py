@@ -159,7 +159,9 @@ def _next(args: argparse.Namespace) -> int:
         raise CliArgumentError("--wait は0以上の整数で指定してください")
     data_dir = _data_dir()
     configured_executor, isolation = _workspace_settings()
-    executor_id = args.executor_id or configured_executor
+    executor_id = (
+        args.executor_id if args.executor_id is not None else configured_executor
+    )
     orchestrator = _orchestrator(data_dir)
     deadline = time.monotonic() + args.wait
     while True:

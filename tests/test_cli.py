@@ -218,6 +218,7 @@ def test_subprocess_exit_code_one_covers_invalid_arguments_and_state(tmp_path):
     assert _run_st(data_dir, "next", "--wait", "-1").returncode == 1
     assert _run_st(data_dir, "next", "--run", "not-a-run").returncode == 1
     assert _run_st(data_dir, "next", "--run", "20260101-000000-abcdef").returncode == 1
+    assert _run_st(data_dir, "next", "--executor-id", "invalid/id").returncode == 1
     assert _run_st(data_dir, "retry", "D1.echo").returncode == 1
 
     run_id = _new_dummy(data_dir, seed=10)
