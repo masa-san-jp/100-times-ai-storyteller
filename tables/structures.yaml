@@ -1,0 +1,159 @@
+templates:
+  three-beat:
+    stages:
+      - id: setup
+        name: 導入
+        definition: 主人公の日常と未解決の課題を示し、物語が始まる前の状態を基準点として置く。
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心となる視点人物の課題を場面の変化として示す。
+        world_sections: [place, customs]
+        object: false
+      - id: turn
+        name: 転換
+        definition: 呼びかけや障害によって現状を揺さぶり、主人公が戻れない選択へ向かう。
+        weight: 2
+        roles: [messenger]
+        absent_role_note: 使者が不在なら、事件や環境の変化が呼びかけの役割を担う。
+        world_sections: [place, people, organizations]
+        object: false
+      - id: resolution
+        name: 決着
+        definition: 対立の核心で選択の結果を受け止め、人物や周囲に生じた変化を示す。
+        weight: 2
+        roles: [adversary, supporter]
+        absent_role_note: 敵対者または支援者が不在なら、状況や内面の力がその役割を担う。
+        world_sections: [place, social_structure, future]
+        object: true
+  kishotenketsu:
+    stages:
+      - id: ki
+        name: 起
+        definition: 人物と場の前提を置き、日常の課題や関係性を静かに立ち上げる。
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心となる人物の課題を場の状態から示す。
+        world_sections: [place, customs]
+        object: false
+      - id: sho
+        name: 承
+        definition: 前提を展開し、小さな試練や関係の変化を積み重ねて次の転換を準備する。
+        weight: 2
+        roles: [supporter]
+        absent_role_note: 支援者が不在なら、道具や環境に宿る助けが展開を支える。
+        world_sections: [place, people, organizations]
+        object: false
+      - id: ten
+        name: 転
+        definition: 新しい視点や予想外の出来事で前提を反転させ、人物に決断を迫る。
+        weight: 2
+        roles: [adversary]
+        absent_role_note: 敵対者が不在なら、状況の反転や内面の抵抗が転換を生む。
+        world_sections: [place, social_structure, past_events]
+        object: true
+      - id: ketsu
+        name: 結
+        definition: 転換の意味を人物の行動と結果に結び、関係や世界に残る変化を収束させる。
+        weight: 2
+        roles: [protagonist, supporter]
+        absent_role_note: 主人公または支援者が不在なら、選択の結果を場と残された関係から示す。
+        world_sections: [people, future]
+        object: true
+  heros-journey-12:
+    stages:
+      - id: ordinary-world
+        name: 日常世界
+        definition: 主人公の普段の生活、環境、価値観、現状維持の姿勢を描き、変化前の基準点を置く。
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心となる視点人物の日常と未解決の課題を示す。
+        world_sections: [place, customs, people]
+        object: false
+      - id: call-to-adventure
+        name: 冒険への呼びかけ
+        definition: 異常事態や出会いで現状を揺るがし、主人公に選択を迫るきっかけを提示する。
+        weight: 2
+        roles: [messenger]
+        absent_role_note: 使者が不在なら、事件や環境の変化が冒険への呼びかけを担う。
+        world_sections: [place, people, organizations]
+        object: false
+      - id: refusal
+        name: 拒否
+        definition: 恐れ、不安、責任感、無力感などの葛藤によって冒険への参加をためらう理由を描く。
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心となる人物の抵抗や未決の選択を内面の力として示す。
+        world_sections: [place, customs]
+        object: false
+      - id: mentor
+        name: 師との出会い
+        definition: 指導者との出会いによって勇気や知恵を得て、主人公の内面に変化の種を置く。
+        weight: 1
+        roles: [supporter]
+        absent_role_note: 支援者が不在なら、記憶や道具、環境から得た知恵が師の役割を担う。
+        world_sections: [people, organizations]
+        object: true
+      - id: threshold
+        name: 第一関門の突破
+        definition: 戻れない一線を越え、未知の環境、規則、危険へ足を踏み入れる決定的な行動を描く。
+        weight: 2
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心人物の決断を環境の変化として示す。
+        world_sections: [place, social_structure]
+        object: true
+      - id: trials
+        name: 試練、仲間、敵
+        definition: 小さな成功と失敗を重ね、友情、信頼、裏切りを通じて仲間と敵との関係を築く。
+        weight: 3
+        roles: [supporter, adversary]
+        absent_role_note: 仲間または敵が不在なら、状況や内面の力が関係の試練を担う。
+        world_sections: [people, organizations, social_structure]
+        object: false
+      - id: approach
+        name: 最も危険な場所への接近
+        definition: 最大の試練に備え、危険の中心へ近づきながら最後の葛藤と緊張を高める。
+        weight: 2
+        roles: [adversary]
+        absent_role_note: 敵対者が不在なら、危険な場所や内面の抵抗が接近を妨げる。
+        world_sections: [place, social_structure, past_events]
+        object: true
+      - id: ordeal
+        name: 最大の試練
+        definition: 肉体的または精神的に最も厳しい挑戦に直面し、死と再生を象徴する変化を経験する。
+        weight: 3
+        roles: [adversary, protagonist]
+        absent_role_note: 敵対者または主人公が不在なら、状況と内面の力の衝突として最大の試練を描く。
+        world_sections: [place, past_events]
+        object: true
+      - id: reward
+        name: 報酬
+        definition: 試練を越えた結果として、物理的な宝、知恵、自己理解、仲間との絆を受け取る。
+        weight: 1
+        roles: [supporter]
+        absent_role_note: 支援者が不在なら、獲得した知恵や道具そのものが報酬を手渡す役割を担う。
+        world_sections: [people, future]
+        object: true
+      - id: road-back
+        name: 帰路
+        definition: 得たものを持って元の世界へ帰る決意を固め、途中の障害で緊張を再構築する。
+        weight: 2
+        roles: [adversary]
+        absent_role_note: 敵対者が不在なら、帰還途中の障害や未解決の葛藤が帰路を揺さぶる。
+        world_sections: [place, past_events]
+        object: false
+      - id: resurrection
+        name: 復活
+        definition: 最後の試練で古い自分を手放し、新しい理解や価値観を選び取る瞬間を示す。
+        weight: 2
+        roles: [protagonist, adversary]
+        absent_role_note: 主人公または敵対者が不在なら、内面の力と状況の転換として復活を示す。
+        world_sections: [social_structure, future]
+        object: true
+      - id: return-with-elixir
+        name: 宝を持ち帰る
+        definition: 冒険で得た宝や成長を日常世界で活かし、主人公の変化が周囲にも及ぶことを示す。
+        weight: 1
+        roles: [protagonist, supporter]
+        absent_role_note: 主人公または支援者が不在なら、変化の影響を周囲の人々と場の状態から示す。
+        world_sections: [people, future]
+        object: true

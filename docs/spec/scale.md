@@ -2,7 +2,7 @@
 
 - 所有範囲：規模の軸、規模プリセット、軸の上書き、出来事数の決め方、規模からの派生値
 
-この文書の §2・§3 の値の表、§4 の最小出来事数、§6 の世界セクションの対応は初期値である。P1-01 で `tables/scales.yaml` に移し、そのファイルを原本とする。移した時点で、この文書の値はファイルへのリンクに置き換える（[docs/README.md](../README.md) §2.1）。
+§2・§3 の値の表、§4 の段階ごとの最小出来事数、§6 の世界セクションの対応は [`tables/scales.yaml`](../../tables/scales.yaml) を原本とする（[docs/README.md](../README.md) §2.1）。
 
 ## 1. 原則
 
@@ -12,30 +12,16 @@
 
 ## 2. 規模の軸
 
-各軸は、小さい方から段階 0〜4 の値を持つ。
-
-| 軸 | キー | 段階0 | 段階1 | 段階2 | 段階3 | 段階4 |
-|---|---|---|---|---|---|---|
-| 時間の幅 | `time` | `hours` 数時間〜1日 | `weeks` 数日〜数週間 | `months` 数か月 | `years` 数年 | `generations` 世代を超える |
-| 空間の幅 | `space` | `spot` 一か所 | `town` 一つの町 | `region` 地域 | `nation` 国・大陸 | `world` 世界・複数世界 |
-| 主要人物 | `cast` | `1-2` | `2-4` | `4-8` | `8-15` | `15+` |
-| 筋 | `threads` | `single` 1本 | — | `main+1-2` 主筋＋副筋1〜2 | `main+3-5` 主筋＋副筋3〜5 | `parts` 部ごとの主筋 |
-| 変化の及ぶ範囲 | `change` | `inner` 一人の内面 | `relation` 人間関係 | `community` 共同体 | `society` 社会 | `order` 世界の秩序 |
+各軸は、[`tables/scales.yaml`](../../tables/scales.yaml) に小さい方から段階0〜4の値を持つ。
 
 ## 3. 規模プリセット
 
-| 規模 | `--scale` | time | space | cast | threads | change | 出来事数 |
-|---|---|---|---|---|---|---|---|
-| 掌編 | `vignette` | hours | spot | 1-2 | single | inner | 3〜5 |
-| 短編 | `short` | weeks | town | 2-4 | single | relation | 8〜12 |
-| 中編 | `novella` | months | region | 4-8 | main+1-2 | community | 18〜24 |
-| 長編 | `novel` | years | nation | 8-15 | main+3-5 | society | 36〜48 |
-| 大河 | `saga` | generations | world | 15+ | parts | order | 部ごとに 36〜48 |
+規模プリセット（`vignette`、`short`、`novella`、`novel`、`saga`）の軸と出来事数の範囲は、[`tables/scales.yaml`](../../tables/scales.yaml) に定義する。
 
 
 ## 4. 出来事数の決め方
 
-1. 各軸の段階から、その軸が要求する最小出来事数を求める：段階0＝3、段階1＝6、段階2＝12、段階3＝24、段階4＝36。
+1. 各軸の段階から、その軸が要求する最小出来事数を [`tables/scales.yaml`](../../tables/scales.yaml) の `level_min_events` で求める。
 2. 下限 = 次の大きい方。
    - 全軸の最小出来事数の最大値
    - 3 + 6 × 副筋の最大数（主筋に最低3件を残し、副筋1本あたりの上限6件を確保するため。副筋は [story-pipeline.md](story-pipeline.md) §4.3）
@@ -62,7 +48,7 @@
 | 人物の数 | `cast` の範囲内で seed により決める | S3 |
 | 役 | [story-pipeline.md](story-pipeline.md) S3 の手順5 | S3 |
 | 筋ごとの構造テンプレート | プロット型と、筋に配分された出来事数から決める（[story-pipeline.md](story-pipeline.md) §4.2） | S3 |
-| 生成する世界セクション | `space` と `change` の段階の大きい方を n として、段階0から n までに割り当てたセクションをすべて生成する（累積）：0＝場の描写／1＝＋生活風習・人々／2＝＋組織体・社会構造／3＝＋過去の出来事／4＝＋未来の可能性 | S4 |
+| 生成する世界セクション | `space` と `change` の段階の大きい方を n として、[`tables/scales.yaml`](../../tables/scales.yaml) の `world_sections_by_level` にある段階0から n までのセクションをすべて生成する（累積） | S4 |
 | 要素プールの必要量 | 軸ごとに、S3 で割り当てる個数 × 3（候補倍率） | S2 |
 | 様式化したときの分量 | 様式プロファイルの「出来事1件あたりの分量」× 出来事数 | F0 |
 
