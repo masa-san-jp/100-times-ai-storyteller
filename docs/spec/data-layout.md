@@ -107,7 +107,9 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 
 ### 3.2 ハーネスの変更検出
 
-- run の作成時に、リポジトリの `harness/`・`tables/`・`schemas/`・`formats/` の配下にあるすべてのファイルについて、相対パスと sha256 の組を manifest の `harness` に記録する。`config/` とデータディレクトリの増補テーブルは含めない。
+- run の作成時に、その run のハーネスを構成するすべてのファイルについて、相対パスと sha256 の組を manifest の `harness` に記録する。対象は、本物のハーネスではリポジトリの `harness/`・`tables/`・`schemas/`・`formats/` の配下、ダミーのハーネス（`st dev new-dummy`）では `src/storyteller/dev/dummy/` の配下とする。`config/` とデータディレクトリの増補テーブルは含めない。
+- タスク定義から参照するスキーマ（`validate.schema`）はハーネスのルートから、一般語の許可リスト `tables/common_words.yaml` は常にリポジトリのルートから解決する。
+- ハーネスの変更の確認は、run の状態が `halted`・`completed`・`duplicate` 以外のすべての場合に行う（`stalled` を含む）。記録が空でも、現在のファイルとの比較を省略しない。
 - `st next` と `st submit` は、対象の run について、記録と現在のファイルの組を比べる。ファイルの追加・削除・内容の変更は、すべて変更とみなす。
 - run の途中でハーネスのファイルの sha256 が変わったことを `st` が検出した場合、その run を `halted` にする。`halted` の run のタスクは `st next` の対象から外し、標準エラー出力に警告を出す。`st resume --accept-harness-change RUN_ID` で続行を明示した場合だけ、manifest の `harness` を現在の値に更新し、run の状態を [task-model.md](task-model.md) §4.2 の優先順で決め直す。既存の claim は有効のまま残す。
 - バッチの manifest は、バッチの seed・要求件数・run の一覧・完了数・重複で除外した数・作成数の上限を持つ。更新は `batch.lock` を取ってから行う。
