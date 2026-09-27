@@ -43,6 +43,20 @@ class CliArgumentError(ValueError):
     """An argparse error represented by the documented code 1."""
 
 
+def _configure_stdio() -> None:
+    """Make CLI output independent of the host's default text encoding."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", newline="\n")
+        except (AttributeError, OSError, TypeError, ValueError):
+            # pytest and embedders may provide a stream without a reconfigurable
+            # text layer.  Keep using that stream rather than failing at startup.
+            continue
+
+
 def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
     subparsers = parser.add_subparsers(dest="command", title="commands")
 
@@ -89,6 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command-line interface."""
+    _configure_stdio()
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
@@ -183,9 +198,11 @@ def _next(args: argparse.Namespace) -> int:
 
 def _read_submit_input(path: str) -> str:
     if path == "-":
-        stream = getattr(sys.stdin, "buffer", sys.stdin)
-        raw = stream.read()
-        return raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        buffer = getattr(sys.stdin, "buffer", None)
+        if buffer is not None:
+            return buffer.read().decode("utf-8")
+        # In-process callers and test doubles may expose only a text stream.
+        return sys.stdin.read()
     with Path(path).open("r", encoding="utf-8", newline=None) as stream:
         return stream.read()
 

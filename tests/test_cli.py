@@ -40,6 +40,27 @@ def _run_st(
     )
 
 
+def _run_st_with_cp1252_stdio(
+    data_dir: Path,
+    *arguments: str,
+    input: bytes | None = None,
+    cwd: Path | None = None,
+    timeout: float = 30,
+) -> subprocess.CompletedProcess[bytes]:
+    environment = os.environ.copy()
+    environment["STORYTELLER_HOME"] = str(data_dir)
+    environment["PYTHONIOENCODING"] = "cp1252"
+    return subprocess.run(
+        [*_st_command(), *arguments],
+        input=input,
+        capture_output=True,
+        cwd=cwd,
+        env=environment,
+        check=False,
+        timeout=timeout,
+    )
+
+
 def _new_dummy(data_dir: Path, seed: int = 7) -> str:
     result = _run_st(data_dir, "dev", "new-dummy", "--seed", str(seed))
     assert result.returncode == 0, result.stderr
@@ -172,6 +193,30 @@ def test_subprocess_json_and_status_outputs_are_machine_readable(tmp_path):
     all_status_result = _run_st(data_dir, "status", "--json")
     assert all_status_result.returncode == 0
     jsonschema.validate(json.loads(all_status_result.stdout), schema)
+
+
+def test_subprocess_stdio_is_utf8_with_cp1252_default(tmp_path):
+    data_dir = tmp_path / "data"
+    created = _run_st_with_cp1252_stdio(data_dir, "dev", "new-dummy", "--seed", "7")
+    assert created.returncode == 0, created.stderr.decode("utf-8")
+    run_id = created.stdout.decode("utf-8").strip()
+
+    claim_result = _run_st_with_cp1252_stdio(
+        data_dir, "next", "--run", run_id, "--json"
+    )
+    assert claim_result.returncode == 0, claim_result.stderr.decode("utf-8")
+    assert b"\r\n" not in claim_result.stdout
+    claim = json.loads(claim_result.stdout.decode("utf-8"))
+    assert "短い確認文" in claim["card"]
+
+    accepted = _run_st_with_cp1252_stdio(
+        data_dir,
+        "submit",
+        claim["ticket"],
+        input=json.dumps({"text": "日本語の提出"}, ensure_ascii=False).encode("utf-8"),
+    )
+    assert accepted.returncode == 0, accepted.stderr.decode("utf-8")
+    assert accepted.stdout == b"accepted\n"
 
 
 def test_subprocess_exit_codes_cover_success_no_task_and_submission_states(tmp_path):
