@@ -206,7 +206,17 @@ def atomic_write_bytes(path: os.PathLike[str] | str, data: bytes) -> None:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary_path, destination)
+        replace_deadline = time.monotonic() + 1.0
+        while True:
+            try:
+                os.replace(temporary_path, destination)
+            except PermissionError:
+                remaining = replace_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.05, remaining))
+            else:
+                break
     except BaseException:
         try:
             temporary_path.unlink()
@@ -259,6 +269,20 @@ def _lock_is_stale(path: Path, stale_after: float, now: float) -> bool:
     return age > stale_after
 
 
+def _remove_lock_if_owned(path: Path, token: str) -> None:
+    try:
+        contents = path.read_text(encoding="utf-8")
+        details = json.loads(contents)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return
+    if not isinstance(details, dict) or details.get("token") != token:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
 @contextmanager
 def acquire_lock(
     path: os.PathLike[str] | str,
@@ -309,10 +333,7 @@ def acquire_lock(
                     stream.flush()
                     os.fsync(stream.fileno())
             except BaseException:
-                try:
-                    lock_path.unlink()
-                except FileNotFoundError:
-                    pass
+                _remove_lock_if_owned(lock_path, token)
                 raise
             acquired = True
             break
@@ -321,10 +342,7 @@ def acquire_lock(
         yield lock_path
     finally:
         if acquired:
-            try:
-                lock_path.unlink()
-            except FileNotFoundError:
-                pass
+            _remove_lock_if_owned(lock_path, token)
 
 
 def manifest_lock_path(run_dir: os.PathLike[str] | str) -> Path:

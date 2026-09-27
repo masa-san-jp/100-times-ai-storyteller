@@ -117,6 +117,59 @@ def test_atomic_text_write_normalises_lf_and_preserves_original_on_failure(
     assert list(destination.parent.glob(f".{destination.name}.*.tmp")) == []
 
 
+def test_atomic_write_retries_permission_error_from_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "state.txt"
+    original_replace = os.replace
+    failures = 2
+    sleeps: list[float] = []
+
+    def replace_with_transient_lock(source: object, target: object) -> None:
+        nonlocal failures
+        if failures:
+            failures -= 1
+            raise PermissionError("destination is temporarily open")
+        original_replace(source, target)
+
+    monkeypatch.setattr("storyteller.storage.os.replace", replace_with_transient_lock)
+    monkeypatch.setattr("storyteller.storage.time.sleep", sleeps.append)
+
+    atomic_write_text(destination, "new")
+
+    assert destination.read_text(encoding="utf-8") == "new"
+    assert sleeps == [0.05, 0.05]
+
+
+def test_atomic_write_removes_temp_file_after_replace_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "state.txt"
+    destination.write_text("old", encoding="utf-8")
+    clock = iter((0.0, 0.5, 1.0))
+
+    def always_fail(*args: object) -> None:
+        raise PermissionError("destination is open")
+
+    class FakeTime:
+        @staticmethod
+        def monotonic() -> float:
+            return next(clock)
+
+        @staticmethod
+        def sleep(_: float) -> None:
+            return None
+
+    monkeypatch.setattr("storyteller.storage.os.replace", always_fail)
+    monkeypatch.setattr("storyteller.storage.time", FakeTime)
+
+    with pytest.raises(PermissionError, match="destination is open"):
+        atomic_write_text(destination, "new")
+
+    assert destination.read_text(encoding="utf-8") == "old"
+    assert list(destination.parent.glob(f".{destination.name}.*.tmp")) == []
+
+
 def test_atomic_json_write_is_utf8_json_with_lf(tmp_path: Path) -> None:
     destination = tmp_path / "state.json"
     atomic_write_json(destination, {"text": "日本語", "items": [1, 2]})
@@ -147,6 +200,22 @@ def test_stale_lock_is_removed_and_reclaimed(tmp_path: Path) -> None:
         assert json.loads(lock_path.read_text(encoding="utf-8"))["pid"] == os.getpid()
 
     assert not lock_path.exists()
+
+
+def test_lock_release_does_not_remove_a_reclaimed_lock(tmp_path: Path) -> None:
+    lock_path = tmp_path / "manifest.lock"
+    with acquire_lock(lock_path):
+        replacement = {
+            "pid": 999,
+            "hostname": "other-host",
+            "created_at": "2026-09-27T00:00:00Z",
+            "token": "other-process-token",
+        }
+        lock_path.write_text(json.dumps(replacement), encoding="utf-8")
+
+    assert json.loads(lock_path.read_text(encoding="utf-8"))["token"] == (
+        "other-process-token"
+    )
 
 
 def test_lock_paths_follow_data_layout(tmp_path: Path) -> None:
