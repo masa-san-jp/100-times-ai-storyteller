@@ -6,16 +6,18 @@
 ## 作業を始める前に
 
 1. [docs/README.md](docs/README.md) を読み、原本の所有範囲と規則を確認する。
-2. [docs/VISION.md](docs/VISION.md) の設計原則 P1〜P8 を確認する。すべての変更はこれに従う。
-3. [docs/plan/ROADMAP.md](docs/plan/ROADMAP.md) で現在のフェーズを確認し、そのフェーズの計画書（`docs/plan/phase-N.md`）から作業項目を選ぶ。
-4. 作業項目の「根拠となる spec」を読んでから実装する。
+2. [docs/process/implementation.md](docs/process/implementation.md) を読み、自分の役割（オーケストレータ／実装者）と、作業の受け渡し・報告の形式を確認する。
+3. [docs/VISION.md](docs/VISION.md) の設計原則 P1〜P8 を確認する。すべての変更はこれに従う。
+4. 依頼された作業項目を `docs/plan/phase-N.md` で確認し、その「根拠」の spec と「共通の受け入れ条件」を読んでから実装する。
 
-## 守ること
+## 実装者が守ること
 
-- **spec が先、コードが後。** spec にない振る舞いを実装しない。spec を変える必要があれば、先に spec を変更する（[CONTRIBUTING.md](CONTRIBUTING.md)）。
-- 1つの事柄は1つの文書にだけ書く。内容を他の文書に複写しない。
-- 設計原則に反する変更、または原則の解釈が分かれる判断は、ADR（[docs/adr/](docs/adr/)）を書く。
-- 実装は Python 3.11 以上と uv で行う。外部ライブラリの追加は [ADR-0002](docs/adr/0002-python-uv.md) の手順に従う。
+- 依頼された作業項目1件だけを実装する。範囲外のファイルを変更しない。
+- **仕様を変更しない。** spec にない振る舞いを実装しない。仕様の不足・矛盾・曖昧さを見つけたら、解釈を自分で決めずに作業を止め、報告の「仕様への質問」に書く。
+- push、プルリクエストの作成、マージをしない。ローカルでのコミットまでを行う。
+- 実装は Python 3.11 以上と uv で行う。外部ライブラリを追加しない（追加が必要なら「仕様への質問」として報告する）。
 - macOS・Linux・Windows で動くように、[ADR-0002](docs/adr/0002-python-uv.md)「影響」節の実装規則に従う。
+- テストのデータは pytest の `tmp_path` に作る。リポジトリ内に作らない。
 - ユーザーの入力と生成物（`private/` など、データディレクトリの中身）をコミットしない。
 - セットアップ：`uv sync`　テスト：`uv run pytest`
+- 作業の最後に、[docs/process/implementation.md](docs/process/implementation.md) §3 の形式で報告する。
