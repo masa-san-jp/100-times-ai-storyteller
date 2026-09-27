@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from storyteller.validation import SchemaValidationError, YamlLoadError, load_yaml
+from storyteller.validation import (
+    OutputParseError,
+    SchemaValidationError,
+    YamlLoadError,
+    load_yaml,
+    parse_json_object,
+    validate_output,
+)
 
 
 ROOT = Path(__file__).parents[1]
@@ -201,3 +208,157 @@ def test_schemas_are_valid_draft_2020_12_schemas():
     for schema_path in (TASK_SCHEMA, WORKSPACE_SCHEMA):
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+
+def output_task(output="json", checks=None, schema=None):
+    validation = {}
+    if checks is not None:
+        validation["checks"] = checks
+    if schema is not None:
+        validation["schema"] = schema
+    return {"output": output, "validate": validation}
+
+
+def test_json_output_is_rescued_from_surrounding_text_and_ignores_braces_in_strings():
+    raw = '説明 {"text":"閉じた } 文字列", "nested":{"ok":true}} 末尾'
+
+    assert parse_json_object(raw) == {
+        "text": "閉じた } 文字列",
+        "nested": {"ok": True},
+    }
+
+
+def test_json_arrays_and_unparseable_json_are_rejected():
+    with pytest.raises(OutputParseError):
+        parse_json_object("[1, 2]")
+    with pytest.raises(OutputParseError):
+        parse_json_object("説明だけ")
+
+
+def test_json_schema_is_applied_after_json_rescue(tmp_path: Path):
+    schema = tmp_path / "output.schema.json"
+    schema.write_text(
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "required": ["text"],
+                "properties": {"text": {"type": "string"}},
+                "additionalProperties": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    task = output_task(schema="output.schema.json")
+
+    assert validate_output(task, 'prefix {"text":"ok"}', harness_root=tmp_path).passed
+    result = validate_output(task, '{"text": 3}', harness_root=tmp_path)
+    assert not result.passed
+    assert any("schema" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    ("check", "good", "bad"),
+    [
+        (
+            "sources_exist",
+            {"sources": ["a1"]},
+            {"sources": ["unknown"]},
+        ),
+        (
+            {"max_chars": {"field": "text", "n": 3}},
+            {"text": "あいう"},
+            {"text": "あいうえ"},
+        ),
+        (
+            {"min_chars": {"field": "text", "n": 3}},
+            {"text": "あいう"},
+            {"text": "あい"},
+        ),
+        (
+            {"count": {"field": "items", "n": 2}},
+            {"items": [1, 2]},
+            {"items": [1]},
+        ),
+        (
+            {"count": {"field": "items", "min": 1, "max": 2}},
+            {"items": [1]},
+            {"items": [1, 2, 3]},
+        ),
+        (
+            {"ids_subset": {"field": "ids", "slot": "items"}},
+            {"ids": ["a1", "a2"]},
+            {"ids": ["a3"]},
+        ),
+        (
+            {"uses_given": {"field": "text", "slot": "items", "n": 2}},
+            {"text": "alpha と beta を使う"},
+            {"text": "alpha だけを使う"},
+        ),
+        (
+            "ends_complete",
+            "これは完結。",
+            "これは途中",
+        ),
+    ],
+)
+def test_each_output_check_accepts_and_rejects_examples(check, good, bad):
+    inputs = {"items": [{"id": "a1", "text": "alpha"}, {"id": "a2", "text": "beta"}]}
+    output = "text" if isinstance(good, str) else "json"
+    task = output_task(output=output, checks=[check])
+
+    good_raw = good if output == "text" else json.dumps(good, ensure_ascii=False)
+    bad_raw = bad if output == "text" else json.dumps(bad, ensure_ascii=False)
+    assert validate_output(task, good_raw, inputs=inputs).passed
+    assert not validate_output(task, bad_raw, inputs=inputs).passed
+
+
+def test_no_new_proper_nouns_supports_warn_and_fail(tmp_path: Path):
+    common_words = tmp_path / "common_words.yaml"
+    common_words.write_text("- 一般語\n", encoding="utf-8")
+    inputs = {"given": ["既知の素材"]}
+    output = {"text": "未知のカタカナ語と一般語と「新名称」"}
+
+    warn = validate_output(
+        output_task(
+            checks=[
+                {"no_new_proper_nouns": {"field": "text", "mode": "warn"}}
+            ]
+        ),
+        json.dumps(output, ensure_ascii=False),
+        inputs=inputs,
+        common_words_path=common_words,
+    )
+    assert warn.passed
+    assert warn.warnings
+    assert "新名称" in warn.warnings[0]
+
+    fail = validate_output(
+        output_task(
+            checks=[
+                {"no_new_proper_nouns": {"field": "text", "mode": "fail"}}
+            ]
+        ),
+        json.dumps(output, ensure_ascii=False),
+        inputs=inputs,
+        common_words_path=common_words,
+    )
+    assert not fail.passed
+    assert "新名称" in fail.errors[0]
+
+
+def test_no_new_proper_nouns_excludes_input_and_allowed_words(tmp_path: Path):
+    common_words = tmp_path / "common_words.yaml"
+    common_words.write_text("words:\n  - 東京\n", encoding="utf-8")
+    task = output_task(
+        output="text",
+        checks=[{"no_new_proper_nouns": {"mode": "fail"}}],
+    )
+    result = validate_output(
+        task,
+        "東京と既知の素材。",
+        inputs={"source": "既知の素材"},
+        common_words_path=common_words,
+    )
+
+    assert result.passed
