@@ -11,7 +11,7 @@ from storyteller.tables import (
     load_table,
     table_names,
 )
-from storyteller.validation import SchemaValidationError
+from storyteller.validation import SchemaValidationError, validate_document
 
 
 ROOT = Path(__file__).parents[1]
@@ -60,6 +60,22 @@ def test_plot_and_structure_tables_have_phase_one_shape():
     structures = load_table("structures", repository_root=ROOT)
 
     assert len(plot_types["types"]) == 14
+    assert {plot["name"] for plot in plot_types["types"]} == {
+        "旅（クエスト）",
+        "モンスターを倒す",
+        "成り上がり",
+        "再生",
+        "ラブストーリー",
+        "ミステリー／犯罪",
+        "悲劇",
+        "帰還",
+        "コメディ",
+        "サバイバル／ディストピア",
+        "復讐",
+        "陰謀・政治劇",
+        "人間ドラマ",
+        "哲学的／存在論的",
+    }
     assert {plot["structure"] for plot in plot_types["types"]} == {"standard"}
     assert set(structures["templates"]) == {
         "three-beat",
@@ -74,6 +90,26 @@ def test_name_sound_table_has_eight_sets_with_twelve_sounds_each():
 
     assert len(sounds["sets"]) >= 8
     assert all(len(sound_set["sounds"]) >= 12 for sound_set in sounds["sets"])
+
+
+@pytest.mark.parametrize("invalid_sound", ["ャ", "ュ", "ョ", "ー", "ッ"])
+def test_name_sound_schema_rejects_standalone_small_kana_and_long_mark(
+    invalid_sound: str,
+):
+    sounds = load_table("name_sounds", repository_root=ROOT)
+    sounds["sets"][0]["sounds"][0] = invalid_sound
+
+    with pytest.raises(SchemaValidationError):
+        validate_document(sounds, ROOT / "schemas/tables/name_sounds.schema.json")
+
+
+def test_default_element_tables_are_japanese():
+    for axis in ("want", "ability", "duty"):
+        table = load_table(f"elements/{axis}", repository_root=ROOT)
+        assert all(
+            not any(char.isascii() and char.isalpha() for char in item)
+            for item in table["items"]
+        )
 
 
 def test_unknown_table_name_is_rejected():

@@ -142,14 +142,14 @@ types:
         stage: trials
       - description: 人物たちが関係の形とこれからの責任を選ぶ。
         stage: return-with-elixir
-  - id: surrealism
-    name: シュルレアリスム／超現実
-    core: 日常の因果や境界がずれる世界で、主人公が象徴的な経験から別の現実を受け入れる。
+  - id: philosophical-existential
+    name: 哲学的／存在論的
+    core: 主人公が世界の意味や自分の存在を問い直し、選んだ生き方とその責任を引き受ける。
     structure: standard
     required_events:
-      - description: 日常の中に、通常の因果では説明できない像や出来事が現れる。
-        stage: call-to-adventure
-      - description: 主人公が現実と象徴の境界を越え、異なる規則に触れる。
-        stage: threshold
-      - description: 経験の意味を新しい視点として日常へ持ち帰る。
-        stage: return-with-elixir
+      - description: 主人公が自分の存在や世界の意味に疑問を抱く契機が示される。
+        stage: ordinary-world
+      - description: 既成の答えを失った主人公が、自由に選ぶこととその責任の重さに直面する。
+        stage: ordeal
+      - description: 主人公が唯一の答えに頼らず、自ら選んだ意味と生き方を引き受ける。
+        stage: resurrection

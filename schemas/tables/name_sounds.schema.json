@@ -21,7 +21,7 @@
             "minItems": 12,
             "items": {
               "type": "string",
-              "pattern": "^[ァ-ヶー・]+$"
+              "pattern": "^(?![ァィゥェォャュョヮッヵヶー・])[ア-ヺ](?:[ァィゥェォャュョヮ])?(?:ー)?$"
             },
             "uniqueItems": true
           }
