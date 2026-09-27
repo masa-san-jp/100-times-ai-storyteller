@@ -18,6 +18,7 @@
 - 実装は Python 3.11 以上と uv で行う。外部ライブラリを追加しない（追加が必要なら「仕様への質問」として報告する）。
 - macOS・Linux・Windows で動くように、[ADR-0002](docs/adr/0002-python-uv.md)「影響」節の実装規則に従う。
 - テストのデータは pytest の `tmp_path` に作る。リポジトリ内に作らない。
+- マシン全体に影響する操作（`uv tool install`、グローバルな設定の変更など）をしない。導入の確認が必要な場合は、`UV_TOOL_DIR` と `UV_TOOL_BIN_DIR` を一時ディレクトリに向けて行い、終わったら削除する。
 - ユーザーの入力と生成物（`private/` など、データディレクトリの中身）をコミットしない。
 - セットアップ：`uv sync`　テスト：`uv run pytest`
 - 作業の最後に、[docs/process/implementation.md](docs/process/implementation.md) §3 の形式で報告する。
