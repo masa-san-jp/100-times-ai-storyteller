@@ -188,7 +188,10 @@ def _open_temp_file(path: Path) -> tuple[int, Path]:
         try:
             descriptor = os.open(
                 temporary_path,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_BINARY", 0),
                 0o666,
             )
         except FileExistsError:
@@ -309,7 +312,10 @@ def acquire_lock(
         try:
             descriptor = os.open(
                 lock_path,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_BINARY", 0),
                 0o666,
             )
         except FileExistsError:

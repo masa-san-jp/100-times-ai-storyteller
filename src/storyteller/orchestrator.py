@@ -11,11 +11,13 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import math
 import os
 import re
 import secrets
 import shutil
 import socket
+import sys
 from copy import deepcopy
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -332,45 +334,57 @@ class Orchestrator:
         # Code tasks are synchronous.  Advancing before looking for an LLM
         # task makes a newly-unblocked task visible to this invocation.
         for candidate_run_id in run_ids:
-            manifest = self.load_run(candidate_run_id)
-            if manifest["status"] == "active":
-                self.advance(candidate_run_id)
+            try:
+                manifest = self.load_run(candidate_run_id)
+                if manifest["status"] == "active":
+                    self.advance(candidate_run_id)
+            except (OSError, ValueError, ClaimError) as error:
+                _warn_skipped_run(candidate_run_id, error)
 
         for candidate_run_id in self._claimable_run_ids(run_id):
-            run_dir = self.run_dir(candidate_run_id)
-            with manifest_lock(run_dir):
-                manifest = load_manifest(run_dir / "manifest.json")
-                if manifest["status"] != "active":
-                    continue
-                now = self._now()
-                changed = _refresh_claims(
-                    manifest,
-                    run_dir,
-                    now,
-                    self._clock,
-                )
-                _refresh_blocked_tasks(manifest, now)
-                task_id = _next_ready_llm_task(manifest)
-                if task_id is None:
-                    if changed:
-                        _update_run_status(manifest)
-                    _touch_manifest(manifest, now)
-                    write_manifest(run_dir / "manifest.json", manifest)
-                    continue
+            retry_same_run = False
+            while True:
+                run_dir = self.run_dir(candidate_run_id)
+                try:
+                    with manifest_lock(run_dir):
+                        manifest = load_manifest(run_dir / "manifest.json")
+                        if manifest["status"] != "active" and not retry_same_run:
+                            break
+                        now = self._now()
+                        changed = _refresh_claims(
+                            manifest,
+                            run_dir,
+                            now,
+                            self._clock,
+                        )
+                        _refresh_blocked_tasks(manifest, now)
+                        task_id = _next_ready_llm_task(manifest)
+                        if task_id is None:
+                            if changed:
+                                _update_run_status(manifest)
+                            _touch_manifest(manifest, now)
+                            write_manifest(run_dir / "manifest.json", manifest)
+                            break
 
-                result = self._claim_task_locked(
-                    manifest,
-                    candidate_run_id,
-                    task_id,
-                    executor_id=resolved_executor_id,
-                    isolation=isolation,
-                    now=now,
-                )
-                _update_run_status(manifest)
-                _touch_manifest(manifest, now)
-                write_manifest(run_dir / "manifest.json", manifest)
-                if result is not None:
-                    return result
+                        result = self._claim_task_locked(
+                            manifest,
+                            candidate_run_id,
+                            task_id,
+                            executor_id=resolved_executor_id,
+                            isolation=isolation,
+                            now=now,
+                        )
+                        _update_run_status(manifest)
+                        _touch_manifest(manifest, now)
+                        write_manifest(run_dir / "manifest.json", manifest)
+                        if result is not None:
+                            return result
+                        # A card error or O_EXCL race consumed this candidate.
+                        # Re-enter the same run before moving to the next one.
+                        retry_same_run = True
+                except (OSError, ValueError, ClaimError) as error:
+                    _warn_skipped_run(candidate_run_id, error)
+                    break
         return None
 
     # These aliases keep the operation discoverable to callers that use the
@@ -493,12 +507,27 @@ class Orchestrator:
             if task["state"] != "claimed":
                 raise ClaimError(f"task is not claimed: {task_id}")
             claim_path = self.task_dir(run_id, task_id) / "claim.json"
-            payload = _read_claim_file(claim_path)
-            _rename_claim(claim_path, "claim.revoked")
-            executor_id = None
-            if isinstance(task.get("claim"), Mapping):
-                executor_id = task["claim"].get("executor_id")
-            task["claim"] = None
+            manifest_claim = task.get("claim")
+            if claim_path.exists():
+                if not isinstance(manifest_claim, Mapping):
+                    raise ClaimError("manifest の claim が不正です")
+                payload = _read_claim_file(claim_path)
+                if (
+                    payload["task_id"] != task_id
+                    or payload["ticket"] != manifest_claim.get("ticket")
+                ):
+                    raise ClaimError("claim.json の ticket が manifest と一致しません")
+            _release_claim(
+                run_dir,
+                task_id,
+                task,
+                archive_prefix="claim.revoked",
+            )
+            executor_id = (
+                manifest_claim.get("executor_id")
+                if isinstance(manifest_claim, Mapping)
+                else None
+            )
             _set_task_state(
                 manifest,
                 task_id,
@@ -510,9 +539,6 @@ class Orchestrator:
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
             write_manifest(run_dir / "manifest.json", manifest)
-            # Reading the payload before renaming also ensures a malformed or
-            # mismatched claim cannot be silently cancelled.
-            del payload
             return manifest
 
     _revoke_claim = revoke_claim
@@ -522,7 +548,14 @@ class Orchestrator:
             # Let run_dir provide the same path-safety error as other APIs,
             # then load the manifest to give callers a useful missing-run
             # error before any claim work starts.
-            self.load_run(run_id)
+            run_path = self.run_dir(run_id)
+            try:
+                self.load_run(run_id)
+            except (OSError, ValueError) as error:
+                if run_path.exists():
+                    _warn_skipped_run(run_id, error)
+                    return []
+                raise
             return [run_id]
 
         runs_dir = self.data_dir / "runs"
@@ -532,7 +565,11 @@ class Orchestrator:
         for entry in runs_dir.iterdir():
             if not entry.is_dir() or not _RUN_ID.fullmatch(entry.name):
                 continue
-            manifest = load_manifest(entry / "manifest.json")
+            try:
+                manifest = load_manifest(entry / "manifest.json")
+            except (OSError, ValueError) as error:
+                _warn_skipped_run(entry.name, error)
+                continue
             if manifest["status"] == "active":
                 records.append((manifest["created_at"], entry.name))
         records.sort(key=lambda item: (item[0], item[1]))
@@ -575,7 +612,13 @@ class Orchestrator:
             # Input rendering failure is a task failure according to the
             # task-card contract.  The retry/invalidation policy belongs to a
             # later work item.
-            _fail_task(manifest, task_id, now, _error_text(error))
+            _fail_task(
+                manifest,
+                task_id,
+                now,
+                _error_text(error),
+                run_dir=self.run_dir(run_id),
+            )
             return None
 
         try:
@@ -598,8 +641,7 @@ class Orchestrator:
         try:
             atomic_write_text(self.task_dir(run_id, task_id) / "card.md", card)
         except BaseException:
-            _remove_claim_if_ticket(claim_path, ticket)
-            task["claim"] = None
+            _release_claim(self.run_dir(run_id), task_id, task)
             _set_task_state(
                 manifest,
                 task_id,
@@ -642,7 +684,11 @@ class Orchestrator:
         for entry in sorted(runs_dir.iterdir(), key=lambda path: path.name):
             if not entry.is_dir() or not _RUN_ID.fullmatch(entry.name):
                 continue
-            manifest = load_manifest(entry / "manifest.json")
+            try:
+                manifest = load_manifest(entry / "manifest.json")
+            except (OSError, ValueError) as error:
+                _warn_skipped_run(entry.name, error)
+                continue
             for task_id, task in manifest["tasks"].items():
                 claim = task.get("claim")
                 if isinstance(claim, Mapping) and claim.get("ticket") == ticket:
@@ -680,6 +726,12 @@ class Orchestrator:
                         "a done task requires output when transitioned directly"
                     )
                 self._write_task_output(run_id, task_id, output)
+            if state == "failed" and (
+                not isinstance(reason, str) or not reason.strip()
+            ):
+                raise InvalidTransition("failed transition requires a non-empty reason")
+            if task["state"] == "claimed" and state != "claimed":
+                _release_claim(run_dir, task_id, task)
             _set_task_state(
                 manifest,
                 task_id,
@@ -767,6 +819,7 @@ class Orchestrator:
                 task_id,
                 self._now(),
                 f"コードタスクの処理が登録されていません: {handler_name}",
+                run_dir=self.run_dir(run_id),
             )
             return
 
@@ -793,9 +846,17 @@ class Orchestrator:
             self._write_task_output(run_id, task_id, normalised.output)
         except Exception as error:  # code-task exceptions become failed tasks
             _remove_created_task_dirs(created_dirs)
-            _fail_task(manifest, task_id, self._now(), _error_text(error))
+            _fail_task(
+                manifest,
+                task_id,
+                self._now(),
+                _error_text(error),
+                run_dir=self.run_dir(run_id),
+            )
             return
 
+        if task["state"] == "claimed":
+            _release_claim(self.run_dir(run_id), task_id, task)
         _set_task_state(
             manifest,
             task_id,
@@ -1123,8 +1184,16 @@ def _resolve_executor_id(executor_id: str | None) -> str:
     return executor_id
 
 
+def _warn_skipped_run(run_id: str, error: BaseException) -> None:
+    print(
+        f"警告: run {run_id} の manifest または claim に異常があるため、"
+        f"claim の対象からスキップします: {error}",
+        file=sys.stderr,
+    )
+
+
 def _validate_isolation(isolation: str) -> None:
-    if isolation not in _ISOLATIONS:
+    if not isinstance(isolation, str) or isolation not in _ISOLATIONS:
         values = ", ".join(sorted(_ISOLATIONS))
         raise ClaimError(f"isolation は {values} のいずれかです")
 
@@ -1147,10 +1216,12 @@ def _lease_expires_at(claimed_at: str, lease_minutes: Any) -> str:
         lease_minutes, (int, float)
     ) or lease_minutes <= 0:
         raise ClaimError("lease_minutes は0より大きい数でなければなりません")
-    expiry = _parse_utc_timestamp(claimed_at) + timedelta(
-        minutes=float(lease_minutes)
-    )
-    return expiry.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    try:
+        lease_seconds = max(1, math.ceil(float(lease_minutes) * 60))
+    except (OverflowError, ValueError) as error:
+        raise ClaimError("lease_minutes は有限の数でなければなりません") from error
+    expiry = _parse_utc_timestamp(claimed_at) + timedelta(seconds=lease_seconds)
+    return expiry.isoformat().replace("+00:00", "Z")
 
 
 def _manifest_claim(payload: Mapping[str, Any]) -> dict[str, str]:
@@ -1190,8 +1261,6 @@ def _validate_claim_payload(payload: Any) -> dict[str, str]:
     lease_expires_at = payload["lease_expires_at"]
     _parse_utc_timestamp(claimed_at)
     _parse_utc_timestamp(lease_expires_at)
-    if _parse_utc_timestamp(lease_expires_at) <= _parse_utc_timestamp(claimed_at):
-        raise ClaimError("claim.json の lease が有効期限になっていません")
     return {
         "ticket": ticket,
         "task_id": task_id,
@@ -1209,13 +1278,18 @@ def _read_claim_file(path: Path) -> dict[str, str]:
     except FileNotFoundError as error:
         raise InvalidClaimError("claim.json がありません") from error
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise ClaimError(f"claim.json を読み込めません: {path}") from error
-    return _validate_claim_payload(payload)
+        raise InvalidClaimError(f"claim.json を読み込めません: {path}") from error
+    try:
+        return _validate_claim_payload(payload)
+    except ClaimError as error:
+        raise InvalidClaimError(str(error)) from error
 
 
 def _claim_expired(payload: Mapping[str, Any], now: str) -> bool:
-    return _parse_utc_timestamp(now) >= _parse_utc_timestamp(
-        payload["lease_expires_at"]
+    claimed_at = _parse_utc_timestamp(payload["claimed_at"])
+    lease_expires_at = _parse_utc_timestamp(payload["lease_expires_at"])
+    return lease_expires_at <= claimed_at or (
+        _parse_utc_timestamp(now) >= lease_expires_at
     )
 
 
@@ -1225,7 +1299,7 @@ def _create_claim_file(path: Path, payload: Mapping[str, Any]) -> None:
     data = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
     descriptor = os.open(
         path,
-        os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+        os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0),
         0o666,
     )
     try:
@@ -1241,17 +1315,24 @@ def _create_claim_file(path: Path, payload: Mapping[str, Any]) -> None:
         raise
 
 
-def _remove_claim_if_ticket(path: Path, ticket: str) -> None:
-    try:
-        payload = _read_claim_file(path)
-    except (ClaimError, InvalidClaimError):
-        return
-    if payload["ticket"] != ticket:
-        return
-    try:
-        path.unlink()
-    except FileNotFoundError:
-        pass
+def _release_claim(
+    run_dir: Path,
+    task_id: str,
+    task: dict[str, Any],
+    *,
+    archive_prefix: str | None = None,
+) -> None:
+    """Remove or archive a task claim and clear its manifest record."""
+
+    claim_path = run_dir / "tasks" / task_id / "claim.json"
+    if archive_prefix is None:
+        try:
+            claim_path.unlink()
+        except FileNotFoundError:
+            pass
+    elif claim_path.exists():
+        _rename_claim(claim_path, archive_prefix)
+    task["claim"] = None
 
 
 def _rename_claim(path: Path, prefix: str) -> Path:
@@ -1287,7 +1368,7 @@ def _refresh_claims(
                 executor_id = None
                 if isinstance(task.get("claim"), Mapping):
                     executor_id = task["claim"].get("executor_id")
-                task["claim"] = None
+                _release_claim(run_dir, task_id, task)
                 _set_task_state(
                     manifest,
                     task_id,
@@ -1299,18 +1380,59 @@ def _refresh_claims(
                 changed = True
             continue
 
-        payload = _read_claim_file(claim_path)
-        if payload["task_id"] != task_id:
-            raise ClaimError(f"claim.json の task_id が一致しません: {task_id}")
-        if task["kind"] != "llm":
-            raise ClaimError(f"code task に claim.json があります: {task_id}")
+        # A claim left after a terminal transition is orphaned, regardless of
+        # whether its JSON happens to be well formed.  Quarantine it without
+        # making a completed or failed run unclaimable.
+        if task["state"] in {"done", "failed", "skipped"}:
+            _release_claim(
+                run_dir,
+                task_id,
+                task,
+                archive_prefix="claim.expired",
+            )
+            changed = True
+            continue
 
-        if _claim_expired(payload, now):
-            _rename_claim(claim_path, "claim.expired")
+        try:
+            payload = _read_claim_file(claim_path)
+            if payload["task_id"] != task_id:
+                raise ClaimError(f"claim.json の task_id が一致しません: {task_id}")
+            if task["kind"] != "llm":
+                raise ClaimError(f"code task に claim.json があります: {task_id}")
+        except (ClaimError, InvalidClaimError):
+            # A malformed, mismatched, or code-task claim is isolated to this
+            # task.  Other tasks and runs remain eligible for selection.
             executor_id = None
             if isinstance(task.get("claim"), Mapping):
                 executor_id = task["claim"].get("executor_id")
-            task["claim"] = None
+            _release_claim(
+                run_dir,
+                task_id,
+                task,
+                archive_prefix="claim.expired",
+            )
+            if task["state"] == "claimed":
+                _set_task_state(
+                    manifest,
+                    task_id,
+                    "ready",
+                    now,
+                    reason="claim.json が不正です",
+                    executor_id=executor_id,
+                )
+            changed = True
+            continue
+
+        if _claim_expired(payload, now):
+            executor_id = None
+            if isinstance(task.get("claim"), Mapping):
+                executor_id = task["claim"].get("executor_id")
+            _release_claim(
+                run_dir,
+                task_id,
+                task,
+                archive_prefix="claim.expired",
+            )
             if task["state"] == "claimed":
                 _set_task_state(
                     manifest,
@@ -1320,8 +1442,6 @@ def _refresh_claims(
                     reason="leaseが切れた",
                     executor_id=executor_id,
                 )
-            elif task["state"] not in {"ready", "blocked"}:
-                raise ClaimError(f"期限切れclaimの状態が不正です: {task_id}")
             changed = True
             continue
 
@@ -1342,7 +1462,14 @@ def _refresh_claims(
                 task["claim"] = record
                 changed = True
         else:
-            raise ClaimError(f"claim中タスクの状態が不正です: {task_id}")
+            # blocked tasks cannot own a live claim.  Keep the anomaly local.
+            _release_claim(
+                run_dir,
+                task_id,
+                task,
+                archive_prefix="claim.expired",
+            )
+            changed = True
     return changed
 
 
@@ -1475,12 +1602,19 @@ def _touch_manifest(manifest: dict[str, Any], at: str) -> None:
 
 
 def _fail_task(
-    manifest: dict[str, Any], task_id: str, at: str, error: str
+    manifest: dict[str, Any],
+    task_id: str,
+    at: str,
+    error: str,
+    *,
+    run_dir: Path | None = None,
 ) -> None:
     task = _get_task(manifest, task_id)
     if not isinstance(error, str) or not error.strip():
         raise InvalidTransition("failed transition requires a non-empty reason")
     _validate_transition(manifest, task_id, "failed")
+    if manifest["tasks"][task_id]["state"] == "claimed" and run_dir is not None:
+        _release_claim(run_dir, task_id, manifest["tasks"][task_id])
     _set_task_state(manifest, task_id, "failed", at, reason=error)
     task["error"] = error
 
