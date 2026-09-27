@@ -43,14 +43,13 @@ def generate_task_card(
     if task_definition.get("kind") != "llm":
         raise TaskCardError("only llm task definitions have task cards")
 
-    if inputs is None:
-        slot_values = resolve_inputs(
-            task_definition, outputs, run_input, index=index
-        )
-    else:
-        slot_values = dict(inputs)
-
-    rendered_slots = _fit_inputs(task_definition, slot_values)
+    rendered_slots = prepare_task_inputs(
+        task_definition,
+        inputs=inputs,
+        outputs=outputs,
+        run_input=run_input,
+        index=index,
+    )
     input_body = _render_input_body(task_definition, rendered_slots)
 
     output = task_definition.get("output")
@@ -114,6 +113,30 @@ def generate_task_card(
 # a second implementation.  They are also useful to later orchestration code.
 build_task_card = generate_task_card
 render_task_card = generate_task_card
+
+
+def prepare_task_inputs(
+    task_definition: Mapping[str, Any],
+    inputs: Mapping[str, Any] | None = None,
+    *,
+    outputs: Mapping[str, Any] | None = None,
+    run_input: Any = None,
+    index: Sequence[str] | str | None = None,
+) -> dict[str, Any]:
+    """Resolve and fit the values that are actually rendered in a card.
+
+    The orchestrator stores this result beside the card.  Validation must use
+    these values, rather than the unbounded source values, because a card may
+    have dropped or truncated optional input to meet its character budget.
+    """
+
+    if inputs is None:
+        slot_values = resolve_inputs(
+            task_definition, outputs, run_input, index=index
+        )
+    else:
+        slot_values = dict(inputs)
+    return _fit_inputs(task_definition, slot_values)
 
 
 def _fit_inputs(

@@ -1,10 +1,4 @@
-"""Durable run and DAG processing for the Phase 0 orchestrator.
-
-This module deliberately stops at the boundary between the orchestrator and
-an executor.  It creates and advances a run, executes registered ``code``
-tasks immediately, and claims ``llm`` tasks for an executor.  Output
-validation and submission policy are implemented by later work items.
-"""
+"""Durable run, claim, and submission processing for the Phase 0 orchestrator."""
 
 from __future__ import annotations
 
@@ -25,12 +19,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final
 
-from .cards import TaskCardError, generate_task_card
+from .cards import TaskCardError, generate_task_card, prepare_task_inputs
 from .manifest import load_manifest, write_manifest
 from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
 from .storage import atomic_write_json, atomic_write_text, manifest_lock
-from .validation import validate_document
+from .validation import validate_document, validate_output
 
 
 TASK_DEFINITION_SCHEMA_PATH = (
@@ -45,6 +39,7 @@ _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _TICKET = re.compile(r"^[a-f0-9]{32}$")
 _EXECUTOR_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
+_TERMINAL_RUN_STATUSES = frozenset({"halted", "completed", "duplicate"})
 _MISSING: Final = object()
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -52,7 +47,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "ready": frozenset({"claimed", "done", "failed", "skipped"}),
     "claimed": frozenset({"done", "ready", "failed"}),
     "done": frozenset(),
-    "failed": frozenset({"ready"}),
+    "failed": frozenset({"ready", "blocked"}),
     "skipped": frozenset(),
 }
 
@@ -81,6 +76,28 @@ class ClaimError(OrchestrationError):
 
 class InvalidClaimError(ClaimError):
     """A submitted ticket no longer identifies a valid claim."""
+
+
+class HaltedRunError(OrchestrationError):
+    """The run was halted because the harness changed."""
+
+    exit_code = 6
+
+
+@dataclass(frozen=True)
+class SubmissionResult:
+    """The durable result of accepting or rejecting one submission."""
+
+    accepted: bool
+    run_id: str
+    task_id: str
+    value: Any = None
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+    @property
+    def passed(self) -> bool:
+        return self.accepted
 
 
 @dataclass(frozen=True)
@@ -119,6 +136,7 @@ class CodeTaskResult:
     output: Any = None
     add_tasks: list[TaskSpec] = field(default_factory=list)
     skip_tasks: list[str] = field(default_factory=list)
+    invalidations: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -139,6 +157,7 @@ class CodeTaskContext:
     random: Any
     _add_tasks: list[TaskSpec] = field(default_factory=list, repr=False)
     _skip_tasks: list[str] = field(default_factory=list, repr=False)
+    _invalidations: list[tuple[str, str]] = field(default_factory=list, repr=False)
 
     def add_task(self, task: TaskSpec) -> TaskSpec:
         """Stage a dynamic task for addition after this handler succeeds."""
@@ -148,6 +167,14 @@ class CodeTaskContext:
     def skip_task(self, task_id: str) -> None:
         """Stage an existing task to become ``skipped`` after success."""
         self._skip_tasks.append(task_id)
+
+    def invalidate_task(self, task_id: str, reason: str) -> None:
+        """Stage a completed task for invalidation after this task succeeds."""
+        if not isinstance(task_id, str) or not task_id:
+            raise DAGError("invalid invalidation task ID")
+        if not isinstance(reason, str) or not reason.strip():
+            raise DAGError("invalidation requires a non-empty reason")
+        self._invalidations.append((task_id, reason))
 
 
 CodeTaskHandler = Callable[[CodeTaskContext], Any]
@@ -169,11 +196,23 @@ class Orchestrator:
         code_handlers: Mapping[str, CodeTaskHandler] | None = None,
         *,
         clock: Callable[[], datetime] | None = None,
+        harness_root: str | Path | None = None,
+        repository_root: str | Path | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
         self.task_definitions = _validate_task_definitions(task_definitions)
         self.code_handlers = dict(code_handlers or {})
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self.definition_root = (
+            Path(harness_root).expanduser().resolve(strict=False)
+            if harness_root is not None
+            else Path(__file__).resolve().parents[2]
+        )
+        self.repository_root = (
+            Path(repository_root).expanduser().resolve(strict=False)
+            if repository_root is not None
+            else _repository_root_for_definition_root(self.definition_root)
+        )
 
     def create_run(
         self,
@@ -234,6 +273,14 @@ class Orchestrator:
                     "sha256": _sha256_file(input_path),
                 }
 
+            resolved_harness = (
+                dict(harness)
+                if harness is not None
+                else _discover_harness_files(
+                    self.definition_root,
+                    repository_root=self.repository_root,
+                )
+            )
             manifest: dict[str, Any] = {
                 "schema_version": 1,
                 "run_id": resolved_run_id,
@@ -245,7 +292,7 @@ class Orchestrator:
                 "seed_source": resolved_seed_source,
                 "input": input_record,
                 "scale": dict(scale or {}),
-                "harness": dict(harness or {}),
+                "harness": resolved_harness,
                 "table_snapshot": dict(table_snapshot or {}),
                 "tasks": {},
                 "warnings": [],
@@ -294,7 +341,11 @@ class Orchestrator:
         while True:
             with manifest_lock(run_dir):
                 manifest = load_manifest(run_dir / "manifest.json")
-                if manifest["status"] in {"halted", "duplicate"}:
+                if self._halt_if_harness_changed(manifest):
+                    _touch_manifest(manifest, self._now())
+                    write_manifest(run_dir / "manifest.json", manifest)
+                    return manifest
+                if manifest["status"] in _TERMINAL_RUN_STATUSES:
                     _touch_manifest(manifest, self._now())
                     write_manifest(run_dir / "manifest.json", manifest)
                     return manifest
@@ -348,6 +399,10 @@ class Orchestrator:
                 try:
                     with manifest_lock(run_dir):
                         manifest = load_manifest(run_dir / "manifest.json")
+                        if self._halt_if_harness_changed(manifest):
+                            _touch_manifest(manifest, self._now())
+                            write_manifest(run_dir / "manifest.json", manifest)
+                            break
                         if manifest["status"] != "active" and not retry_same_run:
                             break
                         now = self._now()
@@ -417,6 +472,12 @@ class Orchestrator:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
+            if self._halt_if_harness_changed(manifest):
+                _touch_manifest(manifest, self._now())
+                write_manifest(run_dir / "manifest.json", manifest)
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {run_id}")
             if manifest["status"] != "active":
                 raise ClaimError(f"run is not active: {run_id}")
             now = self._now()
@@ -442,6 +503,45 @@ class Orchestrator:
 
     _claim_task = claim_task
 
+    def resume_harness_change(self, run_id: str) -> dict[str, Any]:
+        """Accept the current harness snapshot and resume a halted run."""
+
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if manifest["status"] != "halted":
+                raise OrchestrationError(f"run は halted ではありません: {run_id}")
+            manifest["harness"] = self._current_harness(manifest)
+            manifest["status"] = "active"
+            _refresh_blocked_tasks(manifest, self._now())
+            _update_run_status(manifest)
+            _touch_manifest(manifest, self._now())
+            write_manifest(run_dir / "manifest.json", manifest)
+            return manifest
+
+    # Short aliases used by callers implementing the future ``st resume`` CLI.
+    resume = resume_harness_change
+    accept_harness_change = resume_harness_change
+
+    def _current_harness(self, manifest: Mapping[str, Any]) -> dict[str, str]:
+        """Return a freshly enumerated snapshot of the current harness files."""
+
+        return _discover_harness_files(
+            self.definition_root,
+            repository_root=self.repository_root,
+        )
+
+    def _harness_changed(self, manifest: Mapping[str, Any]) -> bool:
+        return self._current_harness(manifest) != dict(manifest.get("harness", {}))
+
+    def _halt_if_harness_changed(self, manifest: dict[str, Any]) -> bool:
+        if manifest["status"] in _TERMINAL_RUN_STATUSES:
+            return False
+        if not self._harness_changed(manifest):
+            return False
+        _halt_run(manifest)
+        return True
+
     def validate_claim(self, ticket: str) -> dict[str, Any]:
         """Return claim metadata when *ticket* is currently valid.
 
@@ -460,6 +560,12 @@ class Orchestrator:
         run_dir = self.run_dir(found_run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
+            if self._halt_if_harness_changed(manifest):
+                _touch_manifest(manifest, self._now())
+                write_manifest(run_dir / "manifest.json", manifest)
+                raise HaltedRunError(f"run は停止中です: {found_run_id}")
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {found_run_id}")
             task = _get_task(manifest, found_task_id)
             claim = task.get("claim")
             claim_path = self.task_dir(found_run_id, found_task_id) / "claim.json"
@@ -484,6 +590,248 @@ class Orchestrator:
 
     # ``require_claim`` reads naturally at submit call sites.
     require_claim = validate_claim
+
+    def submit(
+        self,
+        ticket: str,
+        raw_output: Any,
+        *,
+        truncated: bool = False,
+    ) -> SubmissionResult:
+        """Validate and durably submit the output for a live claim.
+
+        Claim verification happens before parsing.  The final manifest update
+        repeats the ticket and lease check while holding the manifest lock, so
+        a revoke or an expiring lease cannot race a successful submission.
+        """
+
+        claim_info = self.validate_claim(ticket)
+        run_id = claim_info["run_id"]
+        task_id = claim_info["task_id"]
+        run_dir = self.run_dir(run_id)
+
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if self._halt_if_harness_changed(manifest):
+                _touch_manifest(manifest, self._now())
+                write_manifest(run_dir / "manifest.json", manifest)
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            task = _get_task(manifest, task_id)
+            definition = self.task_definitions[task["type"]]
+            inputs = _load_card_inputs(self.task_dir(run_id, task_id))
+
+        if truncated and definition.get("output") == "json":
+            raise OrchestrationError(
+                "JSON出力に --truncated を指定できません"
+            )
+
+        validation = validate_output(
+            definition,
+            raw_output,
+            inputs=inputs,
+            harness_root=self.definition_root,
+            common_words_path=self.repository_root / "tables" / "common_words.yaml",
+        )
+        return self._commit_submission(
+            ticket,
+            run_id,
+            task_id,
+            raw_output,
+            validation,
+        )
+
+    # Names used by internal callers and by the future CLI layer.
+    submit_output = submit
+    process_submission = submit
+
+    def _commit_submission(
+        self,
+        ticket: str,
+        run_id: str,
+        task_id: str,
+        raw_output: Any,
+        validation: Any,
+    ) -> SubmissionResult:
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if self._halt_if_harness_changed(manifest):
+                _touch_manifest(manifest, self._now())
+                write_manifest(run_dir / "manifest.json", manifest)
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            task = _get_task(manifest, task_id)
+            claim = _require_claim_locked(
+                manifest,
+                run_dir,
+                task_id,
+                ticket,
+                self._now(),
+            )
+            at = self._now()
+            errors = tuple(str(error) for error in validation.errors)
+            warnings = tuple(str(warning) for warning in validation.warnings)
+            recorded_warnings = tuple(
+                f"{task_id}: {warning}" for warning in warnings
+            )
+            if validation.passed:
+                _write_submitted_output(
+                    self.task_dir(run_id, task_id),
+                    self.task_definitions[task["type"]],
+                    validation.value,
+                )
+                _release_claim(run_dir, task_id, task)
+                _set_task_state(
+                    manifest,
+                    task_id,
+                    "done",
+                    at,
+                    reason="提出が検証に合格",
+                    executor_id=claim["executor_id"],
+                )
+                task["error"] = None
+                manifest["warnings"].extend(recorded_warnings)
+                _refresh_blocked_tasks(manifest, at)
+                _update_run_status(manifest)
+                _touch_manifest(manifest, at)
+                write_manifest(run_dir / "manifest.json", manifest)
+                return SubmissionResult(
+                    True,
+                    run_id,
+                    task_id,
+                    value=validation.value,
+                    warnings=recorded_warnings,
+                )
+
+            reason = "；".join(errors) or "提出が検証に不合格"
+            next_attempt = int(task["attempt"]) + 1
+            next_tries = int(task["tries"]) + 1
+            attempt_number = _next_attempt_number(
+                self.task_dir(run_id, task_id) / "attempts"
+            )
+            attempt_record = {
+                "output": raw_output,
+                "errors": list(errors) or [reason],
+                "reason": reason,
+                "warnings": list(warnings),
+                "ticket": ticket,
+                "executor_id": claim["executor_id"],
+                "at": at,
+                "attempt": next_attempt,
+                "tries": next_tries,
+            }
+            task["attempt"] = next_attempt
+            task["tries"] = next_tries
+            task["error"] = reason
+            task["claim"] = None
+            max_attempts = int(self.task_definitions[task["type"]].get("max_attempts", 3))
+            next_state = "failed" if task["tries"] >= max_attempts else "ready"
+            _set_task_state(
+                manifest,
+                task_id,
+                next_state,
+                at,
+                reason=reason,
+                executor_id=claim["executor_id"],
+            )
+            _update_run_status(manifest)
+            _touch_manifest(manifest, at)
+            write_manifest(run_dir / "manifest.json", manifest)
+            _release_claim(run_dir, task_id, task)
+            _remove_task_outputs(run_dir, task_id)
+            atomic_write_json(
+                self.task_dir(run_id, task_id)
+                / "attempts"
+                / f"{attempt_number}.json",
+                attempt_record,
+            )
+            return SubmissionResult(
+                False,
+                run_id,
+                task_id,
+                value=validation.value,
+                errors=errors or (reason,),
+                warnings=warnings,
+            )
+
+    def retry_failed(self, run_id: str, task_id: str) -> dict[str, Any]:
+        """Reset a failed task's retry counters and put it back in ``ready``."""
+
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            task = _get_task(manifest, task_id)
+            if task["state"] != "failed":
+                raise InvalidTransition("st retry の対象は failed のタスクだけです")
+            previous_error = task.get("error")
+            if isinstance(previous_error, str) and previous_error:
+                task["history"].append(
+                    {
+                        "at": self._now(),
+                        "from": "failed",
+                        "to": "failed",
+                        "reason": f"retry: {previous_error}",
+                    }
+                )
+            task["tries"] = 0
+            task["invalidations"] = 0
+            task["continuation_step"] = 0
+            task["cache_key"] = None
+            task["error"] = None
+            dependencies_ready = all(
+                _get_task(manifest, dependency)["state"] in {"done", "skipped"}
+                for dependency in task["deps"]
+            )
+            partial = self.task_dir(run_id, task_id) / "partial.md"
+            try:
+                partial.unlink()
+            except FileNotFoundError:
+                pass
+            _set_task_state(
+                manifest,
+                task_id,
+                "ready" if dependencies_ready else "blocked",
+                self._now(),
+                reason="failed タスクを再試行",
+            )
+            _update_run_status(manifest)
+            _touch_manifest(manifest, self._now())
+            write_manifest(run_dir / "manifest.json", manifest)
+            return manifest
+
+    retry_task = retry_failed
+    retry = retry_failed
+
+    def invalidate_task(
+        self,
+        run_id: str,
+        task_id: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Invalidate a completed task and reset its downstream tasks."""
+
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            _validate_invalidation_request(manifest, task_id, reason)
+            _apply_invalidation(
+                manifest,
+                run_dir,
+                task_id,
+                reason,
+                self.task_definitions,
+                self._now(),
+            )
+            _update_run_status(manifest)
+            _touch_manifest(manifest, self._now())
+            write_manifest(run_dir / "manifest.json", manifest)
+            return manifest
+
+    invalidate = invalidate_task
 
     def revoke_claim(
         self,
@@ -556,6 +904,9 @@ class Orchestrator:
                     _warn_skipped_run(run_id, error)
                     return []
                 raise
+            manifest = self.load_run(run_id)
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {run_id}")
             return [run_id]
 
         runs_dir = self.data_dir / "runs"
@@ -570,7 +921,7 @@ class Orchestrator:
             except (OSError, ValueError) as error:
                 _warn_skipped_run(entry.name, error)
                 continue
-            if manifest["status"] == "active":
+            if manifest["status"] in {"active", "stalled"}:
                 records.append((manifest["created_at"], entry.name))
         records.sort(key=lambda item: (item[0], item[1]))
         return [entry[1] for entry in records]
@@ -608,10 +959,13 @@ class Orchestrator:
 
         try:
             card = self._build_task_card(manifest, run_id, task_id, ticket)
+            context = self._build_context(manifest, run_id, task_id)
+            card_inputs = prepare_task_inputs(
+                self.task_definitions[task["type"]], inputs=context.inputs
+            )
         except Exception as error:
             # Input rendering failure is a task failure according to the
-            # task-card contract.  The retry/invalidation policy belongs to a
-            # later work item.
+            # task-card contract.
             _fail_task(
                 manifest,
                 task_id,
@@ -640,6 +994,9 @@ class Orchestrator:
         )
         try:
             atomic_write_text(self.task_dir(run_id, task_id) / "card.md", card)
+            atomic_write_json(
+                self.task_dir(run_id, task_id) / "input.json", card_inputs
+            )
         except BaseException:
             _release_claim(self.run_dir(run_id), task_id, task)
             _set_task_state(
@@ -664,17 +1021,31 @@ class Orchestrator:
         task_id: str,
         ticket: str,
     ) -> str:
+        card, _ = self._build_task_card_and_inputs(manifest, run_id, task_id, ticket)
+        return card
+
+    def _build_task_card_and_inputs(
+        self,
+        manifest: Mapping[str, Any],
+        run_id: str,
+        task_id: str,
+        ticket: str,
+    ) -> tuple[str, dict[str, Any]]:
         task = _get_task(manifest, task_id)
         definition = self.task_definitions[task["type"]]
         context = self._build_context(manifest, run_id, task_id)
+        card_inputs = prepare_task_inputs(definition, inputs=context.inputs)
         retry_reason = task.get("error")
         if not isinstance(retry_reason, str):
             retry_reason = None
-        return generate_task_card(
-            definition,
-            ticket,
-            inputs=context.inputs,
-            retry_reason=retry_reason,
+        return (
+            generate_task_card(
+                definition,
+                ticket,
+                inputs=card_inputs,
+                retry_reason=retry_reason,
+            ),
+            card_inputs,
         )
 
     def _find_claim_ticket(self, ticket: str) -> tuple[str, str] | None:
@@ -838,6 +1209,12 @@ class Orchestrator:
                 normalised.skip_tasks,
                 self.task_definitions,
             )
+            normalised.invalidations = _select_invalidation_requests(
+                manifest,
+                normalised.invalidations,
+            )
+            for invalidated_id, reason in normalised.invalidations:
+                _validate_invalidation_request(manifest, invalidated_id, reason)
             created_dirs = _create_dynamic_task_dirs(
                 run_id,
                 normalised.add_tasks,
@@ -877,6 +1254,15 @@ class Orchestrator:
                 "skipped",
                 self._now(),
                 reason="コードタスクが不要と判断",
+            )
+        for invalidated_id, reason in normalised.invalidations:
+            _apply_invalidation(
+                manifest,
+                self.run_dir(run_id),
+                invalidated_id,
+                reason,
+                self.task_definitions,
+                self._now(),
             )
 
     def _build_context(
@@ -936,6 +1322,9 @@ RunEngine = Orchestrator
 def create_run(
     data_dir: str | Path,
     task_definitions: Mapping[str, Mapping[str, Any]],
+    *,
+    harness_root: str | Path | None = None,
+    repository_root: str | Path | None = None,
     **kwargs: Any,
 ) -> str:
     """Convenience wrapper for creating one run."""
@@ -946,6 +1335,8 @@ def create_run(
         task_definitions,
         code_handlers,
         clock=clock,
+        harness_root=harness_root,
+        repository_root=repository_root,
     ).create_run(**kwargs)
 
 
@@ -956,6 +1347,8 @@ def advance_run(
     *,
     code_handlers: Mapping[str, CodeTaskHandler] | None = None,
     clock: Callable[[], datetime] | None = None,
+    harness_root: str | Path | None = None,
+    repository_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Convenience wrapper for advancing one run's code tasks."""
     return Orchestrator(
@@ -963,6 +1356,8 @@ def advance_run(
         task_definitions,
         code_handlers,
         clock=clock,
+        harness_root=harness_root,
+        repository_root=repository_root,
     ).advance(run_id)
 
 
@@ -1333,6 +1728,272 @@ def _release_claim(
     elif claim_path.exists():
         _rename_claim(claim_path, archive_prefix)
     task["claim"] = None
+
+
+def _require_claim_locked(
+    manifest: Mapping[str, Any],
+    run_dir: Path,
+    task_id: str,
+    ticket: str,
+    now: str,
+) -> dict[str, str]:
+    """Re-read and validate a claim while the run manifest lock is held."""
+
+    task = _get_task(manifest, task_id)
+    claim = task.get("claim")
+    claim_path = run_dir / "tasks" / task_id / "claim.json"
+    if (
+        task["state"] != "claimed"
+        or not isinstance(claim, Mapping)
+        or claim.get("ticket") != ticket
+    ):
+        raise InvalidClaimError("ticket の claim は無効です")
+    try:
+        payload = _read_claim_file(claim_path)
+        if payload["task_id"] != task_id or payload["ticket"] != ticket:
+            raise InvalidClaimError("claim.json の ticket が一致しません")
+        if _claim_expired(payload, now):
+            raise InvalidClaimError("ticket の lease が切れています")
+        if _manifest_claim(payload) != dict(claim):
+            raise InvalidClaimError("manifest と claim.json が一致しません")
+    except ClaimError as error:
+        if isinstance(error, InvalidClaimError):
+            raise
+        raise InvalidClaimError(str(error)) from error
+    return dict(claim)
+
+
+def _load_card_inputs(task_dir: Path) -> dict[str, Any]:
+    path = task_dir / "input.json"
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            value = json.load(stream)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise OrchestrationError(f"カード入力を読み込めません: {path}") from error
+    if not isinstance(value, Mapping):
+        raise OrchestrationError(f"カード入力がオブジェクトではありません: {path}")
+    return dict(value)
+
+
+def _write_submitted_output(
+    task_dir: Path,
+    definition: Mapping[str, Any],
+    value: Any,
+) -> None:
+    output_kind = definition.get("output")
+    if output_kind == "json":
+        atomic_write_json(task_dir / "output.json", value)
+        try:
+            (task_dir / "output.md").unlink()
+        except FileNotFoundError:
+            pass
+    elif output_kind == "text":
+        if not isinstance(value, str):
+            raise OrchestrationError("text タスクの検証結果が文字列ではありません")
+        atomic_write_text(task_dir / "output.md", value)
+        try:
+            (task_dir / "output.json").unlink()
+        except FileNotFoundError:
+            pass
+    else:
+        raise OrchestrationError("task definition output must be json or text")
+
+
+def _normalise_invalidation_requests(value: Any) -> list[tuple[str, str]]:
+    if value is None:
+        return []
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise DAGError("invalidations must be a sequence")
+    requests: list[tuple[str, str]] = []
+    for request in value:
+        if isinstance(request, Mapping):
+            task_id = request.get("task_id")
+            reason = request.get("reason")
+        elif isinstance(request, Sequence) and not isinstance(request, (str, bytes)):
+            if len(request) != 2:
+                raise DAGError("invalidation must contain task_id and reason")
+            task_id, reason = request
+        else:
+            raise DAGError("invalid invalidation request")
+        if not isinstance(task_id, str) or not task_id:
+            raise DAGError("invalid invalidation task ID")
+        if not isinstance(reason, str) or not reason.strip():
+            raise DAGError("invalidation requires a non-empty reason")
+        requests.append((task_id, reason))
+    return requests
+
+
+def _select_invalidation_requests(
+    manifest: Mapping[str, Any],
+    requests: Sequence[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Deduplicate requests and keep only the outermost invalidations."""
+
+    unique: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for task_id, reason in requests:
+        _get_task(manifest, task_id)
+        if task_id in seen:
+            continue
+        seen.add(task_id)
+        unique.append((task_id, reason))
+
+    excluded = {
+        task_id
+        for task_id, _ in unique
+        if any(
+            task_id in _dependency_closure(manifest, other_id)
+            for other_id, _ in unique
+            if other_id != task_id
+        )
+    }
+    return [request for request in unique if request[0] not in excluded]
+
+
+def _validate_invalidation_request(
+    manifest: Mapping[str, Any],
+    task_id: str,
+    reason: str,
+) -> None:
+    if not isinstance(reason, str) or not reason.strip():
+        raise DAGError("invalidation requires a non-empty reason")
+    task = _get_task(manifest, task_id)
+    if task["state"] != "done":
+        raise InvalidTransition("無効化できるのは done のタスクだけです")
+
+
+def _apply_invalidation(
+    manifest: dict[str, Any],
+    run_dir: Path,
+    task_id: str,
+    reason: str,
+    definitions: Mapping[str, Mapping[str, Any]],
+    at: str,
+) -> None:
+    """Apply one invalidation; callers hold the manifest lock."""
+
+    target = _get_task(manifest, task_id)
+    if target["state"] != "done":
+        return
+    definition = definitions[target["type"]]
+    max_invalidations = int(definition.get("max_invalidations", 2))
+    current_count = int(target["invalidations"])
+    if current_count >= max_invalidations:
+        target["error"] = reason
+        _force_task_state(manifest, task_id, "failed", at, reason=reason)
+        _update_run_status(manifest)
+        _touch_manifest(manifest, at)
+        write_manifest(run_dir / "manifest.json", manifest)
+        return
+
+    next_count = current_count + 1
+    target["error"] = reason
+    target["cache_key"] = None
+    target["attempt"] = int(target["attempt"]) + 1
+    target["invalidations"] = next_count
+    _force_task_state(manifest, task_id, "ready", at, reason=reason)
+
+    descendants = _dependent_closure(manifest, task_id)
+    cleanup_outputs = [task_id]
+    revoked_claims: list[str] = []
+    for dependent_id in descendants:
+        dependent = _get_task(manifest, dependent_id)
+        if dependent["state"] in {"done", "ready", "claimed"}:
+            if dependent["state"] == "claimed":
+                revoked_claims.append(dependent_id)
+                dependent["claim"] = None
+            cleanup_outputs.append(dependent_id)
+            dependent["cache_key"] = None
+            _force_task_state(
+                manifest,
+                dependent_id,
+                "blocked",
+                at,
+                reason=f"依存タスク {task_id} が無効化された",
+            )
+
+    # Persist the state transition first.  The output and claim files are
+    # cleanup artifacts and must not be removed before this durable boundary.
+    _update_run_status(manifest)
+    _touch_manifest(manifest, at)
+    write_manifest(run_dir / "manifest.json", manifest)
+    for cleanup_id in cleanup_outputs:
+        _remove_task_outputs(run_dir, cleanup_id)
+    for revoked_id in revoked_claims:
+        _release_claim(
+            run_dir,
+            revoked_id,
+            _get_task(manifest, revoked_id),
+            archive_prefix="claim.revoked",
+        )
+
+
+def _dependent_closure(manifest: Mapping[str, Any], task_id: str) -> list[str]:
+    reverse: dict[str, list[str]] = {candidate: [] for candidate in manifest["tasks"]}
+    for candidate_id, task in manifest["tasks"].items():
+        for dependency in task["deps"]:
+            reverse.setdefault(dependency, []).append(candidate_id)
+    result: list[str] = []
+    seen = {task_id}
+    queue = list(reverse.get(task_id, []))
+    while queue:
+        current = queue.pop(0)
+        if current in seen:
+            continue
+        seen.add(current)
+        result.append(current)
+        queue.extend(reverse.get(current, []))
+    return result
+
+
+def _dependency_closure(manifest: Mapping[str, Any], task_id: str) -> set[str]:
+    result: set[str] = set()
+    queue = list(_get_task(manifest, task_id)["deps"])
+    while queue:
+        current = queue.pop(0)
+        if current in result:
+            continue
+        result.add(current)
+        queue.extend(_get_task(manifest, current)["deps"])
+    return result
+
+
+def _force_task_state(
+    manifest: dict[str, Any],
+    task_id: str,
+    state: str,
+    at: str,
+    *,
+    reason: str,
+) -> None:
+    """Record the two state changes that only invalidation may perform."""
+
+    task = _get_task(manifest, task_id)
+    old_state = task["state"]
+    if old_state == state:
+        return
+    task["state"] = state
+    task["history"].append(
+        {"at": at, "from": old_state, "to": state, "reason": reason}
+    )
+
+
+def _remove_task_outputs(run_dir: Path, task_id: str) -> None:
+    task_dir = run_dir / "tasks" / task_id
+    for name in ("output.json", "output.md"):
+        try:
+            (task_dir / name).unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _next_attempt_number(attempts_dir: Path) -> int:
+    """Return the smallest unused durable attempt-file number."""
+
+    for number in range(1, 2**31):
+        if not (attempts_dir / f"{number}.json").exists():
+            return number
+    raise OrchestrationError(f"試行履歴の番号を割り当てられません: {attempts_dir}")
 
 
 def _rename_claim(path: Path, prefix: str) -> Path:
@@ -1721,6 +2382,10 @@ def _normalise_code_result(
         *context._skip_tasks,
         *normalised.skip_tasks,
     ]
+    normalised.invalidations = [
+        *_normalise_invalidation_requests(context._invalidations),
+        *_normalise_invalidation_requests(normalised.invalidations),
+    ]
     return normalised
 
 
@@ -1847,6 +2512,55 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _is_dummy_harness_root(root: Path) -> bool:
+    return root.parts[-4:] == ("src", "storyteller", "dev", "dummy")
+
+
+def _repository_root_for_definition_root(root: Path) -> Path:
+    if _is_dummy_harness_root(root):
+        return root.parents[3]
+    return root
+
+
+def _discover_harness_files(
+    root: Path,
+    *,
+    repository_root: Path | None = None,
+) -> dict[str, str]:
+    """Hash the files covered by a real or dummy harness snapshot."""
+
+    repository_root = repository_root or root
+    if _is_dummy_harness_root(root):
+        directories = (root,)
+        relative_root = (
+            repository_root if root.is_relative_to(repository_root) else root
+        )
+    else:
+        directories = tuple(
+            root / name for name in ("harness", "tables", "schemas", "formats")
+        )
+        relative_root = root
+    files: dict[str, str] = {}
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.rglob("*")):
+            if path.is_file():
+                relative = path.relative_to(relative_root).as_posix()
+                files[relative] = _sha256_file(path)
+    return files
+
+
+def _halt_run(manifest: dict[str, Any]) -> None:
+    if manifest["status"] == "halted":
+        return
+    manifest["status"] = "halted"
+    warning = "ハーネスの変更を検出したため run を停止しました"
+    if warning not in manifest["warnings"]:
+        manifest["warnings"].append(warning)
+    print(f"警告: {warning}: {manifest['run_id']}", file=sys.stderr)
 
 
 def _error_text(error: Exception) -> str:

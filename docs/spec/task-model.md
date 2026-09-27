@@ -224,7 +224,7 @@ card:
 
 - 不合格の場合、出力と理由を `attempts/<n>.json` に保存し、`tries` と `attempt` を1ずつ増やす。
 - `tries` が `max_attempts` に達していなければ `ready` に戻し、次のカードの「前回の不合格理由」に理由を書く。達していれば `failed` にする。
-- `st retry` は、`failed` のタスクだけを対象とし（他の状態なら終了コード 1）、`tries` と `invalidations` と `continuation_step` を0に戻し、`error` を null にして（元の値は `history` に残す）`ready` にする。`partial.md` があれば削除し、`attempts/` は残す。`attempt` は戻さない（同じ seed の再利用を避けるため）。依存先のタスクは変更しない。コードタスクは自動では再試行しないが、`st retry` の対象にはなり、`ready` になった時点で再実行される。
+- `st retry` は、`failed` のタスクだけを対象とし（他の状態なら終了コード 1）、`tries` と `invalidations` と `continuation_step` を0に戻し、`error` を null にして（元の値は `history` に残す）、依存がすべて `done` または `skipped` なら `ready`、そうでなければ `blocked` にする。`partial.md` があれば削除し、`attempts/` は残す。`attempt` は戻さない（同じ seed の再利用を避けるため）。依存先のタスクは変更しない。コードタスクは自動では再試行しないが、`st retry` の対象にはなり、`ready` になった時点で再実行される。
 
 ### 6.4 固有名詞の検出（`no_new_proper_nouns`）
 
