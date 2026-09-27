@@ -13,7 +13,7 @@
 
 | ID | 作業 | 依存 | 根拠 | 受け入れ条件 |
 |---|---|---|---|---|
-| P1-01 | テーブルとそのスキーマ：`scales`（最小出来事数・世界セクションの対応を含む）、`structures`（標準の3テンプレート。各段階に定義文・重み・要求する役・`absent_role_note`・`world_sections`・`object`）、`plot_types`（標準の14型。`core`・`required_events` を heros-journey の分類項目をもとに記述）、`world_sections`、`element_axes`、`elements/<axis>`（7軸。want・ability・duty は heroes の既定値から、他の4軸は新たに記述）、`name_sounds`、`common_words` | P0-15 | scale, story-pipeline §3〜§5, LINEAGE §3 | 全テーブルがスキーマ検証に通る |
+| P1-01 | テーブルとそのスキーマ（[lineage-inventory.md](../lineage-inventory.md) で P1-01 に割り当てた行をすべて取り込む）：`scales`（最小出来事数・世界セクションの対応を含む）、`structures`（標準の3テンプレート。各段階に定義文・重み・要求する役・`absent_role_note`・`world_sections`・`object`）、`plot_types`（標準の14型。`core`・`required_events` を heros-journey の分類項目をもとに記述）、`world_sections`、`element_axes`、`elements/<axis>`（7軸。want・ability・duty は heroes の既定値から、他の4軸は新たに記述）、`name_sounds`、`common_words` | P0-15 | scale, story-pipeline §3〜§5, LINEAGE §3 | 全テーブルがスキーマ検証に通る |
 | P1-02 | 規模の派生値の計算、S0（自由入力。個人情報の検出のうち、自由入力が対象とする項目を含む）、`st new --free`（`--scale`, `--axis`, `--seed`, `--plot-type`） | P1-01 | scale §4〜§6, input §3, §4, story-pipeline S0, cli `st new` | 各プリセット・軸の上書きで、出来事数の下限と引き上げが仕様どおりになる。同じ `--seed` で同じ派生値になる |
 | P1-03 | S1（自由入力の段落分割を含む） | P1-02 | story-pipeline S1 | ダミー実行者で素材にIDが振られる |
 | P1-04 | S2（run 内のプールとID付け。run 間の共有と増補テーブルへの追記は P2-04） | P1-03 | story-pipeline S2, §2.1 | 重複除去と、必要量到達後の `skipped` |
@@ -54,11 +54,14 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S2.expand-m<3桁>-<axis>` | L | S2.plan | 要素5件と対極要素 |
 | `S2.merge` | C | S2.expand すべて | 入力由来プール（ID つき） |
 | `S3.assign` | C | S2.merge | assignment。S4・S5・S6 を追加 |
-| `S4.section-<section id>` | L | S3.assign | 世界セクション |
+| `S4.section-<section id>` | L | S3.assign、前提セクションのタスク | 世界セクション（`single`） |
+| `S4.item-<section id>-<3桁>` | L | S3.assign、前提セクションのタスク | 一覧型セクションの項目（`list`） |
 | `S5.name-c<n>` | L | S3.assign | 名前 |
 | `S5.profile-c<n>` | L | S5.name-c<n> | プロフィール |
+| `S5.intro-c<n>`・`S5.appearance-c<n>` | L | S5.profile-c<n> | 短い紹介・外見 |
 | `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて | 動機 |
-| `S6.expand` | C | S4 すべて、S5.motive すべて | slots。S7・S8・S9 を追加 |
+| `S5.catchphrase-c<n>` | L | S5.motive-c<n> | 決め台詞 |
+| `S6.expand` | C | S4 すべて、S5 すべて | slots。S7・S8・S9 を追加 |
 | `S7.event-e<3桁>` | L | S6.expand、同じ筋の直前のスロットの S8.judge | 出来事 |
 | `S8.compare-e<3桁>-k<n>` | L | そのスロットと比較対象の S7 | 矛盾の有無 |
 | `S8.judge-e<3桁>` | C | そのスロットの S8.compare すべて（比較対象がなければ S7） | 必要なら S7 を無効化 |
@@ -74,12 +77,14 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `input.json`（自由入力） | `{"kind": "free", "source_sha256": 文字列, "paragraphs": [{"id": "p001", "text": 文字列}]}`。段落の分割は input §3。1200字を超える段落は、1200字以内で最後の文末記号（`。！？!?.`）の直後で分け、文末記号がなければ1200字で分ける |
 | manifest の `scale` | `{"preset": 文字列, "axes": {軸: 値}, "overrides": {軸: 値}, "derived": {"events": 整数, "threads": 整数, "cast": 整数, "parts": 整数または null, "world_sections": [セクションID], "pool_need": {要素の軸: 整数}}}` |
 | manifest の `table_snapshot` | `{要素の軸: 増補テーブルの行数}`。Phase 1 は増補テーブルがないため、すべて0 |
-| `tables/scales.yaml` | `axes`（規模の軸ごとの値の列）、`level_min_events`（`[3, 6, 12, 24, 36]`）、`presets`（ID ごとに名前・軸の値・出来事数の範囲）、`world_sections_by_level`（段階ごとのセクションID）、`parts`（`min: 2, max: 6, default: [2, 4]`）、`subthread_events`（`[4, 6]`）、`input_ratio`（`[0.5, 0.9]`）、`candidate_multiplier`（3） |
-| `tables/structures.yaml` | `templates`：ID ごとに `stages`（`id`・`name`・`definition`・`weight`・`roles`・`absent_role_note`・`world_sections`・`object`） |
-| `tables/plot_types.yaml` | `types`：`id`・`name`・`core`・`structure`・`required_events`（`description`・`stage`）。Phase 1 は `structure: standard` の14型だけを置き、P2-08 で7型を加える |
-| `tables/world_sections.yaml` | `sections`：`id`・`name`・`definition`・`viewpoints`・`level`（規模の段階。`level` が n 以下のものを生成する） |
+| `tables/scales.yaml` | `axes`（規模の軸ごとの値の列）、`level_min_events`（`[3, 6, 12, 24, 36]`）、`presets`（ID ごとに名前・軸の値・出来事数の範囲）、`world_sections_by_level`（段階ごとのセクションID）、`parts`（`min: 2, max: 6, default: [2, 4]`）、`subthread_events`（`[4, 6]`）、`input_ratio`（`[0.5, 0.9]`）、`candidate_multiplier`（3）、`world_counts`（一覧型のセクションごと・規模ごとの件数） |
+| `tables/structures.yaml` | `templates`：ID ごとに `stages`（`id`・`name`・`definition`・`guidance`・`act`・`weight`・`roles`・`absent_role_note`・`world_sections`・`object`・`climax`） |
+| `tables/plot_types.yaml` | `types`：`id`・`name`・`core`・`structure`・`character_requirements`・`time_design`・`conflict`・`climax`・`pacing`・`typical_setting`・`required_events`（`description`・`stages`：標準の3テンプレートそれぞれで割り当てる段階 `{three-beat, kishotenketsu, heros-journey-12}`）。Phase 1 は `structure: standard` の14型だけを置き、P2-08 で7型を加える |
+| `tables/world_sections.yaml` | `sections`：`id`・`name`・`definition`・`viewpoints`（heros-journey・world-building の全観点と小項目。world-building v1.2 の指標を含む）・`level`（規模の段階。`level` が n 以下のものを生成する）・`kind`（`single`／`list`）・`max_chars`・`prerequisites`（前提セクションのID、最大2つ） |
 | `tables/element_axes.yaml` | `axes`：`key`・`name`・`definition` |
-| `tables/elements/<axis>.yaml` | `items`：文字列の配列。ID は `<axis>:t<1から始まる行番号>` |
+| `tables/elements/<axis>.yaml` | `items`：オブジェクトの配列 `{"text": 日本語, "source": 原文（先行リポジトリ由来の場合）}`。ID は `<axis>:t<1から始まる行番号>`。heroes 由来の軸は heroes の全件（want 100・ability 100・duty 99・age 16・gender 10・species 50）、それ以外の軸は各100件。heroes に由来しない軸は、表層から深層まで、また観点を散らして書き、似た要素を並べない |
+| `tables/roles.yaml` | `roles`：`id`（protagonist・messenger・supporter・adversary・bystander）・`name`・`definition`（heros-journey・world-building の役の定義の文章） |
+| `tables/cliches.yaml` | `phrases`：S2 で使わない、ありきたりな表現の一覧（heroes の禁止例を含む） |
 | `tables/name_sounds.yaml` | `sets`：`id`・`description`・`sounds`（カタカナの音節、12個以上） |
 | `tables/common_words.yaml` | `words`：文字列の配列 |
 | `config/models.yaml` | `models`：モデル名ごとに `provider`・`endpoint`（既定 `http://127.0.0.1:11434`）・`temperature`・`max_tokens`・`context_length`・`json_mode` |

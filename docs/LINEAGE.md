@@ -19,22 +19,10 @@
 
 ## 3. 取り込む定義
 
-| 取り込むもの | 出典 | 取り込み先 |
-|---|---|---|
-| ナラティブ13項目と各項目の問い（傾向を書く形に改める） | heros-journey `NarrativeInput`, design-specification §5.1 | [spec/input.md](spec/input.md) |
-| 抑圧・願望・葛藤の分析観点、「断定・診断しない」原則 | heros-journey narrative_analyzer, batch_analyzer | [spec/story-pipeline.md](spec/story-pipeline.md) S1 |
-| プロット型21型 | heros-journey `DEFAULT_PLOT_TYPES` | `tables/plot_types.yaml` |
-| ヒーローズ・ジャーニー12段階と三幕への割付、12段階→10章の割付 | heros-journey `JOURNEY_STAGES_12`, `_chapter_stages` | `tables/structures.yaml`, [spec/format-pipeline.md](spec/format-pipeline.md) |
-| 4役（主人公・使者・支援者・敵対者）の定義 | heros-journey character_generator | [spec/story-pipeline.md](spec/story-pipeline.md) S5 |
-| 要素テーブル既定値（能力・願望・役割。年齢・性別・種族は取り込まない） | heroes `LocalStorage.DEFAULT_SEEDS` | `tables/elements/`（[spec/story-pipeline.md](spec/story-pipeline.md) §3） |
-| 対極要素によるテーブルの自己増殖 | heroes「対になるキャラクター」 | [spec/story-pipeline.md](spec/story-pipeline.md) S2 |
-| 1出力1項目のプロンプト形式（「名前のみを出力」「1文のみ」） | heroes | [spec/task-model.md](spec/task-model.md) |
-| 世界の観点（社会構造・組織・生活・人々・過去の出来事・未来） | heros-journey 世界生成, world-building Phase 3 | `tables/world_sections.yaml` |
-| 入力を直接引用せず抽象的に再構築する指示 | world-building Phase 1 | [spec/story-pipeline.md](spec/story-pipeline.md) S1 |
-| 長いリストの分割生成（1回20件） | world-building Phase 1 | [spec/task-model.md](spec/task-model.md) |
-| run_manifest、request ごとの派生seed、原子的な書き込み、中断した run の検出 | world-building run_manifest.py | [spec/data-layout.md](spec/data-layout.md) |
-| 指紋による重複除外 | heros-journey `story_fingerprint` | [spec/story-pipeline.md](spec/story-pipeline.md) S9 |
-| 長文の continuation 規則 | heros-journey, world-building Phase 5 | [spec/task-model.md](spec/task-model.md) §8 |
+先行3リポジトリが定める物語の構成要素は、[lineage-inventory.md](lineage-inventory.md)（取り込み表）にすべて載せ、要素ごとに取り込み先・取り込むフェーズ・外す場合の理由を書く。取り込み表がこの節の原本である。
+
+- 所有者が先行リポジトリで整えた素材（heroes の `config/seeds/*.csv` など）は、LLM が新たに書いた素材で置き換えない。全件を取り込み、翻訳する場合は原文を残す。
+- 先行リポジトリで LLM が行っていた処理（プロット型の選択など）のうち、コードで行えるものはコードに置き換える（VISION P2）。取り込み表では、その行を「外す（理由）」とする。
 
 ## 4. 重複工程の統合
 
