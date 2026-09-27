@@ -82,7 +82,7 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `tables/structures.yaml` | `templates`：ID ごとに `stages`（`id`・`name`・`definition`・`guidance`・`act`・`weight`・`roles`・`absent_role_note`・`world_sections`・`object`・`climax`） |
 | `tables/plot_types.yaml` | `types`：`id`・`name`・`core`・`structure`・`character_requirements`・`time_design`・`conflict`・`climax`・`pacing`・`typical_setting`・`required_events`（`description`・`stages`：標準の3テンプレートそれぞれで割り当てる段階 `{three-beat, kishotenketsu, heros-journey-12}`）。Phase 1 は `structure: standard` の14型だけを置き、P2-08 で7型を加える |
 | `tables/world_sections.yaml` | `sections`：`id`・`name`・`definition`・`viewpoints`（heros-journey・world-building の全観点と小項目。world-building v1.2 の指標を含む）・`level`（規模の段階。`level` が n 以下のものを生成する）・`kind`（`single`／`list`）・`max_chars`・`prerequisites`（前提セクションのID、最大2つ） |
-| `tables/element_axes.yaml` | `axes`：`key`・`name`・`definition` |
+| `tables/element_axes.yaml` | `axes`：`key`・`name`・`definition`・`generation_rules`（S2 でその軸の要素を作るときの規則。heroes の生成規則と world-building の観点を軸ごとに書く） |
 | `tables/elements/<axis>.yaml` | `items`：オブジェクトの配列 `{"text": 日本語, "source": 原文（先行リポジトリ由来の場合）}`。ID は `<axis>:t<1から始まる行番号>`。heroes 由来の軸は heroes の全件（want 100・ability 100・duty 99・age 16・gender 10・species 50）、それ以外の軸は各100件。heroes に由来しない軸は、表層から深層まで、また観点を散らして書き、似た要素を並べない |
 | `tables/roles.yaml` | `roles`：`id`（protagonist・messenger・supporter・adversary・bystander）・`name`・`definition`（heros-journey・world-building の役の定義の文章） |
 | `tables/cliches.yaml` | `phrases`：S2 で使わない、ありきたりな表現の一覧（heroes の禁止例を含む） |
