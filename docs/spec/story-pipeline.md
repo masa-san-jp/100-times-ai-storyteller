@@ -118,7 +118,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
   - その筋のプロット型の `conflict`。段階がクライマックスに当たる場合（段階の `climax: true`）は `climax` も
   - 物語の「解決すべき主題」（割り当てられていれば）
 - 出力：`{"when": "", "where": "", "who": ["c1"], "why": "", "intent": "", "what": "", "result": "", "emotion": "", "foreshadowing": "", "sources": [...]}`
-  - `intent`：人物の意思（world-building の protagonist_actions の「意思」）、`emotion`：出来事で人物が受ける感情（受動的な感情）、`foreshadowing`：後の出来事への伏線（筋の最後のスロットでは空文字）
+  - `intent`：人物の意思（world-building の protagonist_actions の「意思」）、`emotion`：出来事で人物が受ける感情（受動的な感情）、`foreshadowing`：後の出来事への伏線（実行者はすべてのスロットで書く。筋の最後のスロットの伏線は、S9 がコードで空にする。最後かどうかをカードに示さないため：P1）
 - 検証：各項目120字以内、`who` は入力の人物IDの部分集合（`ids_subset`）。
 
 ### S8 整合確認 [C+L]

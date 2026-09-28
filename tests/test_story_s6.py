@@ -147,6 +147,19 @@ def test_s6_assigns_absent_role_note_object_and_world_excerpt() -> None:
     assert "comparison_targets" not in slots[0]
 
 
+def test_s6_passes_climax_condition_only_to_climax_stages() -> None:
+    output = story_s6_expand(_context(_assignment())).output
+    expected_climax = load_table("plot_types", repository_root=ROOT)["types"][0][
+        "climax"
+    ]
+
+    for slot in output["slots"]:
+        if slot["stage"]["climax"]:
+            assert slot["plot"]["climax"] == expected_climax
+        else:
+            assert "climax" not in slot["plot"]
+
+
 def test_s6_adds_chronological_s7_s8_s9_dependencies() -> None:
     result = story_s6_expand(_context(_assignment(multi_thread=True)))
     slots = result.output["slots"]

@@ -66,6 +66,28 @@ def test_selector_rejects_functions_and_missing_values():
         resolve_selector("missing", {})
 
 
+def test_optional_selector_omits_a_missing_value():
+    definition = {
+        "inputs": {
+            "optional": {
+                "from": "D1.output",
+                "select": "plot.climax",
+                "required": False,
+            },
+            "required": {
+                "from": "D1.output",
+                "select": "plot.conflict",
+                "required": True,
+            },
+        }
+    }
+
+    assert resolve_inputs(
+        definition,
+        {"D1.output": {"plot": {"conflict": "葛藤"}}},
+    ) == {"required": "葛藤"}
+
+
 def test_card_has_fixed_sections_and_hides_task_metadata():
     card = generate_task_card(
         llm_task(),

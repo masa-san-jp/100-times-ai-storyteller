@@ -47,7 +47,7 @@
     "plot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "conflict", "climax"],
+      "required": ["id", "name", "conflict"],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
         "name": {"type": "string", "minLength": 1},

@@ -16,6 +16,10 @@ class SelectorError(ValueError):
     """A selector is malformed or points at a value that does not exist."""
 
 
+class MissingSelectorValueError(SelectorError):
+    """A selector points at a value that is not present in its source."""
+
+
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _INTEGER = re.compile(r"0|[1-9][0-9]*")
 
@@ -57,7 +61,7 @@ def resolve_selector(
         value = run_input
     else:
         if not isinstance(source, Mapping) or root not in source:
-            raise SelectorError(f"selector value does not exist: {root}")
+            raise MissingSelectorValueError(f"selector value does not exist: {root}")
         value = source[root]
 
     while position < len(expression):
@@ -112,15 +116,24 @@ def resolve_inputs(
                     continue
                 raise SelectorError(f"input source does not exist: {source_name}")
             source = available_outputs[source_name]
-        resolved[slot_name] = resolve_selector(
-            slot["select"], source, run_input, index=index
-        )
+        try:
+            resolved[slot_name] = resolve_selector(
+                slot["select"], source, run_input, index=index
+            )
+        except MissingSelectorValueError:
+            if slot.get("required") is False or (
+                "required" not in slot and source_name in {"S4.section", "S4.item"}
+            ):
+                continue
+            raise
     return resolved
 
 
 def _read_named(value: Any, name: str, expression: str) -> Any:
     if not isinstance(value, Mapping) or name not in value:
-        raise SelectorError(f"selector value does not exist: {expression!r}")
+        raise MissingSelectorValueError(
+            f"selector value does not exist: {expression!r}"
+        )
     return value[name]
 
 
@@ -150,4 +163,6 @@ def _read_index(
             raise KeyError(position)
         return value[position]  # type: ignore[index]
     except (IndexError, KeyError, TypeError) as error:
-        raise SelectorError(f"selector value does not exist: {expression!r}") from error
+        raise MissingSelectorValueError(
+            f"selector value does not exist: {expression!r}"
+        ) from error
