@@ -59,7 +59,7 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S5.name-c<n>` | L | S3.assign | 名前 |
 | `S5.profile-c<n>` | L | S5.name-c<n> | プロフィール |
 | `S5.intro-c<n>`・`S5.appearance-c<n>` | L | S5.profile-c<n> | 短い紹介・外見 |
-| `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて | 動機 |
+| `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて、主人公の S5.intro（主人公以外の場合） | 動機 |
 | `S5.catchphrase-c<n>` | L | S5.motive-c<n> | 決め台詞 |
 | `S6.expand` | C | S4 すべて、S5 すべて | slots。S7・S8・S9 を追加 |
 | `S7.event-e<3桁>` | L | S6.expand、同じ筋の直前のスロットの S8.judge | 出来事 |
