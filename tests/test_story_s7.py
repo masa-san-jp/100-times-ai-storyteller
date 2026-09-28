@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from storyteller.cards import generate_task_card
+from storyteller.selectors import resolve_inputs
 from storyteller.validation import load_and_validate_yaml, validate_output
 
 
@@ -137,6 +138,34 @@ def test_s7_card_contains_only_local_slot_context() -> None:
     assert "過去の出来事" not in card
 
 
+def test_s7_card_includes_climax_only_for_a_climax_stage() -> None:
+    definition = _load_definition()
+    current = _slot()
+    inputs = {
+        "stage_definition": current["stage"]["definition"],
+        "stage_guidance": current["stage"]["guidance"],
+        "required_events": current["required_events"],
+        "absent_role_note": current["absent_role_note"],
+        "object": current["object"],
+        "characters": current["characters"],
+        "world_sections": current["world_sections"],
+        "conflict": current["plot"]["conflict"],
+        "theme": current["theme"],
+    }
+
+    non_climax_card = generate_task_card(definition, "non-climax", inputs=inputs)
+    assert "選択の結果を引き受ける。" not in non_climax_card
+    assert "### 筋のクライマックス" not in non_climax_card
+    assert "最後のスロット" not in non_climax_card
+
+    climax_inputs = dict(inputs, climax=current["plot"]["climax"])
+    climax_card = generate_task_card(definition, "climax", inputs=climax_inputs)
+    assert "選択の結果を引き受ける。" in climax_card
+    assert "### 筋のクライマックス" in climax_card
+    assert "クライマックスの条件が入力にある場合" in climax_card
+    assert "最後のスロット" not in climax_card
+
+
 def test_s7_input_selectors_use_s6_slot_and_previous_judge_result() -> None:
     definition = _load_definition()
     inputs = definition["inputs"]
@@ -146,3 +175,15 @@ def test_s7_input_selectors_use_s6_slot_and_previous_judge_result() -> None:
     assert inputs["world_sections"]["select"] == "slots[{slot}].world_sections"
     assert inputs["previous_result"]["from"] == "S8.judge"
     assert inputs["previous_result"]["select"] == "result"
+    assert inputs["climax"]["required"] is False
+
+    slot = _slot()
+    slot["plot"] = {
+        key: value for key, value in slot["plot"].items() if key != "climax"
+    }
+    resolved = resolve_inputs(
+        definition,
+        {"S6.expand": {"slots": [slot]}},
+        index="e001",
+    )
+    assert "climax" not in resolved

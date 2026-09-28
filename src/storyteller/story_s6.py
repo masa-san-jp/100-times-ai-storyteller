@@ -174,7 +174,6 @@ def _build_thread_slots(
         "id": plot["id"],
         "name": plot["name"],
         "conflict": plot["conflict"],
-        "climax": plot["climax"],
     }
     thread_context = {
         "id": thread_id,
@@ -192,6 +191,9 @@ def _build_thread_slots(
         stage_id = stage.get("id")
         if not isinstance(stage_id, str):
             raise ValueError("段階の ID が不正です")
+        stage_plot_context = deepcopy(plot_context)
+        if stage.get("climax") is True:
+            stage_plot_context["climax"] = plot["climax"]
         stage_slots: list[dict[str, Any]] = []
         for _ in range(count):
             characters, absent_note = _assign_characters(
@@ -210,7 +212,7 @@ def _build_thread_slots(
             slot = {
                 "thread": thread_id,
                 "thread_context": deepcopy(thread_context),
-                "plot": deepcopy(plot_context),
+                "plot": deepcopy(stage_plot_context),
                 "stage": deepcopy(dict(stage)),
                 "required_events": [],
                 "characters": characters,
