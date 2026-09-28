@@ -5,10 +5,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from storyteller.orchestrator import CodeTaskResult, Orchestrator, TaskSpec
-from storyteller.story_s8 import story_s8_plan
+from storyteller.orchestrator import (
+    CodeTaskResult,
+    Orchestrator,
+    TaskSpec,
+    _source_outputs,
+)
+from storyteller.story_s8 import story_s8_judge, story_s8_plan
 from storyteller.story_s3 import story_s3_assign
 from storyteller.story_s6 import story_s6_expand
+from storyteller.cards import generate_task_card
+from storyteller.selectors import resolve_inputs
+from storyteller.validation import load_and_validate_yaml
 
 
 ROOT = Path(__file__).parents[1]
@@ -92,6 +100,123 @@ def test_s8_plan_keeps_same_thread_predecessor_and_then_nearest_who_match() -> N
     # e002 is the same-thread predecessor even though it does not contain c1;
     # e003/e001 are selected only because c1 appears in their S7 `who`.
     assert result.output["comparison_targets"] == ["e002", "e003", "e001"]
+
+
+def test_s8_compare_inputs_are_only_the_two_event_descriptions() -> None:
+    definition = load_and_validate_yaml(
+        ROOT / "harness/story/tasks/S8.compare.yaml",
+        ROOT / "schemas/task-definition.schema.json",
+    )
+    plan_output = {
+        "slot": "e003",
+        "comparison_targets": ["e001"],
+        "current": {
+            "id": "e003",
+            "event": {"result": "Bの結果", "who": ["c1"]},
+        },
+        "targets": [
+            {
+                "id": "e001",
+                "event": {"result": "Aの結果", "who": ["c1"]},
+            }
+        ],
+    }
+    inputs = resolve_inputs(
+        definition,
+        {"S8.plan": plan_output},
+        index=("e001", "e003", "k1"),
+    )
+
+    card = generate_task_card(definition, "ticket", inputs=inputs)
+
+    assert set(inputs) == {"event_a", "event_b"}
+    assert inputs["event_a"]["id"] == "e001"
+    assert inputs["event_b"]["id"] == "e003"
+    assert "Aの結果" in card
+    assert "Bの結果" in card
+    assert "比較計画" not in card
+    input_section = card.split("## 手順", 1)[0]
+    assert "e002" not in input_section
+
+
+def test_s8_compare_input_assembly_selects_the_numbered_target() -> None:
+    definition = load_and_validate_yaml(
+        ROOT / "harness/story/tasks/S8.compare.yaml",
+        ROOT / "schemas/task-definition.schema.json",
+    )
+    plan_output = {
+        "current": {"result": "現在"},
+        "targets": [
+            {"id": "e001", "event": {"result": "一つ目"}},
+            {"id": "e002", "event": {"result": "二つ目"}},
+        ],
+    }
+    task = {
+        "type": "S8.compare",
+        "index": ["e003", "k2"],
+        "deps": ["S8.plan-e003"],
+    }
+    source_outputs = _source_outputs(
+        {"tasks": {"S8.plan-e003": {"type": "S8.plan", "state": "done"}}},
+        task,
+        definition,
+        {"S8.plan-e003": plan_output},
+    )
+
+    inputs = resolve_inputs(definition, source_outputs, index=task["index"])
+
+    assert inputs["event_a"]["id"] == "e002"
+    assert inputs["event_a"]["event"]["result"] == "二つ目"
+    assert inputs["event_b"]["id"] == "e003"
+
+
+def test_s8_judge_invalidates_s7_when_a_comparison_is_yes() -> None:
+    context = SimpleNamespace(
+        task_id="S8.judge-e003",
+        task={"index": ["e003"]},
+        inputs={
+            "comparisons": [
+                {
+                    "answer": "no",
+                    "reason": "整合している。",
+                    "sources": ["e001", "e003"],
+                },
+                {
+                    "answer": "yes",
+                    "reason": "結果が食い違う。",
+                    "sources": ["e002", "e003"],
+                },
+            ]
+        },
+    )
+
+    result = story_s8_judge(context)
+
+    assert result.output == {"slot": "e003", "invalidated": True}
+    assert result.invalidations == [
+        ("S7.event-e003", "比較結果に矛盾あり：結果が食い違う。")
+    ]
+
+
+def test_s8_judge_does_not_invalidate_without_yes() -> None:
+    context = SimpleNamespace(
+        task_id="S8.judge-e003",
+        task={"index": ["e003"]},
+        inputs={
+            "comparisons": [
+                {
+                    "answer": "no",
+                    "reason": "整合している。",
+                    "sources": ["e001", "e003"],
+                }
+            ]
+        },
+    )
+
+    result = story_s8_judge(context)
+
+    assert result.output == {"slot": "e003", "invalidated": False}
+    assert result.invalidations == []
 
 
 def _code_definition(task_id: str, handler: str) -> dict[str, object]:

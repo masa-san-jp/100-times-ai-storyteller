@@ -2871,10 +2871,49 @@ def _source_outputs(
             source_value = [dependency_outputs[task_id] for task_id in matching]
         else:
             continue
+        if (
+            task.get("type") == "S8.compare"
+            and slot == "S8.plan"
+            and len(matching) == 1
+        ):
+            source_value = _prepare_s8_compare_plan(source_value, task)
         if slot_name == "prerequisite_items" and slot == "S4.item":
             source_value = _summarize_world_items(source_value)
         result[slot] = source_value
     return result
+
+
+def _prepare_s8_compare_plan(
+    value: Any,
+    task: Mapping[str, Any],
+) -> Any:
+    """Resolve the numbered comparison target for an S8.compare card.
+
+    S8.compare tasks retain the current event as their first index, while the
+    second ``k<n>`` index selects one of S8.plan's targets.  The generic
+    selector language only exposes the first index, so present the selected
+    target under the current event ID before resolving the task definition.
+    """
+
+    if not isinstance(value, Mapping):
+        return value
+    index = task.get("index")
+    if not isinstance(index, list) or len(index) < 2 or not index:
+        return value
+    match = re.fullmatch(r"k([0-9]+)", str(index[1]))
+    if match is None or not isinstance(index[0], str):
+        return value
+    target_number = int(match.group(1))
+    targets = value.get("targets")
+    if not isinstance(targets, list) or not 1 <= target_number <= len(targets):
+        return value
+    prepared = deepcopy(dict(value))
+    prepared["targets"] = {index[0]: deepcopy(targets[target_number - 1])}
+    prepared["current"] = {
+        "id": index[0],
+        "event": deepcopy(value.get("current")),
+    }
+    return prepared
 
 
 def _summarize_world_items(value: Any) -> list[dict[str, str]]:
