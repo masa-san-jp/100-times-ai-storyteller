@@ -61,10 +61,11 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S5.intro-c<n>`・`S5.appearance-c<n>` | L | S5.profile-c<n> | 短い紹介・外見 |
 | `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて、主人公の S5.intro（主人公以外の場合） | 動機 |
 | `S5.catchphrase-c<n>` | L | S5.motive-c<n> | 決め台詞 |
-| `S6.expand` | C | S4 すべて、S5 すべて | slots。S7・S8・S9 を追加 |
+| `S6.expand` | C | S4 すべて、S5 すべて | slots。S7・S8.plan・S9 を追加 |
 | `S7.event-e<3桁>` | L | S6.expand、同じ筋の直前のスロットの S8.judge | 出来事 |
-| `S8.compare-e<3桁>-k<n>` | L | そのスロットと比較対象の S7 | 矛盾の有無 |
-| `S8.judge-e<3桁>` | C | そのスロットの S8.compare すべて（比較対象がなければ S7） | 必要なら S7 を無効化 |
+| `S8.plan-e<3桁>` | C | そのスロットと、時系列でそれより前のすべてのスロットの S7 | 比較相手を決め、S8.compare と S8.judge を追加 |
+| `S8.compare-e<3桁>-k<n>` | L | S8.plan-e<3桁> | 矛盾の有無 |
+| `S8.judge-e<3桁>` | C | そのスロットの S8.compare すべて（比較相手がなければ S8.plan） | 必要なら S7 を無効化 |
 | `S9.assemble` | C | S8.judge すべて | story.json、story.md |
 
 - S0 はタスクではなく、`st new` の中で同期的に行う（入力の検証・正規化・規模の計算・manifest と最初のタスクの作成）。
