@@ -74,7 +74,7 @@ def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
     )
 
 
-def story_s2_merge(context: CodeTaskContext) -> dict[str, Any]:
+def story_s2_merge(context: CodeTaskContext) -> CodeTaskResult:
     """Build the run-local, input-derived element pools deterministically."""
 
     axes = load_table("element_axes", repository_root=_REPOSITORY_ROOT)["axes"]
@@ -116,7 +116,16 @@ def story_s2_merge(context: CodeTaskContext) -> dict[str, Any]:
                     "source": source,
                 }
             )
-    return {"pools": pools}
+    return CodeTaskResult(
+        output={"pools": pools},
+        add_tasks=[
+            TaskSpec(
+                task_id="S3.assign",
+                type="S3.assign",
+                deps=(context.task_id,),
+            )
+        ],
+    )
 
 
 def normalize_element_text(value: str) -> str:

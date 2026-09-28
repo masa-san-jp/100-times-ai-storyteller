@@ -62,7 +62,7 @@ def derive_scale(
     rng = random.Random(seed)
     lower_bound = max(
         max(scales["level_min_events"][level] for level in levels.values()),
-        3 + _max_subthreads(axes["threads"]),
+        3 + 6 * _max_subthreads(axes["threads"]),
     )
     original_min, original_max = preset_data["event_range"]
     warnings: list[str] = []

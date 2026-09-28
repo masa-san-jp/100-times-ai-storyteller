@@ -155,6 +155,7 @@ class CodeTaskResult:
     add_tasks: list[TaskSpec] = field(default_factory=list)
     skip_tasks: list[str] = field(default_factory=list)
     invalidations: list[tuple[str, str]] = field(default_factory=list)
+    manifest_updates: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -329,6 +330,7 @@ class Orchestrator:
                 "input": input_record,
                 "scale": dict(scale or {}),
                 "harness": resolved_harness,
+                "input_ratio": None,
                 "table_snapshot": dict(table_snapshot or {}),
                 "tasks": {},
                 "warnings": [],
@@ -1400,6 +1402,7 @@ class Orchestrator:
             )
             for invalidated_id, reason in normalised.invalidations:
                 _validate_invalidation_request(manifest, invalidated_id, reason)
+            _validate_manifest_updates(normalised.manifest_updates)
             created_dirs = _create_dynamic_task_dirs(
                 run_id,
                 normalised.add_tasks,
@@ -1427,6 +1430,14 @@ class Orchestrator:
             reason="コードタスクの実行に成功",
         )
         task["error"] = None
+        if normalised.manifest_updates:
+            for key, value in normalised.manifest_updates.items():
+                if key == "table_snapshot":
+                    manifest[key] = dict(value)
+                elif key == "input_ratio":
+                    manifest[key] = value
+                else:
+                    manifest[key].extend(value)
         _commit_dynamic_tasks(
             manifest,
             normalised.add_tasks,
@@ -2728,6 +2739,24 @@ def _normalise_code_result(
         *_normalise_invalidation_requests(normalised.invalidations),
     ]
     return normalised
+
+
+def _validate_manifest_updates(value: Any) -> None:
+    if not isinstance(value, Mapping):
+        raise DAGError("コードタスクの manifest 更新はオブジェクトでなければなりません")
+    for key, item in value.items():
+        if not isinstance(key, str) or key not in {"input_ratio", "table_snapshot", "warnings"}:
+            raise DAGError(f"コードタスクが更新できない manifest 項目です: {key!r}")
+        if key == "input_ratio" and (
+            isinstance(item, bool) or not isinstance(item, (int, float))
+        ):
+            raise DAGError("manifest の input_ratio は数値でなければなりません")
+        if key == "table_snapshot" and not isinstance(item, Mapping):
+            raise DAGError("manifest の table_snapshot はオブジェクトでなければなりません")
+        if key == "warnings" and (
+            not isinstance(item, list) or not all(isinstance(entry, str) for entry in item)
+        ):
+            raise DAGError("manifest の warnings は文字列の配列でなければなりません")
 
 
 def _call_handler(handler: CodeTaskHandler, context: CodeTaskContext) -> Any:

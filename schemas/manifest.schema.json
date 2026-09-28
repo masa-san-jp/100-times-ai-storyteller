@@ -16,6 +16,7 @@
     "input",
     "scale",
     "harness",
+    "input_ratio",
     "table_snapshot",
     "tasks",
     "warnings"
@@ -65,6 +66,9 @@
       "additionalProperties": {
         "$ref": "#/$defs/sha256"
       }
+    },
+    "input_ratio": {
+      "type": ["number", "null"]
     },
     "table_snapshot": {
       "type": "object",
