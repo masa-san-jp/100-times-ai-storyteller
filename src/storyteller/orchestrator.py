@@ -330,6 +330,7 @@ class Orchestrator:
                 "input": input_record,
                 "scale": dict(scale or {}),
                 "harness": resolved_harness,
+                "input_ratio": None,
                 "table_snapshot": dict(table_snapshot or {}),
                 "tasks": {},
                 "warnings": [],
@@ -1433,6 +1434,8 @@ class Orchestrator:
             for key, value in normalised.manifest_updates.items():
                 if key == "table_snapshot":
                     manifest[key] = dict(value)
+                elif key == "input_ratio":
+                    manifest[key] = value
                 else:
                     manifest[key].extend(value)
         _commit_dynamic_tasks(
@@ -2742,8 +2745,12 @@ def _validate_manifest_updates(value: Any) -> None:
     if not isinstance(value, Mapping):
         raise DAGError("コードタスクの manifest 更新はオブジェクトでなければなりません")
     for key, item in value.items():
-        if not isinstance(key, str) or key not in {"table_snapshot", "warnings"}:
+        if not isinstance(key, str) or key not in {"input_ratio", "table_snapshot", "warnings"}:
             raise DAGError(f"コードタスクが更新できない manifest 項目です: {key!r}")
+        if key == "input_ratio" and (
+            isinstance(item, bool) or not isinstance(item, (int, float))
+        ):
+            raise DAGError("manifest の input_ratio は数値でなければなりません")
         if key == "table_snapshot" and not isinstance(item, Mapping):
             raise DAGError("manifest の table_snapshot はオブジェクトでなければなりません")
         if key == "warnings" and (

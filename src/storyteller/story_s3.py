@@ -12,6 +12,7 @@ from typing import Any
 from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 from .tables import element_rows, load_table
+from .validation import validate_document
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -33,7 +34,7 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         axis["key"]
         for axis in load_table("element_axes", repository_root=repository_root)["axes"]
     )
-    snapshot = _table_snapshot(context.data_dir, element_axes)
+    snapshot = _snapshot_for_run(manifest, context.data_dir, element_axes)
     table_pools = _table_pools(snapshot, element_axes, context.data_dir, repository_root)
     input_pools = _input_pools(context)
     materials = _load_materials(context, manifest)
@@ -50,7 +51,7 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
     if not eligible_plots:
         raise ValueError("利用できるプロット型がありません")
 
-    r = _draw_input_ratio(scales, context.random)
+    r = _input_ratio_for_run(manifest, scales, context.random)
     threads = _build_threads(context, manifest, scales, plot_by_id, eligible_plots)
     cast_roles, absent_roles = _assign_roles(
         context,
@@ -73,11 +74,12 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         "absent_roles": absent_roles,
         "world": world,
     }
+    validate_document(assignment, repository_root / "schemas" / "story" / "assignment.schema.json")
     additions = _build_downstream_tasks(context.task_id, manifest, assignment, scales, repository_root)
     return CodeTaskResult(
         output=assignment,
         add_tasks=additions,
-        manifest_updates={"table_snapshot": snapshot},
+        manifest_updates={"input_ratio": r, "table_snapshot": snapshot},
     )
 
 
@@ -89,6 +91,11 @@ def _derived_value(manifest: Mapping[str, Any], key: str) -> Any:
 
 
 def _draw_input_ratio(scales: Mapping[str, Any], random_source: Any) -> float:
+    lower, upper = _input_ratio_bounds(scales)
+    return random_source.uniform(lower, upper)
+
+
+def _input_ratio_bounds(scales: Mapping[str, Any]) -> tuple[float, float]:
     value = scales.get("input_ratio")
     if (
         not isinstance(value, Sequence)
@@ -100,7 +107,22 @@ def _draw_input_ratio(scales: Mapping[str, Any], random_source: Any) -> float:
     lower, upper = float(value[0]), float(value[1])
     if lower < 0 or upper > 1 or lower > upper:
         raise ValueError("scales.input_ratio の範囲が不正です")
-    return random_source.uniform(lower, upper)
+    return lower, upper
+
+
+def _input_ratio_for_run(
+    manifest: Mapping[str, Any], scales: Mapping[str, Any], random_source: Any
+) -> float:
+    recorded = manifest.get("input_ratio")
+    if recorded is None:
+        return _draw_input_ratio(scales, random_source)
+    if isinstance(recorded, bool) or not isinstance(recorded, (int, float)):
+        raise ValueError("manifest の input_ratio が不正です")
+    lower, upper = _input_ratio_bounds(scales)
+    ratio = float(recorded)
+    if not lower <= ratio <= upper:
+        raise ValueError("manifest の input_ratio が scales の範囲外です")
+    return ratio
 
 
 def _table_snapshot(data_dir: Path, axes: Sequence[str]) -> dict[str, int]:
@@ -113,6 +135,23 @@ def _table_snapshot(data_dir: Path, axes: Sequence[str]) -> dict[str, int]:
         with path.open("r", encoding="utf-8") as stream:
             value = json.load(stream)
         snapshot[axis] = len(_supplemental_items(value, axis))
+    return snapshot
+
+
+def _snapshot_for_run(
+    manifest: Mapping[str, Any], data_dir: Path, axes: Sequence[str]
+) -> dict[str, int]:
+    if manifest.get("input_ratio") is None:
+        return _table_snapshot(data_dir, axes)
+    recorded = manifest.get("table_snapshot")
+    if not isinstance(recorded, Mapping):
+        raise ValueError("manifest の table_snapshot が不正です")
+    snapshot: dict[str, int] = {}
+    for axis in axes:
+        count = recorded.get(axis)
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError(f"manifest の table_snapshot の値が不正です: {axis}")
+        snapshot[axis] = count
     return snapshot
 
 
@@ -304,10 +343,10 @@ def _structure_for(plot: Mapping[str, Any], events: int, is_main: bool) -> str:
     structure = plot.get("structure")
     if not isinstance(structure, str) or not structure:
         raise ValueError("プロット型の structure が不正です")
-    if structure != "standard":
-        return structure
     if not is_main:
         return "kishotenketsu"
+    if structure != "standard":
+        return structure
     if events <= 5:
         return "three-beat"
     if events <= 11:
@@ -335,7 +374,7 @@ def _assign_roles(
                 if role in _REQUIRED_ROLES:
                     required_counts[role] += 1
     ordered_required = sorted(
-        _REQUIRED_ROLES,
+        (role for role in _REQUIRED_ROLES if required_counts[role] > 0),
         key=lambda role: (-required_counts[role], _REQUIRED_ROLES.index(role)),
     )
     roles = ["protagonist"]
@@ -416,8 +455,6 @@ def _choose_element(
         raise ValueError(f"要素プールが空です: {axis}")
     if input_candidates and table_candidates:
         candidates = input_candidates if context.random.random() < ratio else table_candidates
-        if not candidates:
-            candidates = table_candidates if candidates is input_candidates else input_candidates
     else:
         candidates = input_candidates or table_candidates
     selected = deepcopy(context.random.choice(candidates))

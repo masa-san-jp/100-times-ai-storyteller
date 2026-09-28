@@ -47,6 +47,18 @@ def test_axis_override_can_raise_the_event_range_and_records_warning() -> None:
     assert result.warnings
 
 
+def test_subthread_event_reserve_uses_six_events_per_maximum_subthread() -> None:
+    result = derive_scale(
+        "vignette",
+        overrides={"threads": "main+1-2"},
+        seed=7,
+        repository_root=ROOT,
+    )
+
+    assert result.value["derived"]["events"] >= 15
+    assert result.warnings
+
+
 def test_scale_derivation_is_deterministic_for_the_same_seed() -> None:
     first = derive_scale("short", seed=123, repository_root=ROOT)
     second = derive_scale("short", seed=123, repository_root=ROOT)

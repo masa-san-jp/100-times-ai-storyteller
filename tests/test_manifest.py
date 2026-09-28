@@ -22,6 +22,7 @@ def manifest() -> dict:
         "input": {},
         "scale": {},
         "harness": {"schemas/manifest.schema.json": "a" * 64},
+        "input_ratio": None,
         "table_snapshot": {},
         "tasks": {
             "D1.items": {
@@ -46,6 +47,16 @@ def manifest() -> dict:
 
 def test_manifest_schema_accepts_phase_zero_manifest() -> None:
     assert validate_manifest(manifest())["schema_version"] == 1
+
+
+def test_manifest_schema_accepts_recorded_input_ratio_and_rejects_text() -> None:
+    value = manifest()
+    value["input_ratio"] = 0.75
+    validate_manifest(value)
+
+    value["input_ratio"] = "0.75"
+    with pytest.raises(SchemaValidationError):
+        validate_manifest(value)
 
 
 def test_manifest_schema_rejects_unknown_top_level_and_task_fields() -> None:

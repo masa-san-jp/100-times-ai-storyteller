@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import json
+import random
+from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 from storyteller.orchestrator import CodeTaskResult, Orchestrator, TaskSpec
-from storyteller.story_s3 import story_s3_assign
+from storyteller.story_s3 import (
+    _assign_roles,
+    _choose_element,
+    _structure_for,
+    story_s3_assign,
+)
+from storyteller.tables import load_table
 from storyteller.validation import validate_document
 
 
@@ -78,8 +87,14 @@ def _pools() -> dict[str, list[dict[str, str]]]:
     }
 
 
-def _make_orchestrator(data_dir: Path, *, material_kind: str = "suppression") -> Orchestrator:
+def _make_orchestrator(
+    data_dir: Path,
+    *,
+    material_kind: str = "suppression",
+    pools: dict[str, list[dict[str, str]]] | None = None,
+) -> Orchestrator:
     definitions = _definitions(material_kind)
+    source_pools = pools or _pools()
 
     def extract(_context):
         return {
@@ -90,7 +105,7 @@ def _make_orchestrator(data_dir: Path, *, material_kind: str = "suppression") ->
 
     def merge(context):
         return CodeTaskResult(
-            output={"pools": _pools()},
+            output={"pools": source_pools},
             add_tasks=[TaskSpec("S3.assign", "S3.assign", deps=(context.task_id,))],
         )
 
@@ -115,9 +130,16 @@ def _run(
     run_number: int,
     material_kind: str = "suppression",
     plot_type: str | None = None,
+    scale: dict[str, object] | None = None,
+    pools: dict[str, list[dict[str, str]]] | None = None,
 ) -> tuple[Orchestrator, str]:
-    orchestrator = _make_orchestrator(data_dir, material_kind=material_kind)
-    scale = {
+    source_pools = pools or _pools()
+    orchestrator = _make_orchestrator(
+        data_dir,
+        material_kind=material_kind,
+        pools=source_pools,
+    )
+    scale_value = scale or {
         "preset": "vignette",
         "axes": {
             "time": "hours",
@@ -142,8 +164,8 @@ def _run(
         input_data={"kind": "free", "source_sha256": "a" * 64, "paragraphs": []},
         input_type="free",
         plot_type=plot_type,
-        scale=scale,
-        table_snapshot={axis: 0 for axis in _pools()},
+        scale=scale_value,
+        table_snapshot={axis: 0 for axis in source_pools},
         task_specs=[
             TaskSpec("S1.extract-p001", "S1.extract", index=("p001",)),
             TaskSpec("S2.merge", "S2.merge", deps=("S1.extract-p001",)),
@@ -158,6 +180,21 @@ def _assignment(orchestrator: Orchestrator, run_id: str) -> dict[str, object]:
     path = orchestrator.run_dir(run_id) / "tasks" / "S3.assign" / "output.json"
     with path.open("r", encoding="utf-8") as stream:
         return json.load(stream)
+
+
+def _allocation_signature(assignment: dict[str, object]) -> str:
+    return json.dumps(
+        {
+            "plots": [thread["plot_type"] for thread in assignment["threads"]],
+            "roles": [person["role"] for person in assignment["cast"]],
+            "character_elements": [
+                person["elements"] for person in assignment["cast"]
+            ],
+            "world_elements": assignment["world"],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
 
 
 def test_s3_assignment_is_schema_valid_and_adds_the_phase1_dag(tmp_path: Path) -> None:
@@ -186,7 +223,7 @@ def test_s3_same_seed_repeats_and_ten_seeds_do_not_all_match(tmp_path: Path) -> 
     assignments = []
     for number, seed in enumerate(range(100, 110), start=3):
         orchestrator, run_id = _run(data_dir, seed, run_number=number)
-        assignments.append(json.dumps(_assignment(orchestrator, run_id), ensure_ascii=False, sort_keys=True))
+        assignments.append(_allocation_signature(_assignment(orchestrator, run_id)))
     assert len(set(assignments)) > 1
 
 
@@ -198,3 +235,221 @@ def test_s3_plot_type_override_is_read_from_manifest_input(tmp_path: Path) -> No
         plot_type="quest",
     )
     assert _assignment(orchestrator, run_id)["threads"][0]["plot_type"] == "quest"
+
+
+def _rich_pools() -> dict[str, list[dict[str, str]]]:
+    return {
+        axis: [
+            {"id": f"{axis}:i{index:02d}", "text": f"入力由来の{axis}{index}"}
+            for index in range(1, 21)
+        ]
+        for axis in _pools()
+    }
+
+
+def _multi_thread_scale() -> dict[str, object]:
+    return {
+        "preset": "novella",
+        "axes": {
+            "time": "months",
+            "space": "region",
+            "cast": "4-8",
+            "threads": "main+1-2",
+            "change": "community",
+        },
+        "overrides": {},
+        "derived": {
+            "events": 15,
+            "threads": 3,
+            "cast": 4,
+            "parts": None,
+            "world_sections": ["place", "customs", "people", "organizations", "social_structure", "social_groups", "interpretation"],
+            "pool_need": {},
+        },
+    }
+
+
+def test_s3_multi_cast_and_threads_keep_ids_sources_and_event_counts_unique(
+    tmp_path: Path,
+) -> None:
+    orchestrator, run_id = _run(
+        tmp_path / "data",
+        321,
+        run_number=1,
+        scale=_multi_thread_scale(),
+        pools=_rich_pools(),
+    )
+    assignment = _assignment(orchestrator, run_id)
+    manifest = orchestrator.load_run(run_id)
+
+    assert manifest["input_ratio"] == assignment["r"]
+    assert 0.5 <= assignment["r"] <= 0.9
+    assert len(assignment["cast"]) == 4
+    assert len({thread["plot_type"] for thread in assignment["threads"]}) == 3
+    assert all(
+        4 <= thread["events"] <= 6
+        for thread in assignment["threads"][1:]
+    )
+    assert sum(thread["events"] for thread in assignment["threads"]) == 15
+
+    axis_ids: dict[str, list[str]] = {axis: [] for axis in _rich_pools()}
+    for person in assignment["cast"]:
+        for axis, element in person["elements"].items():
+            axis_ids[axis].append(element["id"])
+    for axis, element in assignment["world"].items():
+        if axis in axis_ids and isinstance(element, dict):
+            axis_ids[axis].append(element["id"])
+    assert all(len(ids) == len(set(ids)) for ids in axis_ids.values())
+    assert any(
+        ":i" in element["id"]
+        for person in assignment["cast"]
+        for element in person["elements"].values()
+    )
+
+
+def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
+    orchestrator, run_id = _run(
+        tmp_path / "data",
+        322,
+        run_number=1,
+        scale=_multi_thread_scale(),
+        pools=_rich_pools(),
+    )
+    manifest = orchestrator.load_run(run_id)
+    tasks = manifest["tasks"]
+    world_sections = {
+        section["id"]: section
+        for section in load_table("world_sections")["sections"]
+    }
+
+    s4_ids = [task_id for task_id in tasks if task_id.startswith("S4.")]
+    s4_by_section: dict[str, list[str]] = {}
+    for task_id in s4_ids:
+        without_prefix = task_id.removeprefix("S4.")
+        section_id = without_prefix.removeprefix("section-")
+        if without_prefix.startswith("item-"):
+            section_id = without_prefix.removeprefix("item-").rsplit("-", 1)[0]
+        s4_by_section.setdefault(section_id, []).append(task_id)
+    for task_id in s4_ids:
+        without_prefix = task_id.removeprefix("S4.")
+        section_id = without_prefix.removeprefix("section-")
+        if without_prefix.startswith("item-"):
+            section_id = without_prefix.removeprefix("item-").rsplit("-", 1)[0]
+        prerequisite_ids = [
+            dependency
+            for prerequisite in world_sections[section_id]["prerequisites"]
+            for dependency in s4_by_section.get(prerequisite, [])
+        ]
+        assert tasks[task_id]["deps"] == ["S3.assign", *prerequisite_ids]
+
+    person_ids = [person["id"] for person in _assignment(orchestrator, run_id)["cast"]]
+    name_ids = [f"S5.name-{person_id}" for person_id in person_ids]
+    for person_id in person_ids:
+        profile_id = f"S5.profile-{person_id}"
+        motive_id = f"S5.motive-{person_id}"
+        assert tasks[f"S5.name-{person_id}"]["deps"] == ["S3.assign"]
+        assert tasks[profile_id]["deps"] == ["S3.assign", f"S5.name-{person_id}"]
+        assert tasks[f"S5.intro-{person_id}"]["deps"] == ["S3.assign", profile_id]
+        assert tasks[f"S5.appearance-{person_id}"]["deps"] == ["S3.assign", profile_id]
+        assert tasks[motive_id]["deps"] == ["S3.assign", profile_id, *name_ids]
+        assert tasks[f"S5.catchphrase-{person_id}"]["deps"] == [
+            "S3.assign",
+            motive_id,
+        ]
+
+    s5_ids = [task_id for task_id in tasks if task_id.startswith("S5.")]
+    assert tasks["S6.expand"]["deps"] == ["S3.assign", *s4_ids, *s5_ids]
+
+
+def test_s3_input_ratio_controls_input_or_table_source() -> None:
+    input_pool = {"want": [{"id": "want:i01", "text": "入力"}]}
+    table_pool = {"want": [{"id": "want:t1", "text": "テーブル"}]}
+
+    input_context = SimpleNamespace(random=SimpleNamespace(random=lambda: 0.59, choice=lambda items: items[0]))
+    table_context = SimpleNamespace(random=SimpleNamespace(random=lambda: 0.60, choice=lambda items: items[0]))
+
+    assert _choose_element(input_context, "want", 0.6, input_pool, table_pool, set())["id"] == "want:i01"
+    assert _choose_element(table_context, "want", 0.6, input_pool, table_pool, set())["id"] == "want:t1"
+
+
+def test_s3_role_assignment_only_uses_required_roles_and_records_absence() -> None:
+    structures = load_table("structures")["templates"]
+    for template_id in ("kishotenketsu", "three-beat", "heros-journey-12"):
+        structure = structures[template_id]
+        required = Counter(
+            role
+            for stage in structure["stages"]
+            for role in stage["roles"]
+            if role in {"messenger", "supporter", "adversary"}
+        )
+        roles, absent = _assign_roles(
+            SimpleNamespace(random=random.Random(7)),
+            [{"structure": template_id}],
+            structures,
+            2,
+        )
+        ordered = sorted(
+            required,
+            key=lambda role: (
+                -required[role],
+                ("messenger", "supporter", "adversary").index(role),
+            ),
+        )
+        assert roles == ["protagonist", ordered[0]]
+        assert set(absent) == set(ordered[1:])
+
+        roles, absent = _assign_roles(
+            SimpleNamespace(random=random.Random(7)),
+            [{"structure": template_id}],
+            structures,
+            4,
+        )
+        assert set(roles) >= {"protagonist", *required}
+        assert absent == []
+
+    only_messenger = {"only-messenger": {"stages": [{"roles": ["messenger"]}]}}
+    roles, absent = _assign_roles(
+        SimpleNamespace(random=random.Random(7)),
+        [{"structure": "only-messenger"}],
+        only_messenger,
+        3,
+    )
+    assert roles[:2] == ["protagonist", "messenger"]
+    assert absent == []
+
+    random_roles = {
+        _assign_roles(
+            SimpleNamespace(random=random.Random(seed)),
+            [{"structure": "kishotenketsu"}],
+            structures,
+            5,
+        )[0][-1]
+        for seed in range(20)
+    }
+    assert "bystander" in random_roles
+
+
+def test_subthread_uses_kishotenketsu_even_for_a_dedicated_plot_template() -> None:
+    custom_plot = {"structure": "dedicated-template"}
+    assert _structure_for(custom_plot, 20, is_main=False) == "kishotenketsu"
+    assert _structure_for(custom_plot, 20, is_main=True) == "dedicated-template"
+
+
+def test_s3_table_snapshot_and_ratio_are_stable_after_reexecution(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    orchestrator, run_id = _run(data_dir, 654, run_number=1)
+    first = orchestrator.load_run(run_id)
+    first_snapshot = first["table_snapshot"]
+    first_ratio = first["input_ratio"]
+
+    (data_dir / "tables").mkdir(parents=True, exist_ok=True)
+    (data_dir / "tables" / "want.json").write_text(
+        json.dumps([{"text": "後から増えた要素"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    orchestrator.invalidate_task(run_id, "S3.assign", reason="再実行の検証")
+    orchestrator.advance(run_id)
+    second = orchestrator.load_run(run_id)
+
+    assert second["table_snapshot"] == first_snapshot
+    assert second["input_ratio"] == first_ratio

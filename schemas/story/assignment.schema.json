@@ -7,9 +7,7 @@
   "required": ["r", "threads", "cast", "absent_roles", "world"],
   "properties": {
     "r": {
-      "type": "number",
-      "minimum": 0.5,
-      "maximum": 0.9
+      "type": "number"
     },
     "threads": {
       "type": "array",
