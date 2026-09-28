@@ -1,0 +1,10 @@
+id: S3.assign
+version: 1
+kind: code
+handler: story_s3_assign
+inputs:
+  pools:
+    label: 入力由来プール
+    from: S2.merge
+    select: pools
+    required: true

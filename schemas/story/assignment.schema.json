@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/story/assignment.schema.json",
+  "title": "Story pipeline S3 assignment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["r", "threads", "cast", "absent_roles", "world"],
+  "properties": {
+    "r": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 0.9
+    },
+    "threads": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/thread"}
+    },
+    "cast": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/character"}
+    },
+    "absent_roles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["messenger", "supporter", "adversary"]
+      }
+    },
+    "world": {"$ref": "#/$defs/world"}
+  },
+  "$defs": {
+    "element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*:(?:i[0-9]{2,}|t[0-9]+|x[0-9]+)$"},
+        "text": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "kind"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^m[0-9]{3}$"},
+        "text": {"type": "string", "minLength": 1},
+        "kind": {
+          "type": "string",
+          "enum": ["desire", "fear", "suppression", "conflict", "image", "value", "theme", "mood"]
+        }
+      }
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "part", "plot_type", "events", "structure"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^t[0-9]{3}$"},
+        "kind": {"type": "string", "enum": ["main", "subthread"]},
+        "part": {"type": ["integer", "null"], "minimum": 1},
+        "plot_type": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "events": {"type": "integer", "minimum": 3},
+        "structure": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+      }
+    },
+    "character-elements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["want", "ability", "duty", "age", "gender", "species"],
+      "properties": {
+        "want": {"$ref": "#/$defs/element"},
+        "ability": {"$ref": "#/$defs/element"},
+        "duty": {"$ref": "#/$defs/element"},
+        "age": {"$ref": "#/$defs/element"},
+        "gender": {"$ref": "#/$defs/element"},
+        "species": {"$ref": "#/$defs/element"},
+        "taboo": {"$ref": "#/$defs/element"}
+      }
+    },
+    "name-sound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["set_id", "description", "sounds"],
+      "properties": {
+        "set_id": {"type": "string", "pattern": "^sound-[0-9]{2}$"},
+        "description": {"type": "string", "minLength": 1},
+        "sounds": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "elements", "name_sound"],
+      "allOf": [
+        {
+          "if": {
+            "required": ["role"],
+            "properties": {"role": {"const": "protagonist"}}
+          },
+          "then": {
+            "properties": {
+              "elements": {"required": ["taboo"]}
+            }
+          }
+        }
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^c[0-9]+$"},
+        "role": {"type": "string", "enum": ["protagonist", "messenger", "supporter", "adversary", "bystander"]},
+        "elements": {"$ref": "#/$defs/character-elements"},
+        "suppressed_self_image": {"$ref": "#/$defs/material"},
+        "name_sound": {"$ref": "#/$defs/name-sound"}
+      }
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["place", "era", "object", "theme"],
+      "properties": {
+        "place": {"$ref": "#/$defs/element"},
+        "era": {"$ref": "#/$defs/element"},
+        "object": {"$ref": "#/$defs/element"},
+        "theme": {
+          "anyOf": [
+            {"$ref": "#/$defs/material"},
+            {"type": "null"}
+          ]
+        }
+      }
+    }
+  }
+}

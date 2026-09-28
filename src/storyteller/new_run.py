@@ -10,6 +10,7 @@ from .orchestrator import Orchestrator, TaskSpec
 from .scale import derive_scale
 from .seed import generated_seed
 from .story_s2 import story_s2_merge, story_s2_plan
+from .story_s3 import story_s3_assign
 from .tables import load_table
 from .validation import load_and_validate_yaml
 
@@ -95,6 +96,7 @@ def create_story_orchestrator(data_dir: str | Path) -> Orchestrator:
         {
             "story_s2_plan": story_s2_plan,
             "story_s2_merge": story_s2_merge,
+            "story_s3_assign": story_s3_assign,
         },
         harness_root=repository_root,
         repository_root=repository_root,
