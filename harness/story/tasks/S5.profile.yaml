@@ -22,17 +22,22 @@ inputs:
     from: S3.assign
     select: cast[{slot}].plot_context
     required: true
-  protagonist:
-    label: 主人公の文脈
+  protagonist_name:
+    label: 主人公の名前
+    from: S5.name
+    select: output[0].name
+    required: false
+  protagonist_role:
+    label: 主人公の役
     from: S3.assign
-    select: cast[0]
-    required: true
+    select: cast[0].role
+    required: false
 output: json
 card:
   role: 与えられた人物の割り当てだけを統合し、プロフィールを書く。
   steps:
     - 名前、役の定義、年齢、性別、種族、能力、願望、役割・課題を具体的に統合する。
-    - 主人公には禁忌と抑圧されている自己像があれば反映し、他の人物には入力された人物要件と主人公の文脈を反映する。
+    - 主人公には禁忌と抑圧されている自己像があれば反映し、他の人物には主人公の名前と役だけを文脈として反映する。
     - 入力にない出来事、場所、過去、人間関係、診断を付け加えず、300字以内で書く。
     - sources には使った入力のIDを記録する。
   output_example: '{"profile": "...", "sources": ["c1"]}'

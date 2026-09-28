@@ -22,11 +22,21 @@ inputs:
     from: S3.assign
     select: cast[{slot}].plot_context
     required: true
-  protagonist:
-    label: 主人公の文脈
+  protagonist_name:
+    label: 主人公の名前
+    from: S5.name
+    select: output[0].name
+    required: false
+  protagonist_role:
+    label: 主人公の役
     from: S3.assign
-    select: cast[0]
-    required: true
+    select: cast[0].role
+    required: false
+  protagonist_intro:
+    label: 主人公の紹介
+    from: S5.intro
+    select: intro
+    required: false
 output: json
 card:
   role: 人物の動機と役割にふさわしい決め台詞を書く。

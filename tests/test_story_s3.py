@@ -344,17 +344,40 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
 
     person_ids = [person["id"] for person in _assignment(orchestrator, run_id)["cast"]]
     name_ids = [f"S5.name-{person_id}" for person_id in person_ids]
-    for person_id in person_ids:
+    protagonist_name_id = name_ids[0]
+    protagonist_intro_id = f"S5.intro-{person_ids[0]}"
+    for position, person_id in enumerate(person_ids):
         profile_id = f"S5.profile-{person_id}"
         motive_id = f"S5.motive-{person_id}"
+        context_name_deps = [] if position == 0 else [protagonist_name_id]
+        context_intro_deps = [] if position == 0 else [protagonist_intro_id]
         assert tasks[f"S5.name-{person_id}"]["deps"] == ["S3.assign"]
-        assert tasks[profile_id]["deps"] == ["S3.assign", f"S5.name-{person_id}"]
-        assert tasks[f"S5.intro-{person_id}"]["deps"] == ["S3.assign", profile_id]
-        assert tasks[f"S5.appearance-{person_id}"]["deps"] == ["S3.assign", profile_id]
-        assert tasks[motive_id]["deps"] == ["S3.assign", profile_id, *name_ids]
+        assert tasks[profile_id]["deps"] == [
+            "S3.assign",
+            *context_name_deps,
+            f"S5.name-{person_id}",
+        ]
+        assert tasks[f"S5.intro-{person_id}"]["deps"] == [
+            "S3.assign",
+            profile_id,
+            *context_name_deps,
+        ]
+        assert tasks[f"S5.appearance-{person_id}"]["deps"] == [
+            "S3.assign",
+            profile_id,
+            *context_name_deps,
+        ]
+        assert tasks[motive_id]["deps"] == [
+            "S3.assign",
+            profile_id,
+            *name_ids,
+            *context_intro_deps,
+        ]
         assert tasks[f"S5.catchphrase-{person_id}"]["deps"] == [
             "S3.assign",
             motive_id,
+            *context_name_deps,
+            *context_intro_deps,
         ]
 
     s5_ids = [task_id for task_id in tasks if task_id.startswith("S5.")]

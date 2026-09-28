@@ -54,6 +54,132 @@ def test_s5_name_rejects_a_reading_that_does_not_use_two_given_sounds() -> None:
     assert any("uses_given" in error for error in rejected.errors)
 
 
+def _character(role: str, character_id: str, marker: str) -> dict[str, object]:
+    character: dict[str, object] = {
+        "id": character_id,
+        "role": role,
+        "elements": {
+            "want": {"id": f"want:{marker}", "text": f"{marker}の願望"},
+            "ability": {"id": f"ability:{marker}", "text": f"{marker}の能力"},
+            "duty": {"id": f"duty:{marker}", "text": f"{marker}の課題"},
+            "age": {"id": f"age:{marker}", "text": f"{marker}の年齢"},
+            "gender": {"id": f"gender:{marker}", "text": f"{marker}の性別"},
+            "species": {"id": f"species:{marker}", "text": f"{marker}の種族"},
+        },
+        "name_sound": {
+            "set_id": "sound-01",
+            "description": "短く澄んだ響き",
+            "sounds": ["カ", "ナ", "リ", "オ", "セ", "ト"],
+        },
+        "role_definition": {
+            "id": role,
+            "name": role,
+            "definition": f"{role}の定義。",
+        },
+        "plot_context": {
+            "id": "quest",
+            "name": "旅",
+            "character_requirements": "主人公と旅を支える人物を置く。",
+        },
+    }
+    if role == "protagonist":
+        character["elements"]["taboo"] = {
+            "id": f"taboo:{marker}",
+            "text": f"{marker}の禁忌",
+        }
+        character["suppressed_self_image"] = {
+            "id": "m001",
+            "text": f"{marker}の抑圧された自己像",
+            "kind": "suppression",
+        }
+    return character
+
+
+def _s5_inputs(
+    name: str,
+    character: dict[str, object],
+    *,
+    protagonist_name: str = "主人公名",
+) -> dict[str, object]:
+    return {
+        "character": character,
+        "name": name,
+        "profile": "人物のプロフィール",
+        "motive": "人物の動機",
+        "other_characters": [character],
+        "names": [{"name": name, "reading": name, "sources": ["sound-01"]}],
+        "role_definition": character["role_definition"],
+        "plot_requirements": character["plot_context"],
+        "protagonist_name": protagonist_name,
+        "protagonist_role": "protagonist",
+        "protagonist_intro": "主人公の紹介文",
+    }
+
+
+def test_s5_cards_limit_protagonist_context_to_non_protagonists() -> None:
+    protagonist = _character("protagonist", "c1", "主人公固有")
+    other = _character("adversary", "c2", "他者固有")
+
+    for task_name in ("profile", "intro", "appearance"):
+        definition = load_task(task_name)
+        protagonist_card = generate_task_card(
+            definition,
+            "a" * 32,
+            inputs=_s5_inputs("本人名", protagonist),
+        )
+        other_card = generate_task_card(
+            definition,
+            "b" * 32,
+            inputs=_s5_inputs("他者名", other),
+        )
+
+        assert "### 主人公の名前" not in protagonist_card
+        assert "### 主人公の役" not in protagonist_card
+        assert "主人公名" not in protagonist_card
+        assert "主人公固有の願望" in protagonist_card
+        assert "主人公固有の禁忌" in protagonist_card
+        assert "主人公固有の抑圧された自己像" in protagonist_card
+        assert "### 主人公の名前\n主人公名" in other_card
+        assert "### 主人公の役\nprotagonist" in other_card
+        assert "主人公の紹介文" not in other_card
+        for forbidden in (
+            "主人公固有の願望",
+            "主人公固有の能力",
+            "主人公固有の禁忌",
+            "主人公固有の抑圧された自己像",
+        ):
+            assert forbidden not in other_card
+
+    for task_name in ("motive", "catchphrase"):
+        definition = load_task(task_name)
+        protagonist_card = generate_task_card(
+            definition,
+            "c" * 32,
+            inputs=_s5_inputs("本人名", protagonist),
+        )
+        other_card = generate_task_card(
+            definition,
+            "d" * 32,
+            inputs=_s5_inputs("他者名", other),
+        )
+
+        assert "### 主人公の名前" not in protagonist_card
+        assert "### 主人公の役" not in protagonist_card
+        assert "### 主人公の紹介" not in protagonist_card
+        assert "主人公名" not in protagonist_card
+        assert "主人公の紹介文" not in protagonist_card
+        assert "### 主人公の名前\n主人公名" in other_card
+        assert "### 主人公の役\nprotagonist" in other_card
+        assert "### 主人公の紹介\n主人公の紹介文" in other_card
+        for forbidden in (
+            "主人公固有の願望",
+            "主人公固有の能力",
+            "主人公固有の禁忌",
+            "主人公固有の抑圧された自己像",
+        ):
+            assert forbidden not in other_card
+
+
 def test_s5_profile_card_contains_assignment_and_protagonist_context() -> None:
     definition = load_task("profile")
     protagonist = {
@@ -92,7 +218,8 @@ def test_s5_profile_card_contains_assignment_and_protagonist_context() -> None:
             "name": "カナ",
             "role_definition": protagonist["role_definition"],
             "plot_requirements": protagonist["plot_context"],
-            "protagonist": protagonist,
+            "protagonist_name": "主人公名",
+            "protagonist_role": "protagonist",
         },
     )
 
@@ -100,3 +227,4 @@ def test_s5_profile_card_contains_assignment_and_protagonist_context() -> None:
     assert "character_requirements:" in card
     assert "suppressed_self_image:" in card
     assert "c1" in card
+    assert "### 主人公の名前" not in card

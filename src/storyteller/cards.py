@@ -152,6 +152,15 @@ def _fit_inputs(
     if missing_required:
         raise TaskCardError(f"required input is missing: {missing_required[0]}")
 
+    # The protagonist does not need a second copy of their own context.  The
+    # S5 definitions keep these slots optional so the same definition can be
+    # used for every character, while this task's character determines
+    # whether the slots are rendered.
+    character = current.get("character")
+    if isinstance(character, Mapping) and character.get("role") == "protagonist":
+        for name in ("protagonist_name", "protagonist_role", "protagonist_intro"):
+            current.pop(name, None)
+
     budget = definition.get("max_input_chars", 3000)
     if not isinstance(budget, int) or isinstance(budget, bool) or budget < 1:
         raise TaskCardError("max_input_chars must be a positive integer")

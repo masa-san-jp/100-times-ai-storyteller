@@ -565,7 +565,16 @@ def _build_downstream_tasks(
     cast = assignment.get("cast")
     if not isinstance(cast, list):
         raise ValueError("assignment の cast が不正です")
-    name_task_ids: list[str] = []
+    person_ids = [
+        person.get("id")
+        for person in cast
+        if isinstance(person, Mapping) and isinstance(person.get("id"), str)
+    ]
+    if len(person_ids) != len(cast):
+        raise ValueError("assignment の人物IDが不正です")
+    name_task_ids = [f"S5.name-{person_id}" for person_id in person_ids]
+    protagonist_name_id = name_task_ids[0]
+    protagonist_intro_id = f"S5.intro-{person_ids[0]}"
     for person in cast:
         person_id = person.get("id") if isinstance(person, Mapping) else None
         if not isinstance(person_id, str):
@@ -576,52 +585,48 @@ def _build_downstream_tasks(
         appearance_id = f"S5.appearance-{person_id}"
         motive_id = f"S5.motive-{person_id}"
         catchphrase_id = f"S5.catchphrase-{person_id}"
+        is_protagonist = person.get("role") == "protagonist"
+        protagonist_name_deps = () if is_protagonist else (protagonist_name_id,)
+        protagonist_intro_deps = () if is_protagonist else (protagonist_intro_id,)
         additions.extend(
             [
                 TaskSpec(name_id, "S5.name", deps=(parent_task_id,), index=(person_id,)),
-                TaskSpec(profile_id, "S5.profile", deps=(parent_task_id, name_id), index=(person_id,)),
+                TaskSpec(
+                    profile_id,
+                    "S5.profile",
+                    deps=_unique_dependencies((parent_task_id, *protagonist_name_deps, name_id)),
+                    index=(person_id,),
+                ),
                 TaskSpec(
                     intro_id,
                     "S5.intro",
-                    deps=(parent_task_id, profile_id),
+                    deps=_unique_dependencies((parent_task_id, profile_id, *protagonist_name_deps)),
                     index=(person_id,),
                 ),
                 TaskSpec(
                     appearance_id,
                     "S5.appearance",
-                    deps=(parent_task_id, profile_id),
+                    deps=_unique_dependencies((parent_task_id, profile_id, *protagonist_name_deps)),
                     index=(person_id,),
                 ),
                 TaskSpec(
                     motive_id,
                     "S5.motive",
-                    deps=_unique_dependencies((parent_task_id, profile_id, *name_task_ids)),
+                    deps=_unique_dependencies(
+                        (parent_task_id, profile_id, *name_task_ids, *protagonist_intro_deps)
+                    ),
                     index=(person_id,),
                 ),
                 TaskSpec(
                     catchphrase_id,
                     "S5.catchphrase",
-                    deps=(parent_task_id, motive_id),
+                    deps=_unique_dependencies(
+                        (parent_task_id, motive_id, *protagonist_name_deps, *protagonist_intro_deps)
+                    ),
                     index=(person_id,),
                 ),
             ]
         )
-        name_task_ids.append(name_id)
-    # The motive task for each character must see every name task, including
-    # names created later in the stable cast order.
-    for position, addition in enumerate(additions):
-        if addition.type == "S5.motive":
-            additions[position] = TaskSpec(
-                addition.task_id,
-                addition.type,
-                deps=_unique_dependencies((
-                    parent_task_id,
-                    next(dep for dep in addition.deps if dep.startswith("S5.profile-")),
-                    *name_task_ids,
-                )),
-                index=addition.index,
-            )
-
     s4_ids = tuple(
         addition.task_id for addition in additions if addition.type in {"S4.section", "S4.item"}
     )

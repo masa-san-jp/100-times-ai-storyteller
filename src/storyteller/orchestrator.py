@@ -1807,10 +1807,10 @@ def _validate_input_dependencies(
         if not any(
             specs_by_id[dependency].type == source for dependency in spec.deps
         ):
-            if not slot.get("required", False) and source in {
-                "S4.section",
-                "S4.item",
-            }:
+            if slot.get("required") is False or (
+                "required" not in slot
+                and source in {"S4.section", "S4.item"}
+            ):
                 continue
             raise DAGError(
                 f"task {spec.task_id!r} input slot {slot_name!r} requires a "
@@ -2809,11 +2809,17 @@ def _source_outputs(
         # matching dependency outputs.  Other selectors use the task with the
         # same index when one exists, which keeps per-character inputs local.
         select = slot_definition.get("select")
-        if len(matching) > 1 and task["index"] and select != "output":
+        explicit_output_access = (
+            isinstance(select, str)
+            and (select == "output" or select.startswith("output["))
+        )
+        if len(matching) > 1 and task["index"] and not explicit_output_access:
             indexed_task_id = f"{slot}-{task['index'][0]}"
             if indexed_task_id in matching:
                 matching = [indexed_task_id]
-        if len(matching) == 1:
+        if isinstance(select, str) and select.startswith("output["):
+            source_value = [dependency_outputs[task_id] for task_id in matching]
+        elif len(matching) == 1:
             source_value: Any = dependency_outputs[matching[0]]
         elif matching:
             source_value = [dependency_outputs[task_id] for task_id in matching]
