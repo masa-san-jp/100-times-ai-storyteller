@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/tasks/S5.motive.schema.json",
+  "title": "S5 character motive",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["motive", "sources"],
+  "properties": {
+    "motive": {"type": "string", "minLength": 1, "maxLength": 120},
+    "sources": {"$ref": "#/$defs/sources"}
+  },
+  "$defs": {
+    "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+  }
+}

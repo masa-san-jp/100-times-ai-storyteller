@@ -1,0 +1,61 @@
+id: S5.motive
+version: 1
+kind: llm
+inputs:
+  character:
+    label: 割り当てられた人物
+    from: S3.assign
+    select: cast[{slot}]
+    required: true
+  name:
+    label: 名前
+    from: S5.name
+    select: name
+    required: true
+  profile:
+    label: プロフィール
+    from: S5.profile
+    select: profile
+    required: true
+  other_characters:
+    label: 他の人物の役
+    from: S3.assign
+    select: cast
+    required: true
+  names:
+    label: 人物の名前
+    from: S5.name
+    select: output
+    required: true
+  role_definition:
+    label: 役の定義
+    from: S3.assign
+    select: cast[{slot}].role_definition
+    required: true
+  plot_requirements:
+    label: プロット型の人物要件
+    from: S3.assign
+    select: cast[{slot}].plot_context
+    required: true
+  protagonist:
+    label: 主人公の文脈
+    from: S3.assign
+    select: cast[0]
+    required: true
+output: json
+card:
+  role: 人物のプロフィールと周囲の人物から、その人物の動機を書く。
+  steps:
+    - 名前、役、プロフィール、他の人物の名前と役の関係から、動機を1つ書く。
+    - 主人公には抑圧されている自己像が入力されていれば、それを動機の緊張として反映する。
+    - プロット型の人物要件と主人公の文脈に沿い、120字以内で書く。
+    - 入力にない過去や関係を付け加えず、sources には使った入力のIDを記録する。
+  output_example: '{"motive": "...", "sources": ["c1"]}'
+validate:
+  schema: schemas/tasks/S5.motive.schema.json
+  checks:
+    - sources_exist
+    - max_chars:
+        field: motive
+        n: 120
+max_input_chars: 3000

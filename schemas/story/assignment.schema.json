@@ -105,7 +105,7 @@
     "character": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "role", "elements", "name_sound"],
+      "required": ["id", "role", "elements", "name_sound", "role_definition", "plot_context"],
       "allOf": [
         {
           "if": {
@@ -124,7 +124,29 @@
         "role": {"type": "string", "enum": ["protagonist", "messenger", "supporter", "adversary", "bystander"]},
         "elements": {"$ref": "#/$defs/character-elements"},
         "suppressed_self_image": {"$ref": "#/$defs/material"},
-        "name_sound": {"$ref": "#/$defs/name-sound"}
+        "name_sound": {"$ref": "#/$defs/name-sound"},
+        "role_definition": {"$ref": "#/$defs/role-definition"},
+        "plot_context": {"$ref": "#/$defs/plot-context"}
+      }
+    },
+    "role-definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "definition"],
+      "properties": {
+        "id": {"type": "string", "enum": ["protagonist", "messenger", "supporter", "adversary", "bystander"]},
+        "name": {"type": "string", "minLength": 1},
+        "definition": {"type": "string", "minLength": 1}
+      }
+    },
+    "plot-context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "character_requirements"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "character_requirements": {"type": "string", "minLength": 1}
       }
     },
     "world": {

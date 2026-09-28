@@ -1,0 +1,42 @@
+id: S5.catchphrase
+version: 1
+kind: llm
+inputs:
+  character:
+    label: 割り当てられた人物
+    from: S3.assign
+    select: cast[{slot}]
+    required: true
+  motive:
+    label: 動機
+    from: S5.motive
+    select: motive
+    required: true
+  role_definition:
+    label: 役の定義
+    from: S3.assign
+    select: cast[{slot}].role_definition
+    required: true
+  plot_requirements:
+    label: プロット型の人物要件
+    from: S3.assign
+    select: cast[{slot}].plot_context
+    required: true
+  protagonist:
+    label: 主人公の文脈
+    from: S3.assign
+    select: cast[0]
+    required: true
+output: json
+card:
+  role: 人物の動機と役割にふさわしい決め台詞を書く。
+  steps:
+    - 一人称で始まる1文を1つ書く。
+    - 人物の口調、役割、動機が伝わる台詞にし、入力にない設定を付け加えない。
+    - sources には使った入力のIDを記録する。
+  output_example: '{"catchphrase": "...", "sources": ["c1"]}'
+validate:
+  schema: schemas/tasks/S5.catchphrase.schema.json
+  checks:
+    - sources_exist
+max_input_chars: 3000

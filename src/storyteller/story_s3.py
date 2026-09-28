@@ -67,6 +67,7 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         cast_roles,
         materials,
     )
+    _attach_s5_context(cast, plot_by_id, threads)
     assignment = {
         "r": r,
         "threads": threads,
@@ -432,6 +433,40 @@ def _assign_elements_and_sounds(
     theme_materials = [item for item in materials if item.get("kind") in {"theme", "conflict"}]
     world["theme"] = deepcopy(context.random.choice(theme_materials)) if theme_materials else None
     return cast, world
+
+
+def _attach_s5_context(
+    cast: list[dict[str, Any]],
+    plot_by_id: Mapping[str, Mapping[str, Any]],
+    threads: Sequence[Mapping[str, Any]],
+) -> None:
+    """Attach fixed table context needed to render S5 cards."""
+
+    roles = {
+        role["id"]: role
+        for role in load_table("roles", repository_root=_REPOSITORY_ROOT)["roles"]
+    }
+    if not threads or not isinstance(threads[0].get("plot_type"), str):
+        raise ValueError("主筋のプロット型がありません")
+    main_plot = plot_by_id.get(threads[0]["plot_type"])
+    if not isinstance(main_plot, Mapping):
+        raise ValueError("主筋のプロット型が見つかりません")
+    plot_context = {
+        "id": main_plot["id"],
+        "name": main_plot["name"],
+        "character_requirements": main_plot["character_requirements"],
+    }
+    for person in cast:
+        role_id = person.get("role")
+        role = roles.get(role_id)
+        if not isinstance(role, Mapping):
+            raise ValueError(f"人物の役定義が見つかりません: {role_id}")
+        person["role_definition"] = {
+            "id": role["id"],
+            "name": role["name"],
+            "definition": role["definition"],
+        }
+        person["plot_context"] = dict(plot_context)
 
 
 def _choose_material(

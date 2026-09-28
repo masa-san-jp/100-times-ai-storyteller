@@ -1,0 +1,45 @@
+id: S5.appearance
+version: 1
+kind: llm
+inputs:
+  character:
+    label: 割り当てられた人物
+    from: S3.assign
+    select: cast[{slot}]
+    required: true
+  profile:
+    label: プロフィール
+    from: S5.profile
+    select: profile
+    required: true
+  role_definition:
+    label: 役の定義
+    from: S3.assign
+    select: cast[{slot}].role_definition
+    required: true
+  plot_requirements:
+    label: プロット型の人物要件
+    from: S3.assign
+    select: cast[{slot}].plot_context
+    required: true
+  protagonist:
+    label: 主人公の文脈
+    from: S3.assign
+    select: cast[0]
+    required: true
+output: json
+card:
+  role: 割り当てられた属性とプロフィールから、人物の外見と魅力を書く。
+  steps:
+    - 年齢、性別、種族、体格、装いを具体的に含める。
+    - 外見的な特徴だけでなく、その人物の魅力が伝わるようにする。
+    - 150字以内で書き、入力にない属性を付け加えない。sources には使った入力のIDを記録する。
+  output_example: '{"appearance": "...", "sources": ["c1"]}'
+validate:
+  schema: schemas/tasks/S5.appearance.schema.json
+  checks:
+    - sources_exist
+    - max_chars:
+        field: appearance
+        n: 150
+max_input_chars: 3000

@@ -1,0 +1,26 @@
+id: S5.name
+version: 1
+kind: llm
+inputs:
+  name_sound:
+    label: 名前の響き
+    from: S3.assign
+    select: cast[{slot}].name_sound
+    required: true
+output: json
+card:
+  role: 与えられた音から、人物の名前と読みを組み立てる。
+  steps:
+    - 与えられた6個の音のうち2個以上を、読みの中にそのまま使う。
+    - 響きの説明に合う、特定の実在の言語・民族を指さない名前を1つ作る。
+    - name は表記、reading はカタカナの読みとして、名前以外の説明は出力しない。
+  output_example: '{"name": "...", "reading": "...", "sources": ["sound-01"]}'
+validate:
+  schema: schemas/tasks/S5.name.schema.json
+  checks:
+    - sources_exist
+    - uses_given:
+        field: reading
+        slot: name_sound
+        n: 2
+max_input_chars: 1000

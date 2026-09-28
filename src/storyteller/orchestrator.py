@@ -2805,7 +2805,11 @@ def _source_outputs(
             and manifest["tasks"][dependency]["state"] == "done"
             and dependency in dependency_outputs
         ]
-        if len(matching) > 1 and task["index"]:
+        # An explicit `output` selector asks for the collection of all
+        # matching dependency outputs.  Other selectors use the task with the
+        # same index when one exists, which keeps per-character inputs local.
+        select = slot_definition.get("select")
+        if len(matching) > 1 and task["index"] and select != "output":
             indexed_task_id = f"{slot}-{task['index'][0]}"
             if indexed_task_id in matching:
                 matching = [indexed_task_id]

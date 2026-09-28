@@ -481,9 +481,20 @@ def _ids_from_inputs(inputs: Mapping[str, Any]) -> set[Any]:
 
 def _ids_from_value(value: Any) -> set[Any]:
     if isinstance(value, list):
-        return {_item_id(item) for item in value if _item_id(item) is not None}
-    if isinstance(value, Mapping) and "id" in value:
-        return {value["id"]}
+        ids: set[Any] = set()
+        for item in value:
+            ids.update(_ids_from_value(item))
+        return ids
+    if isinstance(value, Mapping):
+        ids: set[Any] = set()
+        for key in ("id", "set_id"):
+            identifier = value.get(key)
+            if identifier is not None:
+                ids.add(identifier)
+        for item in value.values():
+            if isinstance(item, (Mapping, list)):
+                ids.update(_ids_from_value(item))
+        return ids
     return set()
 
 
@@ -507,7 +518,22 @@ def _value_text(value: Any) -> str:
 
 def _input_texts(value: Any) -> list[str]:
     if isinstance(value, list):
-        return [_item_text(item) for item in value]
+        texts: list[str] = []
+        for item in value:
+            texts.extend(_input_texts(item))
+        return texts
+    if isinstance(value, Mapping):
+        if "text" in value:
+            return [str(value["text"])]
+        if isinstance(value.get("sounds"), list):
+            return _input_texts(value["sounds"])
+        texts: list[str] = []
+        for item in value.values():
+            if isinstance(item, (Mapping, list)):
+                texts.extend(_input_texts(item))
+            elif isinstance(item, str):
+                texts.append(item)
+        return texts
     return [_item_text(value)]
 
 
