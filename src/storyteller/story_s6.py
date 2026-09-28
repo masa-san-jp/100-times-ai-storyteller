@@ -58,7 +58,6 @@ def story_s6_expand(context: CodeTaskContext) -> CodeTaskResult:
 
     chronological = _interleave_threads(context, threads, per_thread)
     slots = _finalise_slots(chronological)
-    _attach_comparison_targets(slots)
     output = {"slots": slots}
     validate_document(output, _REPOSITORY_ROOT / "schemas" / "story" / "slots.schema.json")
 
@@ -289,15 +288,15 @@ def _assign_characters(
     for role in roles:
         candidates = cast_by_role.get(role, ())
         if candidates:
-            person = candidates[0]
+            person = context.random.choice(candidates)
             person_id = person["id"]
             if person_id not in selected_ids:
                 selected.append(person)
                 selected_ids.add(person_id)
-        elif role in absent_roles or role in _REQUIRED_ROLES:
+        elif role in absent_roles:
             absent = True
         else:
-            raise ValueError(f"未知の段階役です: {role}")
+            raise ValueError(f"段階が要求する役の人物がありません: {role}")
 
     remaining = [
         person
@@ -422,6 +421,43 @@ def _interleave_threads(
 ) -> list[dict[str, Any]]:
     if not per_thread:
         raise ValueError("thread がありません")
+
+    part_threads = [
+        (index, thread)
+        for index, thread in enumerate(threads)
+        if isinstance(thread, Mapping)
+        and thread.get("kind") == "main"
+        and thread.get("part") is not None
+    ]
+    if part_threads:
+        main_threads = [
+            thread
+            for thread in threads
+            if isinstance(thread, Mapping) and thread.get("kind") == "main"
+        ]
+        if len(main_threads) != len(part_threads) or any(
+            not isinstance(thread, Mapping) or thread.get("kind") != "main"
+            for thread in threads
+        ):
+            raise ValueError("大河には副筋を置けません")
+        numbered_parts: list[tuple[int, int, list[dict[str, Any]]]] = []
+        for index, thread in part_threads:
+            part = thread.get("part")
+            if isinstance(part, bool) or not isinstance(part, int) or part < 1:
+                raise ValueError("大河の part が不正です")
+            numbered_parts.append((part, index, per_thread[index]))
+        numbered_parts.sort(key=lambda item: item[0])
+        if [part for part, _index, _slots in numbered_parts] != list(
+            range(1, len(numbered_parts) + 1)
+        ):
+            raise ValueError("大河の part は1から連続していなければなりません")
+        # 大河の部は、それぞれが主筋である。部を単一の主筋として
+        # 連結し、副筋を部の途中へ差し込まない。
+        result: list[dict[str, Any]] = []
+        for _part, _index, slots in numbered_parts:
+            result.extend(slots)
+        return result
+
     main_index = next(
         (index for index, thread in enumerate(threads) if isinstance(thread, Mapping) and thread.get("kind") == "main"),
         0,
@@ -445,7 +481,11 @@ def _interleave_threads(
         gap: [] for gap in range(gap_count)
     }
     for index, slots in enumerate(per_thread):
-        if index == main_index:
+        if (
+            index == main_index
+            or not isinstance(threads[index], Mapping)
+            or threads[index].get("kind") == "main"
+        ):
             continue
         gaps = sorted(context.random.randrange(gap_count) for _ in slots)
         for gap, slot in zip(gaps, slots):
@@ -489,39 +529,10 @@ def _finalise_slots(chronological: Sequence[Mapping[str, Any]]) -> list[dict[str
     return result
 
 
-def _attach_comparison_targets(slots: list[dict[str, Any]]) -> None:
-    last_by_thread: dict[str, str] = {}
-    last_by_character: dict[str, tuple[int, str]] = {}
-    for index, slot in enumerate(slots):
-        thread_id = slot["thread"]
-        targets: list[str] = []
-        previous_same_thread = last_by_thread.get(thread_id)
-        if previous_same_thread is not None:
-            targets.append(previous_same_thread)
-        character_ids = [character["id"] for character in slot["characters"]]
-        character_targets = [
-            last_by_character[character_id]
-            for character_id in character_ids
-            if character_id in last_by_character
-            and last_by_character[character_id][1] != previous_same_thread
-        ]
-        character_targets.sort(key=lambda target: target[0], reverse=True)
-        for _target_index, target in character_targets:
-            if target not in targets:
-                targets.append(target)
-            if len(targets) >= 3:
-                break
-        slot["comparison_targets"] = targets[:3]
-        last_by_thread[thread_id] = slot["id"]
-        for character_id in character_ids:
-            last_by_character[character_id] = (index, slot["id"])
-
-
 def _build_downstream_tasks(
     parent_task_id: str, slots: Sequence[Mapping[str, Any]]
 ) -> list[TaskSpec]:
     additions: list[TaskSpec] = []
-    event_to_judge: dict[str, str] = {}
     s7_ids_in_time_order: list[str] = []
     previous_by_thread: dict[str, str] = {}
 
@@ -539,40 +550,23 @@ def _build_downstream_tasks(
         s7_ids_in_time_order.append(s7_id)
         previous_by_thread[thread_id] = f"S8.judge-{event_id}"
 
-        targets = slot.get("comparison_targets")
-        if not isinstance(targets, list):
-            raise ValueError(f"slot の comparison_targets が不正です: {event_id}")
-        compare_ids: list[str] = []
-        prior_s7_ids = list(s7_ids_in_time_order[:-1])
-        for compare_number, _target in enumerate(targets, start=1):
-            compare_id = f"S8.compare-{event_id}-k{compare_number}"
-            compare_deps = [parent_task_id, s7_id, *prior_s7_ids]
-            additions.append(
-                TaskSpec(
-                    compare_id,
-                    "S8.compare",
-                    deps=_unique(compare_deps),
-                    index=(event_id, f"k{compare_number}"),
-                )
-            )
-            compare_ids.append(compare_id)
-        judge_deps = [parent_task_id, s7_id, *compare_ids]
-        judge_id = f"S8.judge-{event_id}"
         additions.append(
             TaskSpec(
-                judge_id,
-                "S8.judge",
-                deps=_unique(judge_deps),
+                f"S8.plan-{event_id}",
+                "S8.plan",
+                deps=_unique((parent_task_id, s7_id, *s7_ids_in_time_order[:-1])),
                 index=(event_id,),
             )
         )
-        event_to_judge[event_id] = judge_id
 
-    judge_ids = [event_to_judge[slot["id"]] for slot in slots]
+    judge_ids = [f"S8.judge-{slot['id']}" for slot in slots]
     additions.append(
         TaskSpec(
             "S9.assemble",
             "S9.assemble",
+            # S8.plan creates these judge nodes after the actual S7 `who`
+            # values are available.  The orchestrator retains these declared
+            # S8.judge dependencies until those nodes are added.
             deps=_unique((parent_task_id, *judge_ids)),
         )
     )
