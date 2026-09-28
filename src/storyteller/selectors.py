@@ -105,10 +105,10 @@ def resolve_inputs(
             source = run_input
         else:
             if source_name not in available_outputs:
-                if not slot.get("required", False) and source_name in {
-                    "S4.section",
-                    "S4.item",
-                }:
+                if slot.get("required") is False or (
+                    "required" not in slot
+                    and source_name in {"S4.section", "S4.item"}
+                ):
                     continue
                 raise SelectorError(f"input source does not exist: {source_name}")
             source = available_outputs[source_name]

@@ -87,6 +87,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 
 ### S5 人物 [L]
 - タスクの単位：人物1人 × 項目1つ。項目は `name` → `profile` → `intro`・`motive`・`appearance` → `catchphrase` の順に依存する。
+- 主人公以外の人物の項目には、主人公の文脈として、主人公の名前と役を入力に含める。`motive`・`catchphrase` では、主人公の `intro` も含める。主人公の割り当て要素・禁忌・抑圧されている自己像は、主人公自身の項目にだけ入力する（P1）。
 - すべての項目の入力に、その人物の役の定義文（`tables/roles.yaml`。heros-journey・world-building の4役の定義を取り込む）と、プロット型の `character_requirements` を含める。
 - `name`：入力は、S3 で割り当てた音6個と、名前の響きの説明文だけ。出力は `{"name": "...", "reading": "カタカナの読み", "sources": ["<響きの集合のID>"]}`。検証：`reading` が、与えた音のうち2個以上を含む（`uses_given`）。
 - `profile`：入力は、その人物の名前・役・割り当て要素（主人公は `taboo` を含む）。出力は `{"profile": "...", "sources": [...]}`（300字以内）。

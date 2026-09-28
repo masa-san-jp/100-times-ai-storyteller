@@ -1,0 +1,50 @@
+id: S5.intro
+version: 1
+kind: llm
+inputs:
+  character:
+    label: 割り当てられた人物
+    from: S3.assign
+    select: cast[{slot}]
+    required: true
+  profile:
+    label: プロフィール
+    from: S5.profile
+    select: profile
+    required: true
+  role_definition:
+    label: 役の定義
+    from: S3.assign
+    select: cast[{slot}].role_definition
+    required: true
+  plot_requirements:
+    label: プロット型の人物要件
+    from: S3.assign
+    select: cast[{slot}].plot_context
+    required: true
+  protagonist_name:
+    label: 主人公の名前
+    from: S5.name
+    select: output[0].name
+    required: false
+  protagonist_role:
+    label: 主人公の役
+    from: S3.assign
+    select: cast[0].role
+    required: false
+output: json
+card:
+  role: プロフィールと人物の文脈から、短い紹介を書く。
+  steps:
+    - 人物の役割、人物像、魅力が伝わる短い紹介を1つ書く。
+    - world-building の short_introduction として、50字以内にする。
+    - 入力にない設定を補わず、sources には使った入力のIDを記録する。
+  output_example: '{"intro": "...", "sources": ["c1"]}'
+validate:
+  schema: schemas/tasks/S5.intro.schema.json
+  checks:
+    - sources_exist
+    - max_chars:
+        field: intro
+        n: 50
+max_input_chars: 3000
