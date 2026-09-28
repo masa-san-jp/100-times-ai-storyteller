@@ -1,0 +1,10 @@
+id: S6.expand
+version: 1
+kind: code
+handler: story_s6_expand
+inputs:
+  assignment:
+    label: 構造と割当
+    from: S3.assign
+    select: output
+    required: true

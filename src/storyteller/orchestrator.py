@@ -957,7 +957,8 @@ class Orchestrator:
             task["cache_key"] = None
             task["error"] = None
             dependencies_ready = all(
-                _get_task(manifest, dependency)["state"] in {"done", "skipped"}
+                dependency in manifest["tasks"]
+                and manifest["tasks"][dependency]["state"] in {"done", "skipped"}
                 for dependency in task["deps"]
             )
             partial = self.task_dir(run_id, task_id) / "partial.md"
@@ -1731,6 +1732,8 @@ def _coerce_task_spec(raw: TaskSpec | Mapping[str, Any]) -> TaskSpec:
 def _validate_graph(
     specs: Sequence[TaskSpec],
     definitions: Mapping[str, Mapping[str, Any]],
+    *,
+    allow_deferred_dependencies: bool = False,
 ) -> None:
     if not specs:
         raise DAGError("task graph must not be empty")
@@ -1742,16 +1745,26 @@ def _validate_graph(
         if spec.type not in definitions:
             raise DAGError(f"task definition does not exist: {spec.type}")
         _validate_task_spec_id(spec)
-        if any(dependency not in task_ids for dependency in spec.deps):
-            missing = next(
-                dependency for dependency in spec.deps if dependency not in task_ids
-            )
-            raise DAGError(
-                f"task {spec.task_id!r} depends on missing task {missing!r}"
-            )
+        missing_dependencies = [
+            dependency for dependency in spec.deps if dependency not in task_ids
+        ]
+        if missing_dependencies:
+            if not allow_deferred_dependencies or not all(
+                _is_deferred_dependency(dependency)
+                for dependency in missing_dependencies
+            ):
+                missing = missing_dependencies[0]
+                raise DAGError(
+                    f"task {spec.task_id!r} depends on missing task {missing!r}"
+                )
         if definitions[spec.type]["kind"] not in {"code", "llm"}:
             raise DAGError(f"invalid task kind: {spec.type}")
-        _validate_input_dependencies(spec, specs_by_id, definitions[spec.type])
+        _validate_input_dependencies(
+            spec,
+            specs_by_id,
+            definitions[spec.type],
+            allow_deferred_dependencies=allow_deferred_dependencies,
+        )
 
     visiting: set[str] = set()
     visited: set[str] = set()
@@ -1764,7 +1777,8 @@ def _validate_graph(
         visiting.add(task_id)
         spec = next(spec for spec in specs if spec.task_id == task_id)
         for dependency in spec.deps:
-            visit(dependency)
+            if dependency in specs_by_id:
+                visit(dependency)
         visiting.remove(task_id)
         visited.add(task_id)
 
@@ -1790,6 +1804,8 @@ def _validate_input_dependencies(
     spec: TaskSpec,
     specs_by_id: Mapping[str, TaskSpec],
     definition: Mapping[str, Any],
+    *,
+    allow_deferred_dependencies: bool = False,
 ) -> None:
     input_slots = definition.get("inputs", {})
     if not isinstance(input_slots, Mapping):
@@ -1805,8 +1821,15 @@ def _validate_input_dependencies(
                 f"task {spec.task_id!r} input slot {slot_name!r} has no valid source"
             )
         if not any(
-            specs_by_id[dependency].type == source for dependency in spec.deps
+            dependency in specs_by_id and specs_by_id[dependency].type == source
+            for dependency in spec.deps
         ):
+            if allow_deferred_dependencies and any(
+                dependency not in specs_by_id
+                and _deferred_dependency_type(dependency) == source
+                for dependency in spec.deps
+            ):
+                continue
             if slot.get("required") is False or (
                 "required" not in slot
                 and source in {"S4.section", "S4.item"}
@@ -1816,6 +1839,16 @@ def _validate_input_dependencies(
                 f"task {spec.task_id!r} input slot {slot_name!r} requires a "
                 f"dependency of type {source!r}"
             )
+
+
+def _is_deferred_dependency(task_id: str) -> bool:
+    return _deferred_dependency_type(task_id) == "S8.judge"
+
+
+def _deferred_dependency_type(task_id: str) -> str | None:
+    if re.fullmatch(r"S8\.judge-e[0-9]{3}", task_id):
+        return "S8.judge"
+    return None
 
 
 def _new_task_record(
@@ -2493,7 +2526,14 @@ def _task_depths(manifest: Mapping[str, Any]) -> dict[str, int]:
             raise DAGError(f"task graph contains a cycle at {task_id}")
         visiting.add(task_id)
         task = _get_task(manifest, task_id)
-        value = max((depth(dependency) + 1 for dependency in task["deps"]), default=0)
+        value = max(
+            (
+                depth(dependency) + 1
+                for dependency in task["deps"]
+                if dependency in manifest["tasks"]
+            ),
+            default=0,
+        )
         visiting.remove(task_id)
         memo[task_id] = value
         return value
@@ -2535,7 +2575,8 @@ def _validate_transition(
         raise InvalidTransition(f"{old_state} -> {state} is not allowed")
     if state == "ready" and old_state == "blocked":
         if not all(
-            _get_task(manifest, dependency)["state"] in {"done", "skipped"}
+            dependency in manifest["tasks"]
+            and manifest["tasks"][dependency]["state"] in {"done", "skipped"}
             for dependency in task["deps"]
         ):
             raise InvalidTransition("blocked task dependencies are not complete")
@@ -2582,7 +2623,8 @@ def _refresh_blocked_tasks(manifest: dict[str, Any], at: str) -> None:
             if task["state"] != "blocked":
                 continue
             if all(
-                _get_task(manifest, dependency)["state"] in {"done", "skipped"}
+                dependency in manifest["tasks"]
+                and manifest["tasks"][dependency]["state"] in {"done", "skipped"}
                 for dependency in task["deps"]
             ):
                 _set_task_state(
@@ -2679,7 +2721,11 @@ def _validate_result_tasks(
         for task_id, task in manifest["tasks"].items()
     ]
     combined_specs.extend(add_tasks)
-    _validate_graph(combined_specs, definitions)
+    _validate_graph(
+        combined_specs,
+        definitions,
+        allow_deferred_dependencies=True,
+    )
 
 
 def _create_dynamic_task_dirs(

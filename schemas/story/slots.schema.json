@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/story/slots.schema.json",
+  "title": "Story pipeline S6 slots",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slots"],
+  "properties": {
+    "slots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/slot"}
+    }
+  },
+  "$defs": {
+    "element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*:(?:i[0-9]{2,}|t[0-9]+|x[0-9]+)$"},
+        "text": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "kind"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^m[0-9]{3}$"},
+        "text": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["desire", "fear", "suppression", "conflict", "image", "value", "theme", "mood"]}
+      }
+    },
+    "character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "role", "motive"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^c[0-9]+$"},
+        "name": {"type": "string", "minLength": 1},
+        "role": {"type": "string", "enum": ["protagonist", "messenger", "supporter", "adversary", "bystander"]},
+        "motive": {"type": "string", "minLength": 1}
+      }
+    },
+    "plot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "conflict", "climax"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "conflict": {"type": "string", "minLength": 1},
+        "climax": {"type": "string", "minLength": 1}
+      }
+    },
+    "thread-context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "part", "plot_type", "plot_type_name", "events", "structure"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^t[0-9]{3}$"},
+        "kind": {"type": "string", "enum": ["main", "subthread"]},
+        "part": {"type": ["integer", "null"], "minimum": 1},
+        "plot_type": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "plot_type_name": {"type": "string", "minLength": 1},
+        "events": {"type": "integer", "minimum": 3},
+        "structure": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "definition", "guidance", "act", "weight", "roles", "absent_role_note", "world_sections", "object", "climax"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "definition": {"type": "string", "minLength": 1},
+        "guidance": {"type": "string", "minLength": 1},
+        "act": {"type": "integer", "minimum": 1},
+        "weight": {"type": "number", "minimum": 0},
+        "roles": {"type": "array", "items": {"type": "string", "enum": ["protagonist", "messenger", "supporter", "adversary", "bystander"]}},
+        "absent_role_note": {"type": "string", "minLength": 1},
+        "world_sections": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"}},
+        "object": {"type": "boolean"},
+        "climax": {"type": "boolean"}
+      }
+    },
+    "world-section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "body"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "body": {"type": "string", "minLength": 1}
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "thread", "thread_context", "plot", "stage", "required_events", "characters", "absent_role_note", "object", "theme", "world_sections"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^e[0-9]{3}$"},
+        "thread": {"type": "string", "pattern": "^t[0-9]{3}$"},
+        "thread_context": {"$ref": "#/$defs/thread-context"},
+        "plot": {"$ref": "#/$defs/plot"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "required_events": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "characters": {"type": "array", "items": {"$ref": "#/$defs/character"}},
+        "absent_role_note": {"type": ["string", "null"], "minLength": 1},
+        "object": {"anyOf": [{"$ref": "#/$defs/element"}, {"type": "null"}]},
+        "theme": {"anyOf": [{"$ref": "#/$defs/material"}, {"type": "null"}]},
+        "world_sections": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"$ref": "#/$defs/world-section"}}
+      }
+    }
+  }
+}
