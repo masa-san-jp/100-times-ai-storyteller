@@ -1807,6 +1807,11 @@ def _validate_input_dependencies(
         if not any(
             specs_by_id[dependency].type == source for dependency in spec.deps
         ):
+            if not slot.get("required", False) and source in {
+                "S4.section",
+                "S4.item",
+            }:
+                continue
             raise DAGError(
                 f"task {spec.task_id!r} input slot {slot_name!r} requires a "
                 f"dependency of type {source!r}"
@@ -2787,7 +2792,7 @@ def _source_outputs(
     input_slots = definition.get("inputs", {})
     if not isinstance(input_slots, Mapping):
         return result
-    for slot_definition in input_slots.values():
+    for slot_name, slot_definition in input_slots.items():
         if not isinstance(slot_definition, Mapping):
             continue
         slot = slot_definition.get("from")
@@ -2805,10 +2810,32 @@ def _source_outputs(
             if indexed_task_id in matching:
                 matching = [indexed_task_id]
         if len(matching) == 1:
-            result[slot] = dependency_outputs[matching[0]]
+            source_value: Any = dependency_outputs[matching[0]]
         elif matching:
-            result[slot] = [dependency_outputs[task_id] for task_id in matching]
+            source_value = [dependency_outputs[task_id] for task_id in matching]
+        else:
+            continue
+        if slot_name == "prerequisite_items" and slot == "S4.item":
+            source_value = _summarize_world_items(source_value)
+        result[slot] = source_value
     return result
+
+
+def _summarize_world_items(value: Any) -> list[dict[str, str]]:
+    """Make list-section outputs compact prerequisite context for S4 cards."""
+
+    values = value if isinstance(value, list) else [value]
+    summaries: list[dict[str, str]] = []
+    for item in values:
+        if not isinstance(item, Mapping):
+            continue
+        name = item.get("name")
+        body = item.get("body")
+        if not isinstance(name, str) or not isinstance(body, str):
+            continue
+        summary = " ".join(body.split())[:120]
+        summaries.append({"name": name, "summary": summary})
+    return summaries
 
 
 def _read_dependency_outputs(

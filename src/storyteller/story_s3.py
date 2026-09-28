@@ -73,6 +73,7 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         "cast": cast,
         "absent_roles": absent_roles,
         "world": world,
+        "world_sections": _selected_world_sections(manifest, repository_root),
     }
     validate_document(assignment, repository_root / "schemas" / "story" / "assignment.schema.json")
     additions = _build_downstream_tasks(context.task_id, manifest, assignment, scales, repository_root)
@@ -323,6 +324,7 @@ def _build_threads(
                 "kind": "main" if is_main else "subthread",
                 "part": index if is_parts else None,
                 "plot_type": plot_id,
+                "plot_type_name": plot["name"],
                 "events": event_count,
                 "structure": structure,
             }
@@ -599,6 +601,22 @@ def _build_downstream_tasks(
         )
     )
     return additions
+
+
+def _selected_world_sections(
+    manifest: Mapping[str, Any], repository_root: Path
+) -> list[dict[str, Any]]:
+    selected_ids = manifest.get("scale", {}).get("derived", {}).get("world_sections", [])
+    if not isinstance(selected_ids, list):
+        raise ValueError("manifest の world_sections が不正です")
+    sections = load_table("world_sections", repository_root=repository_root)["sections"]
+    section_by_id = {section["id"]: section for section in sections}
+    selected: list[dict[str, Any]] = []
+    for section_id in selected_ids:
+        if not isinstance(section_id, str) or section_id not in section_by_id:
+            raise ValueError(f"未知の世界セクションです: {section_id}")
+        selected.append(deepcopy(section_by_id[section_id]))
+    return selected
 
 
 def _world_level(manifest: Mapping[str, Any], scales: Mapping[str, Any]) -> int:

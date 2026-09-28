@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/tasks/S4.section.schema.json",
+  "title": "Story pipeline S4 single world section",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["body", "sources"],
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
