@@ -1,0 +1,20 @@
+id: S9.assemble
+version: 1
+kind: code
+handler: story_s9_assemble
+inputs:
+  assignment:
+    label: 組み合わせ
+    from: S3.assign
+    select: output
+    required: true
+  slots:
+    label: 構造展開
+    from: S6.expand
+    select: output
+    required: true
+  events:
+    label: 出来事
+    from: S7.event
+    select: output
+    required: true
