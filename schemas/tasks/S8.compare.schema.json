@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/tasks/S8.compare.schema.json",
+  "title": "S8 event comparison",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["answer", "reason", "sources"],
+  "properties": {
+    "answer": {
+      "type": "string",
+      "enum": ["yes", "no"]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^e[0-9]{3}$"
+      }
+    }
+  }
+}

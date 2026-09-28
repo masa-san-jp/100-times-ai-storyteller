@@ -103,6 +103,46 @@ def story_s8_plan(context: CodeTaskContext) -> CodeTaskResult:
     return CodeTaskResult(output=output, add_tasks=additions)
 
 
+def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
+    """Invalidate an S7 event when any comparison reports a contradiction."""
+
+    event_id = _judge_event_id(context)
+    comparisons = context.inputs.get("comparisons")
+    if comparisons is None:
+        comparisons = []
+    if isinstance(comparisons, Mapping):
+        comparisons = [comparisons]
+    if not isinstance(comparisons, Sequence) or isinstance(comparisons, (str, bytes)):
+        raise ValueError("S8.compare の出力が不正です")
+
+    yes_results = [
+        comparison
+        for comparison in comparisons
+        if isinstance(comparison, Mapping) and comparison.get("answer") == "yes"
+    ]
+    invalidated = bool(yes_results)
+    invalidations: list[tuple[str, str]] = []
+    if invalidated:
+        reasons = [
+            reason
+            for comparison in yes_results
+            for reason in [comparison.get("reason")]
+            if isinstance(reason, str) and reason.strip()
+        ]
+        detail = "／".join(reasons)
+        reason = (
+            "比較結果に矛盾あり"
+            if not detail
+            else f"比較結果に矛盾あり：{detail}"
+        )
+        invalidations.append((f"S7.event-{event_id}", reason))
+
+    return CodeTaskResult(
+        output={"slot": event_id, "invalidated": invalidated},
+        invalidations=invalidations,
+    )
+
+
 def _event_id(context: CodeTaskContext) -> str:
     task = getattr(context, "task", {})
     index = task.get("index") if isinstance(task, Mapping) else None
@@ -114,6 +154,20 @@ def _event_id(context: CodeTaskContext) -> str:
         event_id = task_id.removeprefix(prefix)
     if not _EVENT_ID.fullmatch(event_id):
         raise ValueError(f"S8.plan のスロットIDが不正です: {event_id}")
+    return event_id
+
+
+def _judge_event_id(context: CodeTaskContext) -> str:
+    task = getattr(context, "task", {})
+    index = task.get("index") if isinstance(task, Mapping) else None
+    if isinstance(index, list) and len(index) >= 1 and isinstance(index[0], str):
+        event_id = index[0]
+    else:
+        prefix = "S8.judge-"
+        task_id = getattr(context, "task_id", "")
+        event_id = task_id.removeprefix(prefix)
+    if not _EVENT_ID.fullmatch(event_id):
+        raise ValueError(f"S8.judge のスロットIDが不正です: {event_id}")
     return event_id
 
 
@@ -152,4 +206,4 @@ def _who(output: Mapping[str, Any], event_id: str) -> list[str]:
     return value
 
 
-__all__ = ["story_s8_plan"]
+__all__ = ["story_s8_judge", "story_s8_plan"]

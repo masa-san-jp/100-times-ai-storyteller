@@ -1,0 +1,31 @@
+id: S8.compare
+version: 1
+kind: llm
+inputs:
+  event_a:
+    label: 記述A
+    from: S8.plan
+    select: targets[{slot}]
+    required: true
+  event_b:
+    label: 記述B
+    from: S8.plan
+    select: current
+    required: true
+output: json
+card:
+  role: 与えられた2つの出来事の記述に矛盾があるかを確認する。
+  steps:
+    - 記述Aの結果と、記述Bの内容が矛盾するかだけを判定する。
+    - 矛盾があれば answer を yes、なければ no にする。
+    - reason は判定理由を1文で書き、sources には記述Aと記述Bの出来事IDを順に入れる。
+    - 入力にない出来事や事情を付け加えない。
+  output_example: '{"answer": "...", "reason": "...", "sources": ["e001", "e002"]}'
+validate:
+  schema: schemas/tasks/S8.compare.schema.json
+  checks:
+    - sources_exist
+    - count:
+        field: sources
+        n: 2
+max_input_chars: 3000

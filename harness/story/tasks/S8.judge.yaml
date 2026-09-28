@@ -1,0 +1,15 @@
+id: S8.judge
+version: 1
+kind: code
+handler: story_s8_judge
+inputs:
+  plan:
+    label: 比較計画
+    from: S8.plan
+    select: output
+    required: true
+  comparisons:
+    label: 比較結果
+    from: S8.compare
+    select: output
+    required: false
