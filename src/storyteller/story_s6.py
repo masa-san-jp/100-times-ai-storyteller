@@ -61,7 +61,7 @@ def story_s6_expand(context: CodeTaskContext) -> CodeTaskResult:
     output = {"slots": slots}
     validate_document(output, _REPOSITORY_ROOT / "schemas" / "story" / "slots.schema.json")
 
-    additions = _build_downstream_tasks(context.task_id, slots)
+    additions = _build_downstream_tasks(context, slots)
     return CodeTaskResult(output=output, add_tasks=additions)
 
 
@@ -532,8 +532,9 @@ def _finalise_slots(chronological: Sequence[Mapping[str, Any]]) -> list[dict[str
 
 
 def _build_downstream_tasks(
-    parent_task_id: str, slots: Sequence[Mapping[str, Any]]
+    context: CodeTaskContext, slots: Sequence[Mapping[str, Any]]
 ) -> list[TaskSpec]:
+    parent_task_id = context.task_id
     additions: list[TaskSpec] = []
     s7_ids_in_time_order: list[str] = []
     previous_by_thread: dict[str, str] = {}
@@ -562,6 +563,13 @@ def _build_downstream_tasks(
         )
 
     judge_ids = [f"S8.judge-{slot['id']}" for slot in slots]
+    # S9 consumes S3--S8 outputs.  Keep the upstream task IDs as direct
+    # dependencies so the generic selector layer exposes those outputs to
+    # the assembler instead of only exposing S6/S8 transitively.
+    task = getattr(context, "task", {})
+    upstream_ids = task.get("deps", ()) if isinstance(task, Mapping) else ()
+    if not isinstance(upstream_ids, (list, tuple)):
+        raise ValueError("S6.expand の依存タスクが不正です")
     additions.append(
         TaskSpec(
             "S9.assemble",
@@ -569,7 +577,7 @@ def _build_downstream_tasks(
             # S8.plan creates these judge nodes after the actual S7 `who`
             # values are available.  The orchestrator retains these declared
             # S8.judge dependencies until those nodes are added.
-            deps=_unique((parent_task_id, *judge_ids)),
+            deps=_unique((parent_task_id, *upstream_ids, *s7_ids_in_time_order, *judge_ids)),
         )
     )
     return additions

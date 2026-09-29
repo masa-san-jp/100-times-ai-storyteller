@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/story.schema.json",
+  "title": "Canonical story",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "world", "cast", "threads", "events"],
+  "properties": {
+    "meta": {"$ref": "#/$defs/meta"},
+    "world": {"$ref": "#/$defs/world"},
+    "cast": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/cast"}
+    },
+    "threads": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/thread"}
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/event"}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*:(?:i[0-9]{2,}|t[0-9]+|x[0-9]+)$"},
+        "text": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "kind"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^m[0-9]{3}$"},
+        "text": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["desire", "fear", "suppression", "conflict", "image", "value", "theme", "mood"]}
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "seed", "scale", "input_ratio", "input_type", "plot_types", "structures", "theme"],
+      "properties": {
+        "run_id": {"type": "string", "pattern": "^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$"},
+        "seed": {"type": "integer"},
+        "scale": {"type": "object"},
+        "input_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+        "input_type": {"type": "string", "enum": ["narrative", "free"]},
+        "plot_types": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/thread_plot"}},
+        "structures": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/thread_structure"}},
+        "theme": {"anyOf": [{"$ref": "#/$defs/material"}, {"type": "null"}]}
+      }
+    },
+    "thread_plot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thread", "id", "name"],
+      "properties": {
+        "thread": {"type": "string", "pattern": "^t[0-9]{3}$"},
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "name": {"type": "string", "minLength": 1}
+      }
+    },
+    "thread_structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thread", "id"],
+      "properties": {
+        "thread": {"type": "string", "pattern": "^t[0-9]{3}$"},
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+      }
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["place", "era", "object", "theme", "sections"],
+      "properties": {
+        "place": {"$ref": "#/$defs/element"},
+        "era": {"$ref": "#/$defs/element"},
+        "object": {"$ref": "#/$defs/element"},
+        "theme": {"anyOf": [{"$ref": "#/$defs/material"}, {"type": "null"}]},
+        "sections": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/world_section"}}
+      }
+    },
+    "world_section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "body", "items", "sources"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["single", "list"]},
+        "body": {"type": ["string", "null"]},
+        "items": {"type": "array", "items": {"$ref": "#/$defs/world_item"}},
+        "sources": {"$ref": "#/$defs/sources"}
+      }
+    },
+    "world_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "body", "sources"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "body": {"type": "string", "minLength": 1},
+        "sources": {"$ref": "#/$defs/sources"}
+      }
+    },
+    "cast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "name", "reading", "intro", "profile", "motive", "appearance", "catchphrase", "elements", "name_sound", "sources"],
+      "allOf": [{
+        "if": {"properties": {"role": {"const": "protagonist"}}},
+        "then": {"properties": {"elements": {"required": ["taboo"]}}}
+      }],
+      "properties": {
+        "id": {"type": "string", "pattern": "^c[0-9]+$"},
+        "role": {"type": "string", "enum": ["protagonist", "messenger", "supporter", "adversary", "bystander"]},
+        "name": {"type": "string", "minLength": 1},
+        "reading": {"type": "string", "minLength": 1},
+        "intro": {"type": "string", "minLength": 1},
+        "profile": {"type": "string", "minLength": 1},
+        "motive": {"type": "string", "minLength": 1},
+        "appearance": {"type": "string", "minLength": 1},
+        "catchphrase": {"type": "string", "minLength": 1},
+        "elements": {"type": "object", "required": ["want", "ability", "duty", "age", "gender", "species"], "properties": {"want": {"$ref": "#/$defs/element"}, "ability": {"$ref": "#/$defs/element"}, "duty": {"$ref": "#/$defs/element"}, "age": {"$ref": "#/$defs/element"}, "gender": {"$ref": "#/$defs/element"}, "species": {"$ref": "#/$defs/element"}, "taboo": {"$ref": "#/$defs/element"}}, "additionalProperties": false},
+        "suppressed_self_image": {"anyOf": [{"$ref": "#/$defs/material"}, {"type": "null"}]},
+        "name_sound": {"type": "object", "additionalProperties": false, "required": ["set_id", "description", "sounds"], "properties": {"set_id": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}, "sounds": {"type": "array", "minItems": 6, "items": {"type": "string", "minLength": 1}}}},
+        "sources": {"$ref": "#/$defs/sources"}
+      }
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "part", "plot_type", "plot_type_name", "events", "structure"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^t[0-9]{3}$"},
+        "kind": {"type": "string", "enum": ["main", "subthread"]},
+        "part": {"type": ["integer", "null"], "minimum": 1},
+        "plot_type": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "plot_type_name": {"type": "string", "minLength": 1},
+        "events": {"type": "integer", "minimum": 3},
+        "structure": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "stage", "thread", "when", "where", "who", "why", "intent", "what", "result", "emotion", "foreshadowing", "sources"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^e[0-9]{3}$"},
+        "stage": {"type": "object", "additionalProperties": false, "required": ["id", "name"], "properties": {"id": {"type": "string", "minLength": 1}, "name": {"type": "string", "minLength": 1}}},
+        "thread": {"type": "string", "pattern": "^t[0-9]{3}$"},
+        "when": {"type": "string", "minLength": 1},
+        "where": {"type": "string", "minLength": 1},
+        "who": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^c[0-9]+$"}},
+        "why": {"type": "string", "minLength": 1},
+        "intent": {"type": "string", "minLength": 1},
+        "what": {"type": "string", "minLength": 1},
+        "result": {"type": "string", "minLength": 1},
+        "emotion": {"type": "string", "minLength": 1},
+        "foreshadowing": {"type": "string"},
+        "sources": {"$ref": "#/$defs/sources"}
+      }
+    }
+  }
+}
