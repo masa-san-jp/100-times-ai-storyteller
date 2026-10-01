@@ -152,6 +152,14 @@ world_counts:
   people: [5, 10, 20, 50, 100]
   future: [3, 3, 3, 3, 3]
 
+# 分量の最低ライン（ADR-0007）に掛ける、規模ごとの倍率（story-pipeline.md §8）。
+volume_multiplier:
+  vignette: 1
+  short: 1
+  novella: 2
+  novel: 4
+  saga: 8
+
 parts:
   min: 2
   max: 6

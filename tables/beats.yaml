@@ -1,0 +1,33 @@
+# 場面（beat）の働き。S7.detail が、出来事ごとの場面の数に応じて、この並びから各場面の働きを割り当てる
+# （story-pipeline.md §2 S7.detail、§8）。基本の並びは「発端・展開・転換・余韻」の4つで、場面数が4を
+# 超える場合は「展開」を繰り返して埋める。場面数が4未満の場合は short_sequences の並びを使う。
+
+beats:
+  - id: opening
+    name: 発端
+    definition: 出来事の発端となる状況や行動を示し、何が起ころうとしているかを分からせる場面。
+    repeatable: false
+  - id: development
+    name: 展開
+    definition: 発端から転換へ向けて、状況や人物の行動が進展していく過程を示す場面。場面数に応じて繰り返す。
+    repeatable: true
+  - id: turn
+    name: 転換
+    definition: 出来事の結果を決定づける、決定的な行動や変化を示す場面。
+    repeatable: false
+  - id: aftermath
+    name: 余韻
+    definition: 転換の結果が人物や周囲に残す影響、その場に残る余韻を示す場面。
+    repeatable: false
+
+# 場面数が4以上のときの基本の並び。4を超えた分は development を1つずつ増やして埋める。
+sequence: [opening, development, turn, aftermath]
+
+# 場面数が4未満のときの並び（development を省いて骨子を保つ）。
+short_sequences:
+  - scene_count: 1
+    beats: [opening]
+  - scene_count: 2
+    beats: [opening, aftermath]
+  - scene_count: 3
+    beats: [opening, turn, aftermath]

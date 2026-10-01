@@ -53,6 +53,14 @@ _TABLE_SPECS: dict[str, tuple[Path, Path]] = {
         Path("tables/cliches.yaml"),
         _TABLE_SCHEMA_ROOT / "cliches.schema.json",
     ),
+    "volume": (
+        Path("tables/volume.yaml"),
+        _TABLE_SCHEMA_ROOT / "volume.schema.json",
+    ),
+    "beats": (
+        Path("tables/beats.yaml"),
+        _TABLE_SCHEMA_ROOT / "beats.schema.json",
+    ),
 }
 _ELEMENT_SCHEMA = _TABLE_SCHEMA_ROOT / "elements.schema.json"
 

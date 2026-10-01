@@ -33,6 +33,8 @@ def test_all_phase_one_tables_are_loaded_and_schema_validated():
         "common_words",
         "roles",
         "cliches",
+        "volume",
+        "beats",
     }
     assert set(tables["elements"]) == {
         "want",
@@ -268,6 +270,44 @@ def test_table_loader_reports_schema_errors(tmp_path: Path):
 
     with pytest.raises(SchemaValidationError):
         load_table("common_words", repository_root=tmp_path)
+
+
+def test_volume_table_has_the_adr_0007_floor_and_the_spec_task_ranges():
+    volume = load_table("volume", repository_root=ROOT)
+
+    assert volume["floor_chars"] == {"characters": 10000, "world": 100000, "story": 100000}
+    assert volume["task_chars"]["story_beat"] == [1500, 2500]
+    assert volume["task_chars"]["world_facet"] == [800, 1500]
+    assert volume["task_chars"]["world_list_item"] == [600, 1200]
+    assert set(volume["task_chars"]["character"]) == {
+        "profile", "backstory", "relationship", "appearance", "personality",
+        "values", "voice", "inner_conflict", "motive", "intro", "catchphrase",
+    }
+    assert all(
+        bounds[0] < bounds[1]
+        for bounds in volume["task_chars"]["character"].values()
+    )
+    assert volume["character_weight"] == {"protagonist": 3, "default": 1}
+
+
+def test_scale_volume_multiplier_covers_every_preset():
+    scales = load_table("scales", repository_root=ROOT)
+
+    assert set(scales["volume_multiplier"]) == set(scales["presets"])
+    assert scales["volume_multiplier"] == {
+        "vignette": 1, "short": 1, "novella": 2, "novel": 4, "saga": 8,
+    }
+
+
+def test_beats_table_sequences_only_reference_known_beats():
+    beats_table = load_table("beats", repository_root=ROOT)
+    beat_ids = {beat["id"] for beat in beats_table["beats"]}
+
+    assert set(beats_table["sequence"]) <= beat_ids
+    assert {beat["id"] for beat in beats_table["beats"] if beat["repeatable"]} == {"development"}
+    for entry in beats_table["short_sequences"]:
+        assert set(entry["beats"]) <= beat_ids
+        assert len(entry["beats"]) == entry["scene_count"]
 
 
 def test_table_schemas_are_valid_json_schema_documents():

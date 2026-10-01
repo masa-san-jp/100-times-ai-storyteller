@@ -1,0 +1,30 @@
+# 分量の最低ライン（ADR-0007）と、1タスクの字数の目安（story-pipeline.md §8）。
+# floor_chars は資料ごとの最低ライン（規模倍率1の場合、全人物の合計・世界全体・物語全体の文字数）。
+# task_chars は、1タスクの出力の字数の目安 [min, max]。目安の中央値を、配分の計算（タスク数の算出）に使う。
+
+floor_chars:
+  characters: 10000
+  world: 100000
+  story: 100000
+
+task_chars:
+  story_beat: [1500, 2500]
+  world_facet: [800, 1500]
+  world_list_item: [600, 1200]
+  character:
+    profile: [800, 1500]
+    backstory: [1000, 2000]
+    relationship: [300, 600]
+    appearance: [400, 800]
+    personality: [500, 1000]
+    values: [400, 800]
+    voice: [400, 800]
+    inner_conflict: [500, 1000]
+    motive: [200, 400]
+    intro: [30, 50]
+    catchphrase: [15, 60]
+
+# 人物ごとの配分の重み。主人公に多く配分し、他の役には既定値を使う。
+character_weight:
+  protagonist: 3
+  default: 1
