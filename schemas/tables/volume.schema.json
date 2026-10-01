@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/tables/volume.schema.json",
+  "title": "Volume floor and per-task character-count targets",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["floor_chars", "task_chars", "character_weight"],
+  "properties": {
+    "floor_chars": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["characters", "world", "story"],
+      "properties": {
+        "characters": {"type": "integer", "minimum": 1},
+        "world": {"type": "integer", "minimum": 1},
+        "story": {"type": "integer", "minimum": 1}
+      }
+    },
+    "task_chars": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["story_beat", "world_facet", "world_list_item", "character"],
+      "properties": {
+        "story_beat": {"$ref": "#/$defs/range"},
+        "world_facet": {"$ref": "#/$defs/range"},
+        "world_list_item": {"$ref": "#/$defs/range"},
+        "character": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile", "backstory", "relationship", "appearance",
+            "personality", "values", "voice", "inner_conflict",
+            "motive", "intro", "catchphrase"
+          ],
+          "properties": {
+            "profile": {"$ref": "#/$defs/range"},
+            "backstory": {"$ref": "#/$defs/range"},
+            "relationship": {"$ref": "#/$defs/range"},
+            "appearance": {"$ref": "#/$defs/range"},
+            "personality": {"$ref": "#/$defs/range"},
+            "values": {"$ref": "#/$defs/range"},
+            "voice": {"$ref": "#/$defs/range"},
+            "inner_conflict": {"$ref": "#/$defs/range"},
+            "motive": {"$ref": "#/$defs/range"},
+            "intro": {"$ref": "#/$defs/range"},
+            "catchphrase": {"$ref": "#/$defs/range"}
+          }
+        }
+      }
+    },
+    "character_weight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protagonist", "default"],
+      "properties": {
+        "protagonist": {"type": "number", "exclusiveMinimum": 0},
+        "default": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  },
+  "$defs": {
+    "range": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "integer", "minimum": 1}
+    }
+  }
+}
