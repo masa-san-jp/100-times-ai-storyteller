@@ -32,7 +32,7 @@
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
-| `default_sources` | llm | 任意 | select の式の配列 | なし | `sources_exist` で正しい ID が1つも残らない場合に、出典として補う ID（例：S5 では `["{slot}"]`、その人物自身）。補った場合は manifest の `warnings` に記録する |
+| `default_sources` | llm | 任意 | ID の文字列の配列（`{slot}` はタスクの添字の最初の要素に置き換える） | なし | `sources_exist` で正しい ID が1つも残らない場合に、出典として補う ID（例：S5 では `["{slot}"]`、その人物自身）。補った場合は manifest の `warnings` に記録する |
 | `on_exhausted` | llm | 任意 | `fail` / `skip` | `fail` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
 | `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー |
 
