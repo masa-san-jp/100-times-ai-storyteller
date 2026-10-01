@@ -32,6 +32,7 @@
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
+| `on_exhausted` | llm | 任意 | `fail` / `skip` | `fail` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
 | `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー |
 
 - 表にない項目はエラーにする（`additionalProperties: false`）。
@@ -232,7 +233,7 @@ card:
 
 - 実行者が出力を作れなかった場合（LLMアダプタの接続の失敗、タイムアウト、空の応答）も、不合格と同じに扱う。理由には失敗の内容を書く。アダプタは、同じタスクを lease 切れまで放置して取り直すことを繰り返さない。
 - 不合格の場合、出力と理由を `attempts/<n>.json` に保存し、`tries` と `attempt` を1ずつ増やす。
-- `tries` が `max_attempts` に達していなければ `ready` に戻し、次のカードの「前回の不合格理由」に理由を書く。達していれば `failed` にする。
+- `tries` が `max_attempts` に達していなければ `ready` に戻し、次のカードの「前回の不合格理由」に理由を書く。達していれば、`on_exhausted` が `fail` なら `failed`、`skip` なら `skipped` にする。
 - `st retry` は、`failed` のタスクだけを対象とし（他の状態なら終了コード 1）、`tries` と `invalidations` と `continuation_step` を0に戻し、`error` を null にして（元の値は `history` に残す）、依存がすべて `done` または `skipped` なら `ready`、そうでなければ `blocked` にする。`partial.md` があれば削除し、`attempts/` は残す。`attempt` は戻さない（同じ seed の再利用を避けるため）。依存先のタスクは変更しない。コードタスクは自動では再試行しないが、`st retry` の対象にはなり、`ready` になった時点で再実行される。
 
 ### 6.4 固有名詞の検出（`no_new_proper_nouns`）

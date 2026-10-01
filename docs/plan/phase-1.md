@@ -86,7 +86,7 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `tables/element_axes.yaml` | `axes`：`key`・`name`・`definition`・`generation_rules`（S2 でその軸の要素を作るときの規則。heroes の生成規則と world-building の観点を軸ごとに書く） |
 | `tables/elements/<axis>.yaml` | `items`：オブジェクトの配列 `{"text": 日本語, "source": 原文（先行リポジトリ由来の場合）}`。ID は `<axis>:t<1から始まる行番号>`。heroes 由来の軸は heroes の全件（want 100・ability 100・duty 99・age 16・gender 10・species 50）、それ以外の軸は各100件。heroes に由来しない軸は、表層から深層まで、また観点を散らして書き、似た要素を並べない |
 | `tables/roles.yaml` | `roles`：`id`（protagonist・messenger・supporter・adversary・bystander）・`name`・`definition`（heros-journey・world-building の役の定義の文章） |
-| `tables/cliches.yaml` | `phrases`：S2 で使わない、ありきたりな表現の一覧（heroes の禁止例を含む） |
+| `tables/cliches.yaml` | `phrases`：S2 で使わない、ありきたりな表現の一覧（heroes の禁止例を含む）。各項目は2文字以上の句とし、普通の語の一部に一致する1文字の語（「火」「闇」など）を置かない |
 | `tables/name_sounds.yaml` | `sets`：`id`・`description`・`sounds`（カタカナの音節、12個以上） |
 | `tables/common_words.yaml` | `words`：文字列の配列 |
 | `config/models.yaml` | `models`：モデル名ごとに `provider`・`endpoint`（既定 `http://127.0.0.1:11434`）・`temperature`・`max_tokens`・`context_length`・`json_mode`・`think`（推論の深さ。Ollama の `think` にそのまま渡す：`false`・`low`・`medium`・`high`。省略時は送らない）・`timeout_seconds`（既定 600） |
