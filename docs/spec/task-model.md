@@ -28,10 +28,11 @@
 | `max_input_chars` | llm | 任意 | 1以上の整数 | 3000 | タスクカードの「入力」節の文字数予算（文字数の数え方は §3.3） |
 | `candidates` | llm | 任意 | 1以上の整数 | 1 | §7 |
 | `select_candidate` | llm | 任意 | `random` / `least_similar` | `random` | §7 |
-| `max_attempts` | llm | 任意 | 1以上の整数 | 3 | §6.3 |
+| `max_attempts` | llm | 任意 | 1以上の整数 | 5 | §6.3 |
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
+| `default_sources` | llm | 任意 | select の式の配列 | なし | `sources_exist` で正しい ID が1つも残らない場合に、出典として補う ID（例：S5 では `["{slot}"]`、その人物自身）。補った場合は manifest の `warnings` に記録する |
 | `on_exhausted` | llm | 任意 | `fail` / `skip` | `fail` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
 | `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー |
 
@@ -225,7 +226,7 @@ card:
 | `count` | `field`, `n` または `min`・`max` | 配列の件数が n、または min 以上 max 以下 |
 | `ids_subset` | `field`, `slot` | 配列の各IDが、指定した入力スロットに含まれるIDの部分集合 |
 | `uses_given` | `field`, `slot`, `n` | 文字列が、指定した入力スロットの要素のうち n 個以上を部分文字列として含む |
-| `ends_complete` | `field`（任意） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか |
+| `ends_complete` | `field`（任意）, `fix`（任意、`append`） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか。`fix: append` の場合は、満たさないとき末尾に「。」を補って合格とし、manifest の `warnings` に記録する（1文で完結する短い項目に使う。途中で切れた長文には使わない） |
 | `avoid_listed` | `fields`（任意）, `table`（例：`tables/cliches.yaml`） | 指定したテーブルの表現を、正規化後の部分文字列として含まない |
 | `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` では `sources` を除くすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
 
