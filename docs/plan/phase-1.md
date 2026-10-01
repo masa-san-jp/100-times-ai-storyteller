@@ -27,7 +27,11 @@
 | P1-12 | `st workspace init`（`--data-dir`, `--agent`）、実行者プロトコルのテンプレートと一致検査、README の「実行者として動かす」節（`uv tool install` による導入手順）、Claude Code / Codex の読み取り禁止の権限設定。実機検証の結果を architecture §4 に追記する | P0-15 | architecture §4, executor-protocol, ADR-0004 | ワークスペース外の読み取りが両製品で拒否される。リポジトリ内のパスが拒否される |
 | P1-13 | LLMアダプタ（`ollama`）、`st auto`、`config/models.yaml`、`json_mode` の段階的な切り替えと `adapters/state.json`、localhost 以外の拒否 | P0-15 | architecture §5, task-model §6.5 | 空応答が2回続くと json_mode が切り替わり、別プロセスの `st auto` にも反映される |
 | P1-14 | 固有名詞の検出（P0-10 で実装済み。全タスクを `warn` で運用）の誤検出率を、Phase 1 の end-to-end の出力で測り、`tables/common_words.yaml` を整備し、5% 未満のタスクを `fail` に切り替える | P1-11 | task-model §6.4 | 測定結果と、`tables/common_words.yaml`・タスク定義の更新がプルリクエストに記録されている |
-| P1-15 | end-to-end：ローカルモデルとコーディングエージェントでの短編の完走。開発者が書いた自由入力による生成例を `examples/` に置く | P1-11, P1-12, P1-13 | ROADMAP Phase 1 | 完了条件 1〜4 |
+| P1-16 | 分量の基盤：`tables/volume.yaml`（項目ごとの1タスクの字数の目安、人物の重み）、`tables/beats.yaml`（場面の働き）、`tables/scales.yaml` の `volume_multiplier`、分量の配分の計算（manifest の `scale.derived.volume`）、S9 の文型の修正（句読点・`ため`の重複、役の日本語名）と `characters.md`・`world.md` の出力、分量の集計と警告 | P1-15（前半） | story-pipeline §6, §8、ADR-0007 | 配分の計算が各規模で最低ラインを満たすタスク数を出す。文型に重複が出ない |
+| P1-17 | S5 の項目の拡張（personality・values・backstory・relationships・voice・inner_conflict）と、分量の配分に従う字数 | P1-16 | story-pipeline S5, §8 | 人物資料の合計が最低ラインを満たすタスクが作られる |
+| P1-18 | S4 の面（facet）への分割、面と一覧型の項目への要素の割当、一覧型の項目の名前を音から組み立てる | P1-16 | story-pipeline S4, §5, §8 | 世界資料が最低ラインを満たすタスクが作られる。同じ観点の面に異なる要素が割り当てられる |
+| P1-19 | S7.detail（場面の詳述）と、S9 での組み立て | P1-16 | story-pipeline S7.detail, S9, §8 | 物語が最低ラインを満たすタスクが作られる |
+| P1-15 | end-to-end：ローカルモデルとコーディングエージェントでの短編の完走（P1-16〜P1-19 の後、分量の最低ラインを満たすこと）。開発者が書いた自由入力による生成例を `examples/` に置く | P1-11, P1-12, P1-13 | ROADMAP Phase 1 | 完了条件 1〜4 |
 
 ## 順序
 
@@ -54,7 +58,7 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S2.expand-m<3桁>-<axis>` | L | S2.plan | 要素5件と対極要素 |
 | `S2.merge` | C | S2.expand すべて | 入力由来プール（ID つき） |
 | `S3.assign` | C | S2.merge | assignment。S4・S5・S6 を追加 |
-| `S4.section-<section id>` | L | S3.assign、前提セクションのタスク | 世界セクション（`single`） |
+| `S4.section-<section id>-<観点番号>-f<面番号>` | L | S3.assign、前提セクションのタスク | 世界セクションの観点の1面（`single`） |
 | `S4.item-<section id>-<3桁>` | L | S3.assign、前提セクションのタスク | 一覧型セクションの項目（`list`） |
 | `S5.name-c<n>` | L | S3.assign | 名前 |
 | `S5.profile-c<n>` | L | S5.name-c<n> | プロフィール |
@@ -66,7 +70,8 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S8.plan-e<3桁>` | C | そのスロットと、時系列でそれより前のすべてのスロットの S7 | 比較相手を決め、S8.compare と S8.judge を追加 |
 | `S8.compare-e<3桁>-k<n>` | L | S8.plan-e<3桁> | 矛盾の有無 |
 | `S8.judge-e<3桁>` | C | そのスロットの S8.compare すべて（比較相手がなければ S8.plan） | 必要なら S7 を無効化 |
-| `S9.assemble` | C | S8.judge すべて | story.json、story.md |
+| `S7.detail-e<3桁>-b<番号>` | L | そのスロットの S8.judge、同じ出来事の直前の場面 | 場面の詳述 |
+| `S9.assemble` | C | S7.detail すべて | story.json、story.md、characters.md、world.md |
 
 - S0 はタスクではなく、`st new` の中で同期的に行う（入力の検証・正規化・規模の計算・manifest と最初のタスクの作成）。
 - Phase 1 では `candidates: 1` のため、候補を選ぶタスクはない。S2 の run 間共有と増補テーブルへの追記は行わない（P2-04）。

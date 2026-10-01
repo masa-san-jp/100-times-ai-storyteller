@@ -50,6 +50,7 @@
 | 筋ごとの構造テンプレート | プロット型と、筋に配分された出来事数から決める（[story-pipeline.md](story-pipeline.md) §4.2） | S3 |
 | 生成する世界セクション | `space` と `change` の段階の大きい方を n として、[`tables/scales.yaml`](../../tables/scales.yaml) の `world_sections_by_level` にある段階0から n までのセクションをすべて生成する（累積） | S4 |
 | 要素プールの必要量 | 軸ごとに、S3 で割り当てる個数 × 3（候補倍率） | S2 |
+| 資料と物語の分量 | 最低ライン（ADR-0007）× `volume_multiplier`。配分は [story-pipeline.md](story-pipeline.md) §8 | S0, S3, S6 |
 | 様式化したときの分量 | 様式プロファイルの「出来事1件あたりの分量」× 出来事数 | F0 |
 
 派生値はすべて `st new` の時点で計算し、manifest に記録する。
