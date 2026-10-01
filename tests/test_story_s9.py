@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -37,43 +38,148 @@ def _context(tmp_path: Path, outputs: dict[str, object], run_input: object) -> S
     return SimpleNamespace(run_id=run_id, task_id="S9.assemble", task={}, definition=definition, inputs={}, run_input=run_input, outputs=outputs, dependency_outputs=outputs, data_dir=tmp_path, run_dir=orchestrator.run_dir(run_id))
 
 
-def test_s9_assembles_canonical_story_and_clears_last_foreshadowing(tmp_path: Path) -> None:
+def _base_outputs(events: dict[str, dict[str, object]]) -> dict[str, object]:
     assignment = _assignment()
-    slots = {"slots": [{"id": f"e{n:03d}", "thread": "t001", "stage": {"id": "start", "name": "始まり"}} for n in range(1, 4)]}
+    slots = {
+        "slots": [
+            {"id": event_id, "thread": "t001", "stage": {"id": "start", "name": "始まり"}}
+            for event_id in events
+        ]
+    }
     outputs: dict[str, object] = {
         "S3.assign": assignment,
         "S6.expand": slots,
         "S4.section-place": {"body": "水路の町の描写", "sources": ["place:t1"]},
     }
-    for event_id in ("e001", "e002", "e003"):
-        outputs[f"S7.event-{event_id}"] = {"when": "朝", "where": "水路", "who": ["c1"], "why": "道を確かめる", "intent": "進む", "what": "歩いた", "result": "道が開いた", "emotion": "安心", "foreshadowing": "次の兆し", "sources": ["c1"]}
-    for field, value in {"name": "カナ", "profile": "旅を続ける人物。", "intro": "道を探す旅人。", "appearance": "短い髪と外套。", "motive": "道を確かめたい。", "catchphrase": "私は進む。"}.items():
+    for event_id, event in events.items():
+        outputs[f"S7.event-{event_id}"] = event
+    for field, value in {
+        "name": "カナ",
+        "profile": "旅を続ける人物。",
+        "intro": "道を探す旅人。",
+        "appearance": "短い髪と外套。",
+        "motive": "道を確かめたい。",
+        "catchphrase": "私は進む。",
+    }.items():
         outputs[f"S5.{field}-c1"] = {field: value, "sources": ["c1"]}
     outputs["S5.name-c1"] = {"name": "カナ", "reading": "カナ", "sources": ["sound-01"]}
+    return outputs
+
+
+def _event(**overrides: object) -> dict[str, object]:
+    event = {
+        "when": "朝",
+        "where": "水路",
+        "who": ["c1"],
+        "why": "道を確かめる",
+        "intent": "進む",
+        "what": "歩いた",
+        "result": "道が開いた",
+        "emotion": "安心",
+        "foreshadowing": "次の兆し",
+        "sources": ["c1"],
+    }
+    event.update(overrides)
+    return event
+
+
+def test_s9_assembles_three_canonical_files_and_clears_last_foreshadowing(tmp_path: Path) -> None:
+    events = {f"e{n:03d}": _event() for n in range(1, 4)}
+    outputs = _base_outputs(events)
 
     context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": [{"id": "p001", "text": "旅の素材"}]})
     story_s9_assemble(context)
-    story_path = context.run_dir / "story" / "story.json"
-    markdown_path = context.run_dir / "story" / "story.md"
-    import json
-    with story_path.open("r", encoding="utf-8") as stream:
-        story = json.load(stream)
+    story_dir = context.run_dir / "story"
+    story = json.loads((story_dir / "story.json").read_text(encoding="utf-8"))
     validate_document(story, ROOT / "schemas/story.schema.json")
     assert story["events"][-1]["foreshadowing"] == ""
-    assert markdown_path.read_text(encoding="utf-8").index("## 登場人物") < markdown_path.read_text(encoding="utf-8").index("## 世界") < markdown_path.read_text(encoding="utf-8").index("## 出来事")
+
+    story_md = (story_dir / "story.md").read_text(encoding="utf-8")
+    characters_md = (story_dir / "characters.md").read_text(encoding="utf-8")
+    world_md = (story_dir / "world.md").read_text(encoding="utf-8")
+
+    # story.md は出来事だけを並べ、人物・世界の節は別ファイルに分かれる。
+    assert "## 登場人物" not in story_md
+    assert "## 世界" not in story_md
+    assert "1. " in story_md
+    assert "## カナ" in characters_md
+    assert "## 場の描写" in world_md
+
+
+def test_s9_translates_role_to_japanese(tmp_path: Path) -> None:
+    events = {"e001": _event()}
+    outputs = _base_outputs(events)
+    context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
+    story_s9_assemble(context)
+    characters_md = (context.run_dir / "story" / "characters.md").read_text(encoding="utf-8")
+    assert "主人公" in characters_md
+    assert "protagonist" not in characters_md
+
+
+def test_s9_includes_present_s5_items_in_characters_markdown(tmp_path: Path) -> None:
+    events = {"e001": _event()}
+    outputs = _base_outputs(events)
+    context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
+    story_s9_assemble(context)
+    characters_md = (context.run_dir / "story" / "characters.md").read_text(encoding="utf-8")
+    assert "プロフィール：旅を続ける人物。" in characters_md
+    assert "動機：道を確かめたい。" in characters_md
+    assert "紹介：道を探す旅人。" in characters_md
+    assert "外見：短い髪と外套。" in characters_md
+    assert "決め台詞：私は進む。" in characters_md
+    # S5 の新項目（personality など）はまだ存在しないので、見出しごと出ない。
+    assert "性格" not in characters_md
+
+
+def test_s9_sentence_template_avoids_duplicated_endings(tmp_path: Path) -> None:
+    events = {
+        "e001": _event(
+            when="祭りの夜。",
+            where="水路の近く、",
+            why="大切な人を守るため",
+            what="橋を渡った。",
+            result="道が開けた、",
+        ),
+        "e002": _event(why="事情を確かめたいから"),
+        "e003": _event(why="約束を果たすために"),
+    }
+    outputs = _base_outputs(events)
+    context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
+    story_s9_assemble(context)
+    story_md = (context.run_dir / "story" / "story.md").read_text(encoding="utf-8")
+    assert "ためために" not in story_md
+    assert "からために" not in story_md
+    assert "。、" not in story_md
+    assert "、。" not in story_md
+    assert "、、" not in story_md
+    assert "大切な人を守るために" in story_md
+    assert "事情を確かめたいために" in story_md
+    assert "約束を果たすために" in story_md
+
+
+def test_s9_aggregates_volume_and_records_shortfall_warnings(tmp_path: Path) -> None:
+    events = {"e001": _event()}
+    outputs = _base_outputs(events)
+    context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
+    result = story_s9_assemble(context)
+
+    story = json.loads((context.run_dir / "story" / "story.json").read_text(encoding="utf-8"))
+    volume = story["meta"]["volume"]
+    for key, floor in (("characters", 10000), ("world", 100000), ("story", 100000)):
+        assert volume[key]["floor_chars"] == floor
+        assert 0 < volume[key]["chars"] < floor
+
+    warnings = result.manifest_updates.get("warnings", [])
+    assert any(warning.startswith("分量が最低ラインに満たない：人物 ") for warning in warnings)
+    assert any(warning.startswith("分量が最低ラインに満たない：世界 ") for warning in warnings)
+    assert any(warning.startswith("分量が最低ラインに満たない：物語 ") for warning in warnings)
+    for key, label in (("characters", "人物"), ("world", "世界"), ("story", "物語")):
+        expected = f"分量が最低ラインに満たない：{label} {volume[key]['chars']}/{volume[key]['floor_chars']}"
+        assert expected in warnings
 
 
 def test_s9_rejects_unknown_event_reference(tmp_path: Path) -> None:
-    assignment = _assignment()
-    outputs: dict[str, object] = {
-        "S3.assign": assignment,
-        "S6.expand": {"slots": [{"id": "e001", "thread": "t001", "stage": {"id": "start", "name": "始まり"}}]},
-        "S4.section-place": {"body": "水路の町の描写", "sources": ["place:t1"]},
-        "S7.event-e001": {"when": "朝", "where": "水路", "who": ["c999"], "why": "進む", "intent": "進む", "what": "歩いた", "result": "変化", "emotion": "驚き", "foreshadowing": "", "sources": ["c1"]},
-    }
-    for field, value in {"name": "カナ", "profile": "旅を続ける人物。", "intro": "道を探す旅人。", "appearance": "短い髪と外套。", "motive": "道を確かめたい。", "catchphrase": "私は進む。"}.items():
-        outputs[f"S5.{field}-c1"] = {field: value, "sources": ["c1"]}
-    outputs["S5.name-c1"] = {"name": "カナ", "reading": "カナ", "sources": ["sound-01"]}
+    outputs = _base_outputs({"e001": _event(who=["c999"], sources=["c1"])})
     context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
     try:
         story_s9_assemble(context)
