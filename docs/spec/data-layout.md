@@ -55,7 +55,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
       claim.json                  # claim 中のみ存在
       output.json | output.md     # 合格した出力
       attempts/<n>.json           # 不合格の試行（出力・理由・実行者ID・時刻）
-    story/story.json, story.md    # 正本
+    story/story.json, story.md, characters.md, world.md    # 正本
     formats/<name>/…              # 様式化の出力
 ```
 
