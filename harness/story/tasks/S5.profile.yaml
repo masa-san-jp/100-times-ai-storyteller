@@ -49,3 +49,4 @@ validate:
         field: profile
         n: 300
 max_input_chars: 3000
+default_sources: ["{slot}"]

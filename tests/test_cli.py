@@ -337,7 +337,7 @@ def test_subprocess_exit_codes_cover_success_no_task_and_submission_states(tmp_p
     failed_data = tmp_path / "failed"
     failed_run = _new_dummy(failed_data, seed=9)
     failed_task_id = ""
-    for _ in range(3):
+    for _ in range(5):
         failed_claim = _claim(failed_data, failed_run)
         if not failed_task_id:
             failed_task_id = _task_id_for_ticket(

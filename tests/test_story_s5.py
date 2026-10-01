@@ -29,6 +29,44 @@ def test_all_s5_task_definitions_and_schemas_are_valid() -> None:
         assert (ROOT / schema_ref).is_file()
 
 
+def test_s5_default_sources_recovers_from_the_protagonist_s_id_instead_of_the_character_s_own_id() -> None:
+    # Observed with gpt-oss:20b on S5.intro-c2: the executor cites the
+    # protagonist's ID (c1) instead of its own subject (c2), which is never
+    # shown as an ID on the card, and the task would otherwise fail forever.
+    protagonist = _character("protagonist", "c1", "主人公固有")
+    other = _character("adversary", "c2", "他者固有")
+    for task_name, field in (
+        ("profile", "profile"),
+        ("intro", "intro"),
+        ("appearance", "appearance"),
+        ("motive", "motive"),
+        ("catchphrase", "catchphrase"),
+    ):
+        definition = load_task(task_name)
+        assert definition["default_sources"] == ["{slot}"]
+        recovered = validate_output(
+            definition,
+            json.dumps(
+                {field: "他者の短い説明文。", "sources": ["c1"]}, ensure_ascii=False
+            ),
+            inputs=_s5_inputs(
+                "他者名",
+                other,
+                protagonist_name=protagonist["name_sound"]["description"],
+            ),
+            harness_root=ROOT,
+            index=["c2"],
+        )
+        assert recovered.passed, recovered.errors
+        assert recovered.value["sources"] == ["c2"]
+        assert "出典を補完: ['c2']" in recovered.warnings
+
+
+def test_s5_name_has_no_default_sources_since_its_subject_is_a_name_sound_set() -> None:
+    definition = load_task("name")
+    assert "default_sources" not in definition
+
+
 def test_s5_name_rejects_a_reading_that_does_not_use_two_given_sounds() -> None:
     definition = load_task("name")
     sound_set = {
@@ -55,19 +93,23 @@ def test_s5_name_rejects_a_reading_that_does_not_use_two_given_sounds() -> None:
     assert any("uses_given" in error for error in rejected.errors)
 
 
-def test_s5_one_sentence_items_must_end_complete() -> None:
+def test_s5_one_sentence_items_complete_the_sentence_instead_of_failing() -> None:
     character = _character("protagonist", "c1", "主人公固有")
     for task_name, field in (("intro", "intro"), ("catchphrase", "catchphrase")):
         definition = load_task(task_name)
-        assert {"ends_complete": {"field": field}} in definition["validate"]["checks"]
-        incomplete = validate_output(
+        assert {
+            "ends_complete": {"field": field, "fix": "append"}
+        } in definition["validate"]["checks"]
+        fixed = validate_output(
             definition,
             json.dumps({field: "文の途中", "sources": ["c1"]}, ensure_ascii=False),
             inputs=_s5_inputs("本人名", character),
             harness_root=ROOT,
+            index=["c1"],
         )
-        assert not incomplete.passed
-        assert any("ends_complete" in error for error in incomplete.errors)
+        assert fixed.passed, fixed.errors
+        assert fixed.value[field] == "文の途中。"
+        assert "文末を補完" in fixed.warnings
 
 
 def _character(role: str, character_id: str, marker: str) -> dict[str, object]:

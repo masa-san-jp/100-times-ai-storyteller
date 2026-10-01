@@ -60,7 +60,7 @@
     "max_attempts": {
       "type": "integer",
       "minimum": 1,
-      "default": 3
+      "default": 5
     },
     "max_invalidations": {
       "type": "integer",
@@ -75,6 +75,14 @@
       "type": "number",
       "exclusiveMinimum": 0,
       "default": 30
+    },
+    "default_sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "on_exhausted": {
       "type": "string",
@@ -106,6 +114,7 @@
             {"required": ["max_invalidations"]},
             {"required": ["share_across_runs"]},
             {"required": ["lease_minutes"]},
+            {"required": ["default_sources"]},
             {"required": ["on_exhausted"]},
             {"required": ["continuation"]}
           ]
@@ -240,7 +249,8 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "field": {"type": "string", "minLength": 1}
+                "field": {"type": "string", "minLength": 1},
+                "fix": {"type": "string", "enum": ["append"]}
               }
             },
             "avoid_listed": {"$ref": "#/$defs/avoid-listed-check"},

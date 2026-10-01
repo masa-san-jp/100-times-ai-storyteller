@@ -219,8 +219,8 @@ def test_auto_records_adapter_failure_as_attempt_and_releases_claim(tmp_path: Pa
     manifest = orchestrator.load_run(run_id)
     task = manifest["tasks"]["D2.echo-d1"]
     assert task["state"] == "failed"
-    assert task["tries"] == 3
-    assert task["attempt"] == 3
+    assert task["tries"] == 5
+    assert task["attempt"] == 5
     assert task["claim"] is None
     attempt = json.loads(
         (
@@ -230,7 +230,7 @@ def test_auto_records_adapter_failure_as_attempt_and_releases_claim(tmp_path: Pa
             / "tasks"
             / "D2.echo-d1"
             / "attempts"
-            / "3.json"
+            / "5.json"
         ).read_text(encoding="utf-8")
     )
     assert "3回失敗" in attempt["reason"]
@@ -261,8 +261,8 @@ def test_auto_records_empty_response_as_attempt_and_releases_claim(tmp_path: Pat
 
     task = orchestrator.load_run(run_id)["tasks"]["D2.echo-d1"]
     assert task["state"] == "failed"
-    assert task["tries"] == 3
-    assert task["attempt"] == 3
+    assert task["tries"] == 5
+    assert task["attempt"] == 5
     assert task["claim"] is None
     assert "本文が空" in task["error"]
 

@@ -265,6 +265,29 @@ def test_submit_reaches_failed_at_max_attempts_and_retry_resets_counters(
     assert task["error"] is None
 
 
+def test_submit_defaults_max_attempts_to_five_when_omitted(tmp_path: Path) -> None:
+    clock = Clock()
+    definition = llm_definition()
+    assert "max_attempts" not in definition
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": definition}, clock=clock)
+    run_id = orchestrator.create_run(seed=1, input_data={"given": "a"})
+    for attempt in range(1, 5):
+        claimed = orchestrator.claim_next(run_id, executor_id="worker")
+        assert claimed is not None
+        result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+        assert not result.accepted
+        task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
+        assert task["state"] == "ready", f"attempt {attempt} should not exhaust yet"
+
+    claimed = orchestrator.claim_next(run_id, executor_id="worker")
+    assert claimed is not None
+    result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+    assert not result.accepted
+    task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
+    assert task["tries"] == 5
+    assert task["state"] == "failed"
+
+
 def test_submit_skips_at_max_attempts_when_on_exhausted_is_skip_and_unblocks_dependents(
     tmp_path: Path,
 ) -> None:

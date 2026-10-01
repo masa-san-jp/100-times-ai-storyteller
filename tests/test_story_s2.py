@@ -164,7 +164,7 @@ def test_s2_merge_skips_exhausted_expand_task_and_s3_assign_still_runs(
 
     # Drive one S2.expand task to exhaustion with schema-invalid submissions
     # (too few items) so it is skipped instead of stalling the whole run.
-    for _ in range(3):
+    for _ in range(5):
         claim = orchestrator.claim_task(run_id, exhausted_id, executor_id="dummy")
         result = orchestrator.submit(
             claim["ticket"],

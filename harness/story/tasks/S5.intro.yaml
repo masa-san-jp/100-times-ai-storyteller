@@ -46,7 +46,9 @@ validate:
     - sources_exist
     - ends_complete:
         field: intro
+        fix: append
     - max_chars:
         field: intro
         n: 50
 max_input_chars: 3000
+default_sources: ["{slot}"]

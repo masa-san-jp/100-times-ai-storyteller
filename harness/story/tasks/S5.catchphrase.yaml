@@ -50,4 +50,6 @@ validate:
     - sources_exist
     - ends_complete:
         field: catchphrase
+        fix: append
 max_input_chars: 3000
+default_sources: ["{slot}"]

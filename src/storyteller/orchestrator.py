@@ -747,6 +747,7 @@ class Orchestrator:
                 inputs=inputs,
                 harness_root=self.definition_root,
                 common_words_path=self.repository_root / "tables" / "common_words.yaml",
+                index=task["index"],
             )
         return self._commit_submission(
             ticket,
@@ -885,7 +886,7 @@ class Orchestrator:
             task["cache_key"] = None
             task["claim"] = None
             task_definition = self.task_definitions[task["type"]]
-            max_attempts = int(task_definition.get("max_attempts", 3))
+            max_attempts = int(task_definition.get("max_attempts", 5))
             exhausted = task["tries"] >= max_attempts
             on_exhausted = task_definition.get("on_exhausted", "fail")
             if exhausted and on_exhausted == "skip":

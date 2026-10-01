@@ -261,6 +261,11 @@ def test_yaml_parse_errors_are_wrapped(tmp_path):
         load_yaml(path, TASK_SCHEMA)
 
 
+def test_task_definition_schema_defaults_max_attempts_to_five():
+    schema = json.loads(TASK_SCHEMA.read_text(encoding="utf-8"))
+    assert schema["properties"]["max_attempts"]["default"] == 5
+
+
 def test_schemas_are_valid_draft_2020_12_schemas():
     # Loading the schemas through the common path exercises schema checking;
     # this also prevents an invalid schema from hiding behind an empty test.
@@ -269,13 +274,16 @@ def test_schemas_are_valid_draft_2020_12_schemas():
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
 
 
-def output_task(output="json", checks=None, schema=None):
+def output_task(output="json", checks=None, schema=None, default_sources=None):
     validation = {}
     if checks is not None:
         validation["checks"] = checks
     if schema is not None:
         validation["schema"] = schema
-    return {"output": output, "validate": validation}
+    task = {"output": output, "validate": validation}
+    if default_sources is not None:
+        task["default_sources"] = default_sources
+    return task
 
 
 def test_json_output_is_rescued_from_surrounding_text_and_ignores_braces_in_strings():
@@ -395,6 +403,51 @@ def test_sources_exist_rejects_when_all_ids_are_unknown() -> None:
     assert any("有効な出典 ID がありません" in error for error in result.errors)
 
 
+def test_default_sources_fills_in_the_task_s_own_id_when_no_source_survives() -> None:
+    task = output_task(checks=["sources_exist"], default_sources=["{slot}"])
+
+    result = validate_output(
+        task,
+        '{"sources": ["c1"]}',
+        inputs={"character": {"id": "c2"}},
+        index=["c2"],
+    )
+
+    assert result.passed
+    assert result.value == {"sources": ["c2"]}
+    assert result.warnings == (
+        "未知の出典 ID を除去: ['c1']",
+        "出典を補完: ['c2']",
+    )
+
+
+def test_default_sources_does_not_run_when_a_valid_source_already_survives() -> None:
+    task = output_task(checks=["sources_exist"], default_sources=["{slot}"])
+
+    result = validate_output(
+        task,
+        '{"sources": ["c2"]}',
+        inputs={"character": {"id": "c2"}},
+        index=["c2"],
+    )
+
+    assert result.passed
+    assert result.value == {"sources": ["c2"]}
+    assert result.warnings == ()
+
+
+def test_sources_exist_still_fails_without_default_sources() -> None:
+    result = validate_output(
+        output_task(checks=["sources_exist"]),
+        '{"sources": ["c1"]}',
+        inputs={"character": {"id": "c2"}},
+        index=["c2"],
+    )
+
+    assert not result.passed
+    assert any("有効な出典 ID がありません" in error for error in result.errors)
+
+
 @pytest.mark.parametrize(
     ("check", "good", "bad"),
     [
@@ -449,6 +502,44 @@ def test_each_output_check_accepts_and_rejects_examples(check, good, bad):
     bad_raw = bad if output == "text" else json.dumps(bad, ensure_ascii=False)
     assert validate_output(task, good_raw, inputs=inputs).passed
     assert not validate_output(task, bad_raw, inputs=inputs).passed
+
+
+def test_ends_complete_fix_append_completes_the_sentence_and_warns() -> None:
+    task = output_task(
+        output="json",
+        checks=[{"ends_complete": {"field": "intro", "fix": "append"}}],
+    )
+
+    result = validate_output(task, '{"intro": "文の途中"}')
+
+    assert result.passed
+    assert result.value == {"intro": "文の途中。"}
+    assert result.warnings == ("文末を補完",)
+
+
+def test_ends_complete_fix_append_does_nothing_when_already_complete() -> None:
+    task = output_task(
+        output="json",
+        checks=[{"ends_complete": {"field": "intro", "fix": "append"}}],
+    )
+
+    result = validate_output(task, '{"intro": "文は完結。"}')
+
+    assert result.passed
+    assert result.value == {"intro": "文は完結。"}
+    assert result.warnings == ()
+
+
+def test_ends_complete_without_fix_still_rejects_an_incomplete_sentence() -> None:
+    task = output_task(
+        output="json",
+        checks=[{"ends_complete": {"field": "intro"}}],
+    )
+
+    result = validate_output(task, '{"intro": "文の途中"}')
+
+    assert not result.passed
+    assert result.value == {"intro": "文の途中"}
 
 
 def test_no_new_proper_nouns_supports_warn_and_fail(tmp_path: Path):
