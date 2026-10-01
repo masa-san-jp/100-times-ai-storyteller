@@ -92,7 +92,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 - `name`：入力は、S3 で割り当てた音6個と、名前の響きの説明文だけ。出力は `{"name": "...", "reading": "カタカナの読み", "sources": ["<響きの集合のID>"]}`。検証：`reading` が、与えた音のうち2個以上を含む（`uses_given`）。
 - `profile`：入力は、その人物の名前・役・割り当て要素（主人公は `taboo` を含む）。出力は `{"profile": "...", "sources": [...]}`（300字以内）。
 - `motive`：入力は、その人物の名前・役・プロフィールと、他の人物の名前・役だけ。出力は `{"motive": "...", "sources": [...]}`（120字以内）。主人公に「抑圧されている自己像」が割り当てられていれば、入力に含める。
-- `intro`：短い紹介（50字以内。world-building の short_introduction）。
+- `intro`：短い紹介（50字以内で、文末記号で終わる1文。world-building の short_introduction）。`ends_complete` で検査する。
 - `appearance`：外見と魅力（年齢・性別・種族・体格・装い。150字以内。heroes・heros-journey の外見の項目）。
 - `catchphrase`：決め台詞（一人称で始まる1文。heroes の catchphrase）。
 

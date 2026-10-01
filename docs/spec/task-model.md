@@ -218,7 +218,7 @@ card:
 
 | チェック | 引数 | 合格の条件 |
 |---|---|---|
-| `sources_exist` | なし | 出力の `sources` の各IDが、カードの「入力」節に列挙したIDに含まれる |
+| `sources_exist` | なし | 出力の `sources` のうち、カードの「入力」節に列挙したIDに含まれるものが1つ以上ある。含まれない ID は検証の前に取り除き、manifest の `warnings` に記録する（出典の書き誤りであり、素材の持ち込みではないため） |
 | `max_chars` | `field`（任意）, `n` | 文字数が n 以下 |
 | `min_chars` | `field`（任意）, `n` | 文字数が n 以上 |
 | `count` | `field`, `n` または `min`・`max` | 配列の件数が n、または min 以上 max 以下 |
