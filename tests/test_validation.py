@@ -316,6 +316,35 @@ def test_json_schema_is_applied_after_json_rescue(tmp_path: Path):
     assert any("schema" in error for error in result.errors)
 
 
+def test_character_count_excludes_ascii_fullwidth_and_line_whitespace() -> None:
+    task = output_task(
+        output="json",
+        checks=[{"max_chars": {"field": "text", "n": 3}}],
+    )
+
+    result = validate_output(
+        task,
+        json.dumps({"text": " あ　い\t\nう "}, ensure_ascii=False),
+    )
+
+    assert result.passed
+
+
+def test_submitted_string_values_are_stripped_before_validation_and_storage() -> None:
+    task = output_task(output="json")
+
+    result = validate_output(
+        task,
+        json.dumps(
+            {"text": "　本文　", "items": ["\n項目\t"]},
+            ensure_ascii=False,
+        ),
+    )
+
+    assert result.passed
+    assert result.value == {"text": "本文", "items": ["項目"]}
+
+
 @pytest.mark.parametrize(
     ("check", "good", "bad"),
     [

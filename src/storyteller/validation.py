@@ -133,7 +133,7 @@ def validate_output(
         raise ValidationConfigurationError("task definition output must be json or text")
 
     try:
-        value = parse_output(raw_output, output_kind)
+        value = _strip_output_strings(parse_output(raw_output, output_kind))
     except OutputParseError as error:
         return ValidationResult(None, errors=(str(error),))
 
@@ -655,7 +655,21 @@ def _normalize_for_substring(value: str) -> str:
 
 
 def _char_length(value: str) -> int:
-    return len(_normalise(value))
+    return sum(not character.isspace() for character in _normalise(value))
+
+
+def _strip_output_strings(value: Any) -> Any:
+    """Strip surrounding whitespace from every submitted string value."""
+
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        return {key: _strip_output_strings(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_strip_output_strings(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_output_strings(item) for item in value)
+    return value
 
 
 def _is_nonnegative_integer(value: Any) -> bool:

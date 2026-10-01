@@ -761,6 +761,35 @@ class Orchestrator:
     submit_output = submit
     process_submission = submit
 
+    def record_executor_failure(self, ticket: str, reason: str) -> SubmissionResult:
+        """Record an executor or adapter failure as a failed submission."""
+
+        if not isinstance(reason, str) or not reason.strip():
+            raise OrchestrationError("実行者の失敗理由が空です")
+        claim_info = self.validate_claim(ticket)
+        run_id = claim_info["run_id"]
+        task_id = claim_info["task_id"]
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if self._halt_if_harness_changed(manifest):
+                _touch_manifest(manifest, self._now())
+                write_manifest(run_dir / "manifest.json", manifest)
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            inputs = _load_card_inputs(self.task_dir(run_id, task_id))
+        return self._commit_submission(
+            ticket,
+            run_id,
+            task_id,
+            None,
+            ValidationResult(None, errors=(reason.strip(),)),
+            inputs,
+        )
+
+    submit_failure = record_executor_failure
+
     def _commit_submission(
         self,
         ticket: str,

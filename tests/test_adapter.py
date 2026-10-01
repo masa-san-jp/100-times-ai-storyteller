@@ -10,6 +10,7 @@ import pytest
 
 from storyteller.adapter import (
     AdapterError,
+    AdapterRequestError,
     AdapterResponse,
     AutoRunner,
     ModelConfig,
@@ -77,6 +78,7 @@ def test_ollama_payload_contains_schema_and_options(ollama_server: str) -> None:
     assert payload["messages"] == [{"role": "user", "content": "次のJSONだけを出力すること。"}]
     assert payload["stream"] is False
     assert payload["format"] == {"type": "object"}
+    assert "think" not in payload
     assert payload["options"] == {
         "temperature": 0.2,
         "num_predict": 123,
@@ -93,6 +95,108 @@ def test_model_config_reads_repository_defaults() -> None:
     config = load_model_config("gpt-oss:20b", provider="ollama")
     assert config.endpoint == "http://127.0.0.1:11434"
     assert config.json_mode == "schema"
+    assert config.think == "low"
+    assert config.max_tokens == 8192
+    assert config.context_length == 16384
+    assert config.timeout_seconds == 600
+
+
+def test_ollama_payload_includes_think_when_configured(ollama_server: str) -> None:
+    adapter = OllamaAdapter(
+        ModelConfig(
+            name="thinking-model",
+            provider="ollama",
+            endpoint=ollama_server,
+            temperature=0.2,
+            max_tokens=123,
+            context_length=456,
+            json_mode="schema",
+            think="low",
+            timeout_seconds=600,
+        )
+    )
+    adapter.complete("カード")
+
+    assert _OllamaHandler.requests[0]["think"] == "low"
+
+
+def test_ollama_adapter_uses_model_timeout_by_default(ollama_server: str) -> None:
+    adapter = OllamaAdapter(_model(ollama_server))
+    assert adapter.timeout == 600
+
+
+def test_auto_records_adapter_failure_as_attempt_and_releases_claim(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    orchestrator = create_dummy_orchestrator(data_dir)
+    run_id = orchestrator.create_run(
+        task_specs=[{"task_id": "D1.items", "type": "D1.items"}],
+        seed=1,
+    )
+
+    class FailingAdapter:
+        def __init__(self, model: ModelConfig) -> None:
+            pass
+
+        def complete(self, *args: Any, **kwargs: Any) -> AdapterResponse:
+            raise AdapterRequestError("Ollama への接続に3回失敗しました")
+
+    runner = AutoRunner(
+        data_dir,
+        _model("http://127.0.0.1:11434"),
+        orchestrator,
+        adapter_factory=FailingAdapter,
+    )
+    runner.run(run_id=run_id, workers=1, until_empty=True)
+
+    manifest = orchestrator.load_run(run_id)
+    task = manifest["tasks"]["D2.echo-d1"]
+    assert task["state"] == "failed"
+    assert task["tries"] == 3
+    assert task["attempt"] == 3
+    assert task["claim"] is None
+    attempt = json.loads(
+        (
+            data_dir
+            / "runs"
+            / run_id
+            / "tasks"
+            / "D2.echo-d1"
+            / "attempts"
+            / "3.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert "3回失敗" in attempt["reason"]
+
+
+def test_auto_records_empty_response_as_attempt_and_releases_claim(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    orchestrator = create_dummy_orchestrator(data_dir)
+    run_id = orchestrator.create_run(
+        task_specs=[{"task_id": "D1.items", "type": "D1.items"}],
+        seed=1,
+    )
+
+    class EmptyAdapter:
+        def __init__(self, model: ModelConfig) -> None:
+            pass
+
+        def complete(self, *args: Any, **kwargs: Any) -> AdapterResponse:
+            return AdapterResponse("   \u3000", "stop")
+
+    runner = AutoRunner(
+        data_dir,
+        _model("http://127.0.0.1:11434"),
+        orchestrator,
+        adapter_factory=EmptyAdapter,
+    )
+    runner.run(run_id=run_id, workers=1, until_empty=True)
+
+    task = orchestrator.load_run(run_id)["tasks"]["D2.echo-d1"]
+    assert task["state"] == "failed"
+    assert task["tries"] == 3
+    assert task["attempt"] == 3
+    assert task["claim"] is None
+    assert "本文が空" in task["error"]
 
 
 def test_auto_downgrades_json_mode_and_persists_warning(tmp_path: Path) -> None:
