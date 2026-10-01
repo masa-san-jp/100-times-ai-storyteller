@@ -515,6 +515,30 @@ def test_avoid_listed_checks_selected_fields_after_nfkc_normalization(tmp_path: 
     assert "hero" in rejected.errors[0]
 
 
+def test_avoid_listed_real_cliches_table_has_no_short_substring_false_positives():
+    task = output_task(
+        checks=[
+            {
+                "avoid_listed": {
+                    "fields": ["items"],
+                    "table": "tables/cliches.yaml",
+                }
+            }
+        ]
+    )
+
+    accepted = validate_output(
+        task,
+        json.dumps(
+            {"items": ["祭りの夜に灯火を掲げて歩く", "囲炉裏の炭火で暖を取る"]},
+            ensure_ascii=False,
+        ),
+        harness_root=ROOT,
+    )
+
+    assert accepted.passed
+
+
 def test_no_new_proper_nouns_excludes_input_and_allowed_words(tmp_path: Path):
     common_words = tmp_path / "common_words.yaml"
     common_words.write_text("words:\n  - 東京\n", encoding="utf-8")

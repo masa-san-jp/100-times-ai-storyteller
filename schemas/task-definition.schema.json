@@ -76,6 +76,11 @@
       "exclusiveMinimum": 0,
       "default": 30
     },
+    "on_exhausted": {
+      "type": "string",
+      "enum": ["fail", "skip"],
+      "default": "fail"
+    },
     "continuation": {
       "type": "boolean"
     }
@@ -101,6 +106,7 @@
             {"required": ["max_invalidations"]},
             {"required": ["share_across_runs"]},
             {"required": ["lease_minutes"]},
+            {"required": ["on_exhausted"]},
             {"required": ["continuation"]}
           ]
         }

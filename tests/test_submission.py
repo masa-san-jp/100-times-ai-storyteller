@@ -265,6 +265,55 @@ def test_submit_reaches_failed_at_max_attempts_and_retry_resets_counters(
     assert task["error"] is None
 
 
+def test_submit_skips_at_max_attempts_when_on_exhausted_is_skip_and_unblocks_dependents(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    definition = llm_definition(max_attempts=2, on_exhausted="skip")
+    after_definition = {
+        "id": "D2.after",
+        "version": 1,
+        "kind": "code",
+        "handler": "after",
+    }
+    orchestrator = Orchestrator(
+        tmp_path,
+        {"D1.echo": definition, "D2.after": after_definition},
+        {"after": lambda context: CodeTaskResult(output={"ok": True})},
+        clock=clock,
+    )
+    run_id = orchestrator.create_run(
+        seed=1,
+        input_data={"given": "a"},
+        tasks={
+            "D1.echo": {"type": "D1.echo"},
+            "D2.after": {"type": "D2.after", "deps": ["D1.echo"]},
+        },
+    )
+    for _ in range(2):
+        claimed = orchestrator.claim_next(run_id, executor_id="worker")
+        assert claimed is not None
+        result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+        assert not result.accepted
+
+    manifest = orchestrator.load_run(run_id)
+    task = manifest["tasks"]["D1.echo"]
+    assert task["state"] == "skipped"
+    assert task["tries"] == 2
+    assert manifest["status"] != "stalled"
+    assert any(
+        warning.startswith("D1.echo: 試行の上限に達したため省略: ")
+        for warning in manifest["warnings"]
+    )
+
+    # A task that is only skipped (never retried) stays skipped forever.
+    assert orchestrator.advance(run_id)["tasks"]["D1.echo"]["state"] == "skipped"
+
+    manifest = orchestrator.advance(run_id)
+    assert manifest["tasks"]["D2.after"]["state"] == "done"
+    assert manifest["status"] == "completed"
+
+
 def test_submit_rechecks_lease_under_manifest_lock(tmp_path: Path, monkeypatch) -> None:
     clock = Clock()
     orchestrator = Orchestrator(

@@ -464,7 +464,7 @@ def test_forbidden_transitions_and_failed_reason(tmp_path: Path) -> None:
     orchestrator.advance(run_id)
     orchestrator._transition_task(run_id, "D2.llm", "claimed")
     with pytest.raises(InvalidTransition):
-        orchestrator._transition_task(run_id, "D2.llm", "skipped")
+        orchestrator._transition_task(run_id, "D2.llm", "blocked")
     orchestrator._complete_task(run_id, "D2.llm", {"ok": True})
     for state in ("ready", "claimed", "failed", "skipped"):
         with pytest.raises(InvalidTransition):

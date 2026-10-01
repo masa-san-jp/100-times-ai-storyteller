@@ -146,3 +146,71 @@ def test_s2_plan_expand_merge_deduplicate_without_skip(
         "want:i05",
     ]
     assert all(item["source"].startswith("m") for item in pools["want"])
+
+
+def test_s2_merge_skips_exhausted_expand_task_and_s3_assign_still_runs(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "free.md"
+    source.write_text("変化を望む静かな生活。", encoding="utf-8")
+    run_id, orchestrator = _complete_s1(tmp_path / "data", source)
+
+    manifest = orchestrator.advance(run_id)
+    expand_ids = [
+        task_id for task_id in manifest["tasks"] if task_id.startswith("S2.expand-")
+    ]
+    exhausted_id = "S2.expand-m001-want"
+    assert exhausted_id in expand_ids
+
+    # Drive one S2.expand task to exhaustion with schema-invalid submissions
+    # (too few items) so it is skipped instead of stalling the whole run.
+    for _ in range(3):
+        claim = orchestrator.claim_task(run_id, exhausted_id, executor_id="dummy")
+        result = orchestrator.submit(
+            claim["ticket"],
+            json.dumps(
+                {"items": ["短すぎる"], "counterpart": "短すぎる対極の要素", "sources": ["m001"]},
+                ensure_ascii=False,
+            ),
+        )
+        assert not result.accepted
+
+    manifest = orchestrator.load_run(run_id)
+    assert manifest["tasks"][exhausted_id]["state"] == "skipped"
+    assert manifest["status"] != "stalled"
+    assert any(
+        warning.startswith(f"{exhausted_id}: 試行の上限に達したため省略: ")
+        for warning in manifest["warnings"]
+    )
+
+    plan_path = (
+        tmp_path / "data" / "runs" / run_id / "tasks" / "S2.plan" / "output.json"
+    )
+    plans = json.loads(plan_path.read_text(encoding="utf-8"))["plans"]
+    for task_id in expand_ids:
+        if task_id == exhausted_id:
+            continue
+        task = orchestrator.load_run(run_id)["tasks"][task_id]
+        if task["state"] != "ready":
+            continue
+        plan = plans[task["index"][0]]
+        claim = orchestrator.claim_task(run_id, task_id, executor_id="dummy")
+        axis = plan["axis"]["key"]
+        source_id = plan["material"]["id"]
+        assert orchestrator.submit(
+            claim["ticket"],
+            json.dumps(_expand_output(axis, source_id), ensure_ascii=False),
+        ).accepted
+
+    manifest = orchestrator.advance(run_id)
+    assert manifest["tasks"]["S2.merge"]["state"] == "done"
+    assert manifest["status"] == "active"
+    assert manifest["tasks"]["S3.assign"]["state"] in {"ready", "blocked", "done"}
+
+    merge_path = (
+        tmp_path / "data" / "runs" / run_id / "tasks" / "S2.merge" / "output.json"
+    )
+    pools = json.loads(merge_path.read_text(encoding="utf-8"))["pools"]
+    # The skipped task's material/axis contributed nothing, but the other
+    # S2.expand task for the same axis still fills the pool.
+    assert len(pools["want"]) >= 1

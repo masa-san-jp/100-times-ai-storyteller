@@ -64,7 +64,7 @@ _MISSING: Final = object()
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "blocked": frozenset({"ready", "skipped"}),
     "ready": frozenset({"claimed", "done", "failed", "skipped"}),
-    "claimed": frozenset({"done", "ready", "failed"}),
+    "claimed": frozenset({"done", "ready", "failed", "skipped"}),
     "done": frozenset(),
     "failed": frozenset({"ready", "blocked"}),
     "skipped": frozenset(),
@@ -884,8 +884,16 @@ class Orchestrator:
             task["error"] = reason
             task["cache_key"] = None
             task["claim"] = None
-            max_attempts = int(self.task_definitions[task["type"]].get("max_attempts", 3))
-            next_state = "failed" if task["tries"] >= max_attempts else "ready"
+            task_definition = self.task_definitions[task["type"]]
+            max_attempts = int(task_definition.get("max_attempts", 3))
+            exhausted = task["tries"] >= max_attempts
+            on_exhausted = task_definition.get("on_exhausted", "fail")
+            if exhausted and on_exhausted == "skip":
+                next_state = "skipped"
+            elif exhausted:
+                next_state = "failed"
+            else:
+                next_state = "ready"
             _set_task_state(
                 manifest,
                 task_id,
@@ -894,6 +902,11 @@ class Orchestrator:
                 reason=reason,
                 executor_id=claim["executor_id"],
             )
+            if next_state == "skipped":
+                manifest["warnings"].append(
+                    f"{task_id}: 試行の上限に達したため省略: {reason}"
+                )
+                _refresh_blocked_tasks(manifest, at)
             _update_run_status(manifest)
             _touch_manifest(manifest, at)
             write_manifest(run_dir / "manifest.json", manifest)
@@ -2626,8 +2639,8 @@ def _validate_transition(
             for dependency in task["deps"]
         ):
             raise InvalidTransition("blocked task dependencies are not complete")
-    if state == "skipped" and old_state not in {"blocked", "ready"}:
-        raise InvalidTransition("only blocked or ready tasks may be skipped")
+    if state == "skipped" and old_state not in {"blocked", "ready", "claimed"}:
+        raise InvalidTransition("only blocked, ready, or claimed tasks may be skipped")
 
 
 def _set_task_state(

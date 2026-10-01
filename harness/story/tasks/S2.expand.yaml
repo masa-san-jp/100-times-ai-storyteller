@@ -39,3 +39,4 @@ validate:
     - no_new_proper_nouns:
         mode: warn
 share_across_runs: true
+on_exhausted: skip

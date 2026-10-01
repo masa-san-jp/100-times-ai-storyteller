@@ -130,14 +130,15 @@ def test_roles_cliches_world_sections_and_world_counts_are_complete():
     cliches = load_table("cliches", repository_root=ROOT)["phrases"]
     assert {
         "運命",
-        "闇",
+        "闇の力",
         "守るべきもの",
-        "火",
+        "火を操る",
         "透明化",
         "怪力",
         "読心",
         "治癒",
     } <= set(cliches)
+    assert all(len(phrase) >= 2 for phrase in cliches)
 
     sections = load_table("world_sections", repository_root=ROOT)["sections"]
     section_ids = {section["id"] for section in sections}
