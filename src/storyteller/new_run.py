@@ -79,6 +79,7 @@ def create_free_run(
         plot_type=plot_type,
         scale=scale.value,
         table_snapshot={axis: 0 for axis in _element_axes(repository_root)},
+        harness_kind="story",
     )
     if scale.warnings:
         manifest = orchestrator.load_run(run_id)
@@ -107,6 +108,7 @@ def create_story_orchestrator(data_dir: str | Path) -> Orchestrator:
         },
         harness_root=repository_root,
         repository_root=repository_root,
+        harness_kind="story",
     )
 
 

@@ -91,6 +91,7 @@ def create_dummy_orchestrator(data_dir: str | Path) -> Orchestrator:
         _dummy_handlers(),
         harness_root=ROOT,
         repository_root=ROOT.parents[3],
+        harness_kind="dummy",
     )
 
 

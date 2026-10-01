@@ -17,6 +17,8 @@ from storyteller.adapter import (
     load_model_config,
 )
 from storyteller.dev.dummy import create_dummy_orchestrator
+from storyteller.new_run import create_story_orchestrator
+from storyteller.orchestrator import TaskSpec
 
 
 class _OllamaHandler(BaseHTTPRequestHandler):
@@ -132,3 +134,70 @@ def test_auto_downgrades_json_mode_and_persists_warning(tmp_path: Path) -> None:
     assert state["models"]["test-model"] == {"json_mode": "json", "empty_streak": 0}
     manifest = orchestrator.load_run(run_id)
     assert any("json_mode を json に切り替えました" in warning for warning in manifest["warnings"])
+
+
+def test_auto_uses_the_manifest_harness_for_mixed_runs(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    story_orchestrator = create_story_orchestrator(data_dir)
+    story_run_id = story_orchestrator.create_run(
+        task_specs=[TaskSpec("S1.extract-p001", "S1.extract", index=("p001",))],
+        seed=0x100001,
+        input_data={
+            "kind": "free",
+            "paragraphs": [{"id": "p001", "text": "水路の町で門番が朝を迎えた。"}],
+        },
+    )
+    dummy_orchestrator = create_dummy_orchestrator(data_dir)
+    dummy_run_id = dummy_orchestrator.create_run(
+        task_specs=[{"task_id": "D1.items", "type": "D1.items"}],
+        seed=0x200002,
+    )
+
+    class FakeAdapter:
+        def __init__(self, model: ModelConfig) -> None:
+            pass
+
+        def complete(self, card: str, **kwargs: Any) -> AdapterResponse:
+            if "素材になる短い語句を5個" in card:
+                return AdapterResponse(
+                    json.dumps(
+                        {
+                            "materials": [
+                                {"text": f"水路に残る記憶と{index}番目の影", "kind": "image"}
+                                for index in range(5)
+                            ],
+                            "sources": ["p001"],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "stop",
+                )
+            if '"text": "..."' in card:
+                item_id = card.split("id: ", 1)[1].splitlines()[0]
+                return AdapterResponse(
+                    json.dumps({"text": "確認できた項目です。", "sources": [item_id]}),
+                    "stop",
+                )
+            return AdapterResponse("確認文をまとめた本文です。", "stop")
+
+    def orchestrator_for(run_id: str):
+        manifest = json.loads(
+            (data_dir / "runs" / run_id / "manifest.json").read_text(encoding="utf-8")
+        )
+        return (
+            story_orchestrator
+            if manifest["harness_kind"] == "story"
+            else dummy_orchestrator
+        )
+
+    runner = AutoRunner(
+        data_dir,
+        _model("http://127.0.0.1:11434"),
+        None,
+        orchestrator_factory=orchestrator_for,
+        adapter_factory=FakeAdapter,
+    )
+    runner.run(run_id=None, workers=1, until_empty=True)
+
+    assert story_orchestrator.load_run(story_run_id)["status"] == "completed"
+    assert dummy_orchestrator.load_run(dummy_run_id)["status"] == "completed"

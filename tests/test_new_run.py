@@ -39,6 +39,7 @@ def test_create_free_run_writes_input_and_one_s1_task_per_paragraph(
         "source_sha256": input_value["source_sha256"],
         "plot_type": "quest",
     }
+    assert manifest["harness_kind"] == "story"
     assert "plot_type" not in manifest["scale"]
     assert set(manifest["tasks"]) == {
         "S1.extract-p001", "S1.extract-p002", "S2.plan"

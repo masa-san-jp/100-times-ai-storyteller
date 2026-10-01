@@ -9,7 +9,8 @@ from pathlib import Path
 import jsonschema
 
 from storyteller.cli import build_parser, main
-from storyteller.orchestrator import SubmissionResult
+from storyteller.new_run import create_story_orchestrator
+from storyteller.orchestrator import SubmissionResult, TaskSpec
 
 
 def _st_command() -> list[str]:
@@ -172,6 +173,62 @@ def test_phase0_cli_creates_dummy_and_claims_json_card(tmp_path, monkeypatch, ca
     assert main(["submit", claim["ticket"]]) == 0
     assert capsys.readouterr().out == "accepted\n"
     assert main(["next", "--run", run_id]) == 0
+
+
+def test_mixed_story_and_dummy_runs_use_manifest_harness_kind_for_next_and_submit(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    story = create_story_orchestrator(data_dir)
+    story_run_id = story.create_run(
+        task_specs=[TaskSpec("S1.extract-p001", "S1.extract", index=("p001",))],
+        seed=0x100001,
+        input_data={
+            "kind": "free",
+            "paragraphs": [{"id": "p001", "text": "水路の町で門番が朝を迎えた。"}],
+        },
+    )
+    dummy_run_id = _new_dummy(data_dir, seed=0x200002)
+    assert _load_manifest(data_dir, story_run_id)["harness_kind"] == "story"
+    assert _load_manifest(data_dir, dummy_run_id)["harness_kind"] == "dummy"
+
+    claimed: list[tuple[str, str]] = []
+    for _ in range(2):
+        result = _run_st(data_dir, "next", "--json")
+        assert result.returncode == 0, result.stderr
+        ticket = json.loads(result.stdout)["ticket"]
+        run_id = next(
+            candidate
+            for candidate in (story_run_id, dummy_run_id)
+            if any(
+                (task.get("claim") or {}).get("ticket") == ticket
+                for task in _load_manifest(data_dir, candidate)["tasks"].values()
+            )
+        )
+        task_id = _task_id_for_ticket(data_dir, run_id, ticket)
+        claimed.append((run_id, task_id))
+
+        if task_id.startswith("S1."):
+            output = json.dumps(
+                {
+                    "materials": [
+                        {"text": f"水路に残る記憶と{index}番目の影", "kind": "image"}
+                        for index in range(5)
+                    ],
+                    "sources": ["p001"],
+                },
+                ensure_ascii=False,
+            )
+        else:
+            assert task_id.startswith("D2.echo-")
+            item_id = task_id.rsplit("-", 1)[1]
+            output = json.dumps({"text": "確認できた項目です。", "sources": [item_id]})
+        submitted = _run_st(data_dir, "submit", ticket, input=output)
+        assert submitted.returncode == 0, submitted.stdout + submitted.stderr
+
+    assert {run_id for run_id, _ in claimed} == {story_run_id, dummy_run_id}
+    assert _load_manifest(data_dir, story_run_id)["status"] != "halted"
+    assert _load_manifest(data_dir, dummy_run_id)["status"] != "halted"
 
 
 def test_submit_rejection_uses_exit_code_five(tmp_path, monkeypatch, capsys):

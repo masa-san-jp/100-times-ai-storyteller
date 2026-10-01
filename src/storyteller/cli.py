@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from collections.abc import Sequence
@@ -34,6 +35,8 @@ EXIT_REJECTED = 5
 EXIT_HALTED = 6
 EXIT_INTERNAL = 10
 EXIT_PERSONAL_INFORMATION = 4
+_RUN_ID_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
+_EXECUTOR_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 class CliArgumentParser(argparse.ArgumentParser):
@@ -185,39 +188,34 @@ def _data_dir() -> Path:
 
 
 def _orchestrator(data_dir: Path, run_id: str | None = None):
+    """Build the orchestrator recorded by one run's manifest."""
     if run_id is None:
-        run_id = _active_story_run_id(data_dir)
-    if run_id is not None and _is_story_run(data_dir, run_id):
+        raise InvalidClaimError("ticket を含む claim が見つかりません")
+    harness_kind = _load_manifest(data_dir, run_id)["harness_kind"]
+    if harness_kind == "story":
         return create_story_orchestrator(data_dir)
-    return create_dummy_orchestrator(data_dir)
+    if harness_kind == "dummy":
+        return create_dummy_orchestrator(data_dir)
+    raise ValueError(f"未知の harness_kind です: {harness_kind!r}")
 
 
-def _is_story_run(data_dir: Path, run_id: str) -> bool:
-    try:
-        manifest = load_manifest(data_dir / "runs" / run_id / "manifest.json")
-    except (FileNotFoundError, OSError, ValueError):
-        return False
-    return any(task.get("type", "").startswith("S1.") for task in manifest["tasks"].values())
-
-
-def _active_story_run_id(data_dir: Path) -> str | None:
+def _candidate_run_ids(data_dir: Path) -> list[str]:
+    """Return active/stalled runs in the durable creation order."""
     runs_dir = data_dir / "runs"
     if not runs_dir.is_dir():
-        return None
+        return []
     candidates: list[tuple[str, str]] = []
     for entry in runs_dir.iterdir():
         if not entry.is_dir():
             continue
         try:
-            manifest = load_manifest(entry / "manifest.json")
+            manifest = _load_manifest(data_dir, entry.name)
         except (FileNotFoundError, OSError, ValueError):
             continue
-        if manifest["status"] in {"active", "stalled"} and any(
-            task.get("type", "").startswith("S1.")
-            for task in manifest["tasks"].values()
-        ):
+        if manifest["status"] in {"active", "stalled"}:
             candidates.append((manifest["created_at"], manifest["run_id"]))
-    return min(candidates)[1] if candidates else None
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return [run_id for _, run_id in candidates]
 
 
 def _orchestrator_for_ticket(data_dir: Path, ticket: str):
@@ -235,7 +233,12 @@ def _orchestrator_for_ticket(data_dir: Path, ticket: str):
                 for task in manifest["tasks"].values()
             ):
                 return _orchestrator(data_dir, manifest["run_id"])
-    return _orchestrator(data_dir)
+    # Keep the single-run seam available to embedders that provide their own
+    # orchestrator; the built-in implementation raises InvalidClaimError
+    # without making a harness guess when no manifest exists.
+    if not runs_dir.is_dir():
+        return _orchestrator(data_dir)
+    raise InvalidClaimError(f"ticket を含む claim が見つかりません: {ticket}")
 
 
 def _workspace_settings() -> tuple[str | None, str]:
@@ -253,20 +256,25 @@ def _workspace_settings() -> tuple[str | None, str]:
 def _next(args: argparse.Namespace) -> int:
     if args.wait < 0:
         raise CliArgumentError("--wait は0以上の整数で指定してください")
+    if args.executor_id is not None and not _EXECUTOR_ID_PATTERN.fullmatch(args.executor_id):
+        raise CliArgumentError("--executor-id が不正です")
     data_dir = _data_dir()
     configured_executor, isolation = _workspace_settings()
     executor_id = (
         args.executor_id if args.executor_id is not None else configured_executor
     )
-    orchestrator = _orchestrator(data_dir, args.run_id)
     deadline = time.monotonic() + args.wait
     while True:
-        result = orchestrator.claim_next(
-            args.run_id,
-            executor_id=executor_id,
-            isolation=isolation,
-        )
-        if result is not None:
+        run_ids = [args.run_id] if args.run_id is not None else _candidate_run_ids(data_dir)
+        for run_id in run_ids:
+            orchestrator = _orchestrator(data_dir, run_id)
+            result = orchestrator.claim_next(
+                run_id,
+                executor_id=executor_id,
+                isolation=isolation,
+            )
+            if result is None:
+                continue
             if args.as_json:
                 _print_json(result)
             else:
@@ -324,7 +332,9 @@ def _status(args: argparse.Namespace) -> int:
 
 
 def _load_manifest(data_dir: Path, run_id: str) -> dict[str, Any]:
-    return _orchestrator(data_dir).load_run(run_id)
+    if not isinstance(run_id, str) or not _RUN_ID_PATTERN.fullmatch(run_id):
+        raise ValueError(f"invalid run_id: {run_id!r}")
+    return load_manifest(data_dir / "runs" / run_id / "manifest.json")
 
 
 def _all_run_statuses(data_dir: Path) -> list[dict[str, Any]]:
@@ -402,19 +412,19 @@ def _retry(args: argparse.Namespace) -> int:
                 matches.append(manifest["run_id"])
     if len(matches) != 1:
         raise ValueError(f"対象タスクを一意に特定できません: {args.task_id}")
-    _orchestrator(data_dir).retry_failed(matches[0], args.task_id)
+    _orchestrator(data_dir, matches[0]).retry_failed(matches[0], args.task_id)
     return EXIT_OK
 
 
 def _resume(args: argparse.Namespace) -> int:
     data_dir = _data_dir()
-    _orchestrator(data_dir).resume_harness_change(args.run_id)
+    _orchestrator(data_dir, args.run_id).resume_harness_change(args.run_id)
     return EXIT_OK
 
 
 def _new_dummy(args: argparse.Namespace) -> int:
     data_dir = _data_dir()
-    run_id = _orchestrator(data_dir).create_run(
+    run_id = create_dummy_orchestrator(data_dir).create_run(
         task_specs=[{"task_id": "D1.items", "type": "D1.items"}],
         seed=args.seed,
     )

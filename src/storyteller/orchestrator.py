@@ -57,6 +57,7 @@ _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _TICKET = re.compile(r"^[a-f0-9]{32}$")
 _EXECUTOR_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
+_HARNESS_KINDS = frozenset({"story", "dummy"})
 _TERMINAL_RUN_STATUSES = frozenset({"halted", "completed", "duplicate"})
 _MISSING: Final = object()
 
@@ -217,6 +218,7 @@ class Orchestrator:
         clock: Callable[[], datetime] | None = None,
         harness_root: str | Path | None = None,
         repository_root: str | Path | None = None,
+        harness_kind: str | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
         self.definition_root = (
@@ -229,6 +231,12 @@ class Orchestrator:
             if repository_root is not None
             else _repository_root_for_definition_root(self.definition_root)
         )
+        resolved_harness_kind = harness_kind or (
+            "dummy" if _is_dummy_harness_root(self.definition_root) else "story"
+        )
+        if resolved_harness_kind not in _HARNESS_KINDS:
+            raise ValueError(f"invalid harness_kind: {resolved_harness_kind!r}")
+        self.harness_kind = resolved_harness_kind
         self.task_definitions = _validate_task_definitions(
             task_definitions,
             schema_root=self.definition_root,
@@ -255,6 +263,7 @@ class Orchestrator:
         scale: Mapping[str, Any] | None = None,
         table_snapshot: Mapping[str, Any] | None = None,
         run_id: str | None = None,
+        harness_kind: str | None = None,
     ) -> str:
         """Create and persist a run, returning its run ID.
 
@@ -275,6 +284,13 @@ class Orchestrator:
             raise ValueError("batch_id must be a non-empty string or None")
         if input_type not in {"narrative", "free"}:
             raise ValueError("input_type must be narrative or free")
+        resolved_harness_kind = harness_kind or self.harness_kind
+        if resolved_harness_kind not in _HARNESS_KINDS:
+            raise ValueError(f"invalid harness_kind: {resolved_harness_kind!r}")
+        if resolved_harness_kind != self.harness_kind:
+            raise ValueError(
+                "harness_kind must match the orchestrator's harness_kind"
+            )
 
         created_at = _timestamp(self._clock)
         resolved_run_id = run_id or _make_run_id(created_at, run_seed)
@@ -330,6 +346,7 @@ class Orchestrator:
                 "input": input_record,
                 "scale": dict(scale or {}),
                 "harness": resolved_harness,
+                "harness_kind": resolved_harness_kind,
                 "input_ratio": None,
                 "table_snapshot": dict(table_snapshot or {}),
                 "tasks": {},

@@ -25,7 +25,6 @@ from urllib.request import Request, urlopen
 
 import yaml
 
-from .dev.dummy import create_dummy_orchestrator
 from .manifest import load_manifest, write_manifest
 from .orchestrator import Orchestrator
 from .storage import acquire_lock, atomic_write_json, manifest_lock
@@ -100,8 +99,15 @@ def run_auto_command(args: argparse.Namespace) -> int:
             f"provider {model.provider!r} は Phase 1 では未対応です（ollama のみ）"
         )
     _validate_local_endpoint(model.endpoint)
-    orchestrator = create_dummy_orchestrator(data_dir)
-    runner = AutoRunner(data_dir, model, orchestrator)
+    from .cli import _orchestrator
+
+    orchestrator = _orchestrator(data_dir, args.run_id) if args.run_id else None
+    runner = AutoRunner(
+        data_dir,
+        model,
+        orchestrator,
+        orchestrator_factory=lambda run_id: _orchestrator(data_dir, run_id),
+    )
     runner.run(
         run_id=args.run_id,
         workers=args.workers,
@@ -334,13 +340,15 @@ class AutoRunner:
         self,
         data_dir: str | Path,
         model: ModelConfig,
-        orchestrator: Orchestrator,
+        orchestrator: Orchestrator | None,
         *,
+        orchestrator_factory: Callable[[str], Orchestrator] | None = None,
         adapter_factory: Callable[[ModelConfig], OllamaAdapter] | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
         self.model = model
         self.orchestrator = orchestrator
+        self.orchestrator_factory = orchestrator_factory
         self.state = _StateStore(self.data_dir)
         self.adapter_factory = adapter_factory or OllamaAdapter
 
@@ -361,11 +369,7 @@ class AutoRunner:
     def _worker(self, *, run_id: str | None, until_empty: bool) -> None:
         adapter = self.adapter_factory(self.model)
         while True:
-            claim = self.orchestrator.claim_next(
-                run_id,
-                executor_id=None,
-                isolation="adapter",
-            )
+            claim, orchestrator = self._claim_next(run_id)
             if claim is None:
                 if not until_empty:
                     time.sleep(0.2)
@@ -375,11 +379,11 @@ class AutoRunner:
                 time.sleep(0.05)
                 continue
             try:
-                claim_info = self.orchestrator.validate_claim(claim["ticket"])
-                definition = self.orchestrator.task_definitions[
-                    self.orchestrator.load_run(claim_info["run_id"])["tasks"][claim_info["task_id"]]["type"]
+                claim_info = orchestrator.validate_claim(claim["ticket"])
+                definition = orchestrator.task_definitions[
+                    orchestrator.load_run(claim_info["run_id"])["tasks"][claim_info["task_id"]]["type"]
                 ]
-                schema = self._load_schema(definition)
+                schema = self._load_schema(definition, orchestrator)
                 mode = self.state.current(self.model)["json_mode"]
                 response = adapter.complete(claim["card"], schema=schema, json_mode=mode)
                 invalid = not response.content.strip() or (
@@ -391,10 +395,11 @@ class AutoRunner:
                 )
                 if switched:
                     self._record_warning(
+                        orchestrator,
                         claim_info["run_id"],
                         f"モデル {self.model.name} の json_mode を {new_mode} に切り替えました",
                     )
-                result = self.orchestrator.submit(
+                result = orchestrator.submit(
                     claim["ticket"],
                     response.content,
                     truncated=response.done_reason == "length",
@@ -406,13 +411,66 @@ class AutoRunner:
             except (AdapterError, OSError, ValueError) as error:
                 print(f"警告: LLMタスクを処理できません: {error}", file=sys.stderr)
 
-    def _load_schema(self, definition: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    def _claim_next(
+        self, run_id: str | None
+    ) -> tuple[dict[str, str] | None, Orchestrator | None]:
+        """Claim from one run using the orchestrator selected for that run."""
+        if run_id is not None:
+            orchestrator = self._orchestrator_for_run(run_id)
+            return (
+                orchestrator.claim_next(
+                    run_id,
+                    executor_id=None,
+                    isolation="adapter",
+                ),
+                orchestrator,
+            )
+        for candidate_run_id in self._candidate_run_ids():
+            orchestrator = self._orchestrator_for_run(candidate_run_id)
+            claim = orchestrator.claim_next(
+                candidate_run_id,
+                executor_id=None,
+                isolation="adapter",
+            )
+            if claim is not None:
+                return claim, orchestrator
+        return None, None
+
+    def _orchestrator_for_run(self, run_id: str) -> Orchestrator:
+        if self.orchestrator_factory is not None:
+            return self.orchestrator_factory(run_id)
+        if self.orchestrator is not None:
+            return self.orchestrator
+        raise AdapterError("run のオーケストレータが指定されていません")
+
+    def _candidate_run_ids(self) -> list[str]:
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.is_dir():
+            return []
+        candidates: list[tuple[str, str]] = []
+        for entry in runs_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            try:
+                manifest = load_manifest(entry / "manifest.json")
+            except (OSError, ValueError):
+                continue
+            if manifest["status"] in {"active", "stalled"}:
+                candidates.append((manifest["created_at"], manifest["run_id"]))
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        return [candidate[1] for candidate in candidates]
+
+    def _load_schema(
+        self,
+        definition: Mapping[str, Any],
+        orchestrator: Orchestrator,
+    ) -> Mapping[str, Any] | None:
         if definition.get("output") != "json" or self.state.current(self.model)["json_mode"] != "schema":
             return None
         schema_ref = (definition.get("validate") or {}).get("schema")
         if not isinstance(schema_ref, str):
             return None
-        path = self.orchestrator.definition_root / schema_ref
+        path = orchestrator.definition_root / schema_ref
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -421,8 +479,10 @@ class AutoRunner:
             raise AdapterError(f"JSON Schema がオブジェクトではありません: {path}")
         return value
 
-    def _record_warning(self, run_id: str, warning: str) -> None:
-        run_dir = self.orchestrator.run_dir(run_id)
+    def _record_warning(
+        self, orchestrator: Orchestrator, run_id: str, warning: str
+    ) -> None:
+        run_dir = orchestrator.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
             if warning not in manifest["warnings"]:

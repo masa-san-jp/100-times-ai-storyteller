@@ -16,6 +16,7 @@
     "input",
     "scale",
     "harness",
+    "harness_kind",
     "input_ratio",
     "table_snapshot",
     "tasks",
@@ -66,6 +67,10 @@
       "additionalProperties": {
         "$ref": "#/$defs/sha256"
       }
+    },
+    "harness_kind": {
+      "type": "string",
+      "enum": ["story", "dummy"]
     },
     "input_ratio": {
       "type": ["number", "null"]
