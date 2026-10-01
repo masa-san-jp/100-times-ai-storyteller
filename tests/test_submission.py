@@ -70,15 +70,19 @@ def continuation_definition(**extra: object) -> dict:
     return definition
 
 
-def test_submit_uses_the_truncated_card_input_and_records_rejection(tmp_path: Path) -> None:
+def test_submit_removes_unknown_sources_before_storing_output(tmp_path: Path) -> None:
     clock = Clock()
-    orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition()}, clock=clock)
-    run_id = orchestrator.create_run(seed=1, input_data={"given": "abcdefghijk"})
+    orchestrator = Orchestrator(
+        tmp_path, {"D1.echo": llm_definition(max_input_chars=100)}, clock=clock
+    )
+    run_id = orchestrator.create_run(
+        seed=1, input_data={"given": {"id": "a1", "text": "abcdefghijk"}}
+    )
     claimed = orchestrator.claim_next(run_id, executor_id="worker")
     assert claimed is not None
     task_dir = tmp_path / "runs" / run_id / "tasks" / "D1.echo"
     assert json.loads((task_dir / "input.json").read_text(encoding="utf-8")) == {
-        "given": "abcdefg"
+        "given": {"id": "a1", "text": "abcdefghijk"}
     }
 
     rejected = orchestrator.submit(
@@ -100,9 +104,18 @@ def test_submit_uses_the_truncated_card_input_and_records_rejection(tmp_path: Pa
     assert replacement is not None
     accepted = orchestrator.submit(
         replacement["ticket"],
-        json.dumps({"text": "ok", "sources": []}),
+        json.dumps({"text": "ok", "sources": ["a1", "missing"]}),
     )
     assert accepted.accepted
+    assert accepted.value == {"text": "ok", "sources": ["a1"]}
+    assert json.loads((task_dir / "output.json").read_text(encoding="utf-8")) == {
+        "text": "ok",
+        "sources": ["a1"],
+    }
+    assert any(
+        warning.startswith("D1.echo: 未知の出典 ID を除去:")
+        for warning in orchestrator.load_run(run_id)["warnings"]
+    )
     assert orchestrator.load_run(run_id)["status"] == "completed"
 
 

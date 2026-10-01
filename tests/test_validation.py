@@ -345,6 +345,56 @@ def test_submitted_string_values_are_stripped_before_validation_and_storage() ->
     assert result.value == {"text": "本文", "items": ["項目"]}
 
 
+def test_sources_exist_removes_unknown_ids_and_keeps_valid_ids() -> None:
+    task = output_task(checks=["sources_exist"])
+    inputs = {
+        "character": {
+            "id": "c1",
+            "role_definition": {"id": "adversary", "definition": "定義"},
+            "plot_context": {"id": "romance", "character_requirements": "要件"},
+            "name_sound": {"set_id": "sound-05"},
+        },
+        "role_definition": {"id": "adversary", "definition": "定義"},
+        "plot_requirements": {"id": "romance", "character_requirements": "要件"},
+    }
+
+    result = validate_output(
+        task,
+        json.dumps(
+            {
+                "sources": [
+                    "c1",
+                    "role_definition:adversary",
+                    "plot_context:romance",
+                    "name_sound:set_id sound-05",
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        inputs=inputs,
+    )
+
+    assert result.passed
+    assert result.value == {"sources": ["c1"]}
+    assert result.warnings == (
+        "未知の出典 ID を除去: "
+        "['role_definition:adversary', 'plot_context:romance', "
+        "'name_sound:set_id sound-05']",
+    )
+
+
+def test_sources_exist_rejects_when_all_ids_are_unknown() -> None:
+    result = validate_output(
+        output_task(checks=["sources_exist"]),
+        '{"sources": ["missing"]}',
+        inputs={"character": {"id": "c1"}},
+    )
+
+    assert not result.passed
+    assert result.value == {"sources": []}
+    assert any("有効な出典 ID がありません" in error for error in result.errors)
+
+
 @pytest.mark.parametrize(
     ("check", "good", "bad"),
     [

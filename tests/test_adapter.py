@@ -277,7 +277,7 @@ def test_auto_uses_the_manifest_harness_for_mixed_runs(tmp_path: Path) -> None:
                     "stop",
                 )
             if '"text": "..."' in card:
-                item_id = card.split("id: ", 1)[1].splitlines()[0]
+                item_id = card.split("id: '[", 1)[1].split("]'", 1)[0]
                 return AdapterResponse(
                     json.dumps({"text": "確認できた項目です。", "sources": [item_id]}),
                     "stop",

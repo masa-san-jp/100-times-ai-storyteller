@@ -42,11 +42,12 @@ card:
   role: 人物の動機と役割にふさわしい決め台詞を書く。
   steps:
     - 一人称で始まる1文を1つ書く。
-    - 人物の口調、役割、動機が伝わる台詞にし、入力にない設定を付け加えない。
-    - sources には使った入力のIDを記録する。
+    - 人物の口調、役割、動機が伝わる台詞にし、入力にない設定を付け加えず、文末まで完結させる。
   output_example: '{"catchphrase": "...", "sources": ["c1"]}'
 validate:
   schema: schemas/tasks/S5.catchphrase.schema.json
   checks:
     - sources_exist
+    - ends_complete:
+        field: catchphrase
 max_input_chars: 3000

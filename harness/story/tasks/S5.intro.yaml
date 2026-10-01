@@ -38,12 +38,14 @@ card:
   steps:
     - 人物の役割、人物像、魅力が伝わる短い紹介を1つ書く。
     - world-building の short_introduction として、50字以内にする。
-    - 入力にない設定を補わず、sources には使った入力のIDを記録する。
+    - 入力にない設定を補わず、文末まで完結させる。
   output_example: '{"intro": "...", "sources": ["c1"]}'
 validate:
   schema: schemas/tasks/S5.intro.schema.json
   checks:
     - sources_exist
+    - ends_complete:
+        field: intro
     - max_chars:
         field: intro
         n: 50

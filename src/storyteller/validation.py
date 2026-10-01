@@ -158,6 +158,12 @@ def validate_output(
     checks = validation.get("checks", [])
     if not isinstance(checks, list):
         raise ValidationConfigurationError("validate.checks must be a list")
+    sources_checked = False
+    for check in checks:
+        name, _ = _normalise_check(check)
+        if name == "sources_exist" and not sources_checked:
+            _remove_unknown_sources(value, slot_values, warnings)
+            sources_checked = True
     for check in checks:
         try:
             name, arguments = _normalise_check(check)
@@ -281,9 +287,8 @@ def _run_check(
         if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
             return ["sources_exist: sources が配列ではありません"], []
         allowed = _ids_from_inputs(inputs)
-        unknown = [source for source in output["sources"] if source not in allowed]
-        if unknown:
-            return [f"sources_exist: 未知のIDがあります: {unknown!r}"], []
+        if not any(source in allowed for source in output["sources"]):
+            return ["sources_exist: 有効な出典 ID がありません"], []
         return [], []
 
     if name in {"max_chars", "min_chars"}:
@@ -474,28 +479,54 @@ def _read_field(value: Any, field: str | None) -> tuple[Any, bool]:
 
 def _ids_from_inputs(inputs: Mapping[str, Any]) -> set[Any]:
     ids: set[Any] = set()
-    for value in inputs.values():
-        ids.update(_ids_from_value(value))
+    for key, value in inputs.items():
+        ids.update(
+            _ids_from_value(
+                value,
+                include_own_ids=key not in {"role_definition", "plot_requirements"},
+            )
+        )
     return ids
 
 
-def _ids_from_value(value: Any) -> set[Any]:
+def _ids_from_value(value: Any, *, include_own_ids: bool = True) -> set[Any]:
     if isinstance(value, list):
         ids: set[Any] = set()
         for item in value:
-            ids.update(_ids_from_value(item))
+            ids.update(_ids_from_value(item, include_own_ids=include_own_ids))
         return ids
     if isinstance(value, Mapping):
         ids: set[Any] = set()
-        for key in ("id", "set_id"):
-            identifier = value.get(key)
-            if identifier is not None:
-                ids.add(identifier)
-        for item in value.values():
+        if include_own_ids:
+            for key in ("id", "set_id"):
+                identifier = value.get(key)
+                if identifier is not None:
+                    ids.add(identifier)
+        for key, item in value.items():
+            if key in {"role_definition", "plot_context"}:
+                continue
             if isinstance(item, (Mapping, list)):
-                ids.update(_ids_from_value(item))
+                ids.update(_ids_from_value(item, include_own_ids=include_own_ids))
         return ids
     return set()
+
+
+def _remove_unknown_sources(
+    output: Any,
+    inputs: Mapping[str, Any],
+    warnings: list[str],
+) -> None:
+    """Remove source IDs that are not present in the rendered card inputs."""
+
+    if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
+        return
+    allowed = _ids_from_inputs(inputs)
+    sources = output["sources"]
+    unknown = [source for source in sources if source not in allowed]
+    if not unknown:
+        return
+    output["sources"] = [source for source in sources if source in allowed]
+    warnings.append(f"未知の出典 ID を除去: {unknown!r}")
 
 
 def _item_id(value: Any) -> Any:

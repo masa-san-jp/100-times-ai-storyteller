@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from storyteller.cards import generate_task_card
@@ -52,6 +53,21 @@ def test_s5_name_rejects_a_reading_that_does_not_use_two_given_sounds() -> None:
     assert accepted.passed
     assert not rejected.passed
     assert any("uses_given" in error for error in rejected.errors)
+
+
+def test_s5_one_sentence_items_must_end_complete() -> None:
+    character = _character("protagonist", "c1", "主人公固有")
+    for task_name, field in (("intro", "intro"), ("catchphrase", "catchphrase")):
+        definition = load_task(task_name)
+        assert {"ends_complete": {"field": field}} in definition["validate"]["checks"]
+        incomplete = validate_output(
+            definition,
+            json.dumps({field: "文の途中", "sources": ["c1"]}, ensure_ascii=False),
+            inputs=_s5_inputs("本人名", character),
+            harness_root=ROOT,
+        )
+        assert not incomplete.passed
+        assert any("ends_complete" in error for error in incomplete.errors)
 
 
 def _character(role: str, character_id: str, marker: str) -> dict[str, object]:
