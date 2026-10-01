@@ -2897,36 +2897,71 @@ def _source_outputs(
             and manifest["tasks"][dependency]["state"] == "done"
             and dependency in dependency_outputs
         ]
-        # An explicit `output` selector asks for the collection of all
-        # matching dependency outputs.  Other selectors use the task with the
-        # same index when one exists, which keeps per-character inputs local.
-        select = slot_definition.get("select")
-        explicit_output_access = (
-            isinstance(select, str)
-            and (select == "output" or select.startswith("output["))
-        )
-        if len(matching) > 1 and task["index"] and not explicit_output_access:
-            indexed_task_id = f"{slot}-{task['index'][0]}"
-            if indexed_task_id in matching:
-                matching = [indexed_task_id]
-        if isinstance(select, str) and select.startswith("output["):
-            source_value = [dependency_outputs[task_id] for task_id in matching]
-        elif len(matching) == 1:
-            source_value: Any = dependency_outputs[matching[0]]
-        elif matching:
-            source_value = [dependency_outputs[task_id] for task_id in matching]
-        else:
+        if not matching:
             continue
-        if (
-            task.get("type") == "S8.compare"
-            and slot == "S8.plan"
-            and len(matching) == 1
-        ):
-            source_value = _prepare_s8_compare_plan(source_value, task)
+
+        indexed = any(
+            _dependency_index_key(dependency, manifest["tasks"][dependency]) is not None
+            for dependency in matching
+        )
+        if indexed:
+            # References to an indexed task type always expose an object whose
+            # keys are the dependency indexes.  This deliberately does not
+            # collapse a single matching dependency: the task definition must
+            # explicitly select its own (or another) index.
+            source_value = {}
+            for dependency in matching:
+                dependency_record = manifest["tasks"][dependency]
+                index_key = _dependency_index_key(dependency, dependency_record)
+                if index_key is None:
+                    raise TaskCardError(
+                        f"添字付きタスクの添字がありません: {dependency}"
+                    )
+                value = dependency_outputs[dependency]
+                if (
+                    task.get("type") == "S8.compare"
+                    and slot == "S8.plan"
+                    and len(matching) == 1
+                ):
+                    value = _prepare_s8_compare_plan(value, task)
+                source_value[index_key] = value
+        elif len(matching) == 1:
+            # An unindexed task type refers to its output directly.
+            source_value = dependency_outputs[matching[0]]
+        else:
+            # There cannot normally be multiple unindexed dependencies of the
+            # same type, but preserve all values if a custom harness creates
+            # such a graph rather than silently discarding one.
+            source_value = [dependency_outputs[task_id] for task_id in matching]
         if slot_name == "prerequisite_items" and slot == "S4.item":
             source_value = _summarize_world_items(source_value)
         result[slot] = source_value
     return result
+
+
+def _dependency_index_key(
+    task_id: str,
+    task: Mapping[str, Any],
+) -> str | None:
+    """Return the complete index used as a key for an indexed dependency."""
+
+    raw_index = task.get("index")
+    if isinstance(raw_index, (list, tuple)) and raw_index:
+        if not all(isinstance(value, str) and value for value in raw_index):
+            raise TaskCardError(f"タスクの添字が不正です: {task_id}")
+        return "-".join(raw_index)
+
+    # A few lightweight test/custom-harness contexts omit the manifest index
+    # while retaining the canonical ``<type>-<index>`` task ID.  Recovering it
+    # here keeps the source contract identical for those contexts; real run
+    # manifests always carry the explicit index list.
+    task_type = task.get("type")
+    prefix = f"{task_type}-" if isinstance(task_type, str) else ""
+    if prefix and task_id.startswith(prefix):
+        suffix = task_id[len(prefix) :]
+        if suffix:
+            return suffix
+    return None
 
 
 def _prepare_s8_compare_plan(
@@ -2965,7 +3000,12 @@ def _prepare_s8_compare_plan(
 def _summarize_world_items(value: Any) -> list[dict[str, str]]:
     """Make list-section outputs compact prerequisite context for S4 cards."""
 
-    values = value if isinstance(value, list) else [value]
+    if isinstance(value, Mapping):
+        values = list(value.values())
+    elif isinstance(value, list):
+        values = value
+    else:
+        values = [value]
     summaries: list[dict[str, str]] = []
     for item in values:
         if not isinstance(item, Mapping):

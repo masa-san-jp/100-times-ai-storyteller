@@ -40,7 +40,7 @@ inputs:
   previous_result:
     label: 同じ筋の直前の出来事の結果
     from: S8.judge
-    select: result
+    select: output
     required: false
   conflict:
     label: 筋の葛藤

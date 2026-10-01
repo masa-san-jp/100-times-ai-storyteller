@@ -404,6 +404,8 @@ def _assign_elements_and_sounds(
     used: dict[str, set[str]] = {axis: set() for axis in (*_CHARACTER_AXES, "taboo", *_WORLD_AXES)}
     cast: list[dict[str, Any]] = []
     for index, role in enumerate(roles, start=1):
+        if index == 1 and role != "protagonist":
+            raise ValueError("主人公は人物ID c1 に割り当てられなければなりません")
         elements: dict[str, Any] = {}
         for axis in _CHARACTER_AXES:
             elements[axis] = _choose_element(context, axis, ratio, input_pools, table_pools, used[axis])
@@ -411,8 +413,9 @@ def _assign_elements_and_sounds(
             elements["taboo"] = _choose_element(context, "taboo", ratio, input_pools, table_pools, used["taboo"])
         sound_set = context.random.choice(name_sets)
         sounds = context.random.sample(sound_set["sounds"], 6)
+        person_id = "c1" if role == "protagonist" else f"c{index}"
         person = {
-            "id": f"c{index}",
+            "id": person_id,
             "role": role,
             "elements": elements,
             "name_sound": {
@@ -572,9 +575,16 @@ def _build_downstream_tasks(
     ]
     if len(person_ids) != len(cast):
         raise ValueError("assignment の人物IDが不正です")
+    protagonist_ids = [
+        person.get("id")
+        for person in cast
+        if isinstance(person, Mapping) and person.get("role") == "protagonist"
+    ]
+    if protagonist_ids != ["c1"]:
+        raise ValueError("主人公の人物IDは c1 でなければなりません")
     name_task_ids = [f"S5.name-{person_id}" for person_id in person_ids]
-    protagonist_name_id = name_task_ids[0]
-    protagonist_intro_id = f"S5.intro-{person_ids[0]}"
+    protagonist_name_id = "S5.name-c1"
+    protagonist_intro_id = "S5.intro-c1"
     for person in cast:
         person_id = person.get("id") if isinstance(person, Mapping) else None
         if not isinstance(person_id, str):

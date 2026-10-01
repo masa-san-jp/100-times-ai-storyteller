@@ -174,7 +174,7 @@ def test_s7_input_selectors_use_s6_slot_and_previous_judge_result() -> None:
     assert inputs["characters"]["select"] == "slots[{slot}].characters"
     assert inputs["world_sections"]["select"] == "slots[{slot}].world_sections"
     assert inputs["previous_result"]["from"] == "S8.judge"
-    assert inputs["previous_result"]["select"] == "result"
+    assert inputs["previous_result"]["select"] == "output"
     assert inputs["climax"]["required"] is False
 
     slot = _slot()

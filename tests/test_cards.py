@@ -40,6 +40,8 @@ def test_selector_resolves_roots_access_and_slot_placeholder():
     source = {"cast": [{"id": "d1"}, {"id": "d2"}]}
     assert resolve_selector("cast[{slot}].id", source, index="1") == "d2"
     assert resolve_selector("output.cast[0].id", source) == "d1"
+    assert resolve_selector("[{slot}].name", {"d2": {"name": "beta"}}, index="d2") == "beta"
+    assert resolve_selector("[c1].name", {"c1": {"name": "主人公"}}) == "主人公"
     assert resolve_selector("input.context", source, {"context": "given"}) == "given"
 
     resolved = resolve_inputs(

@@ -5,12 +5,12 @@ inputs:
   event_a:
     label: 記述A
     from: S8.plan
-    select: targets[{slot}]
+    select: "[{slot}].targets[{slot}]"
     required: true
   event_b:
     label: 記述B
     from: S8.plan
-    select: current
+    select: "[{slot}].current"
     required: true
 output: json
 card:

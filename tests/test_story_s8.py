@@ -123,8 +123,15 @@ def test_s8_compare_inputs_are_only_the_two_event_descriptions() -> None:
     }
     inputs = resolve_inputs(
         definition,
-        {"S8.plan": plan_output},
-        index=("e001", "e003", "k1"),
+        {
+            "S8.plan": {
+                "e003": {
+                    "targets": {"e003": plan_output["targets"][0]},
+                    "current": plan_output["current"],
+                }
+            }
+        },
+        index=("e003", "k1"),
     )
 
     card = generate_task_card(definition, "ticket", inputs=inputs)
@@ -170,6 +177,56 @@ def test_s8_compare_input_assembly_selects_the_numbered_target() -> None:
     assert inputs["event_b"]["id"] == "e003"
 
 
+def test_indexed_source_is_an_index_to_output_object_of_done_dependencies() -> None:
+    definition = load_and_validate_yaml(
+        ROOT / "harness/story/tasks/S5.profile.yaml",
+        ROOT / "schemas/task-definition.schema.json",
+    )
+    manifest = {
+        "tasks": {
+            "S5.name-c1": {
+                "type": "S5.name",
+                "state": "done",
+                "index": ["c1"],
+            },
+            "S5.name-c2": {
+                "type": "S5.name",
+                "state": "done",
+                "index": ["c2"],
+            },
+            "S5.name-c3": {
+                "type": "S5.name",
+                "state": "ready",
+                "index": ["c3"],
+            },
+        }
+    }
+    task = {
+        "type": "S5.profile",
+        "deps": ["S5.name-c1", "S5.name-c2", "S5.name-c3"],
+        "index": ["c2"],
+    }
+    source_outputs = _source_outputs(
+        manifest,
+        task,
+        definition,
+        {
+            "S5.name-c1": {"name": "カナ"},
+            "S5.name-c2": {"name": "ミナ"},
+        },
+    )
+
+    assert source_outputs["S5.name"] == {
+        "c1": {"name": "カナ"},
+        "c2": {"name": "ミナ"},
+    }
+    assert resolve_inputs(
+        {"inputs": {"name": {"from": "S5.name", "select": "[{slot}].name"}}},
+        source_outputs,
+        index=("c2",),
+    ) == {"name": "ミナ"}
+
+
 def test_s8_judge_invalidates_s7_when_a_comparison_is_yes() -> None:
     context = SimpleNamespace(
         task_id="S8.judge-e003",
@@ -193,6 +250,34 @@ def test_s8_judge_invalidates_s7_when_a_comparison_is_yes() -> None:
     result = story_s8_judge(context)
 
     assert result.output == {"slot": "e003", "invalidated": True}
+    assert result.invalidations == [
+        ("S7.event-e003", "比較結果に矛盾あり：結果が食い違う。")
+    ]
+
+
+def test_s8_judge_flattens_indexed_comparison_outputs() -> None:
+    context = SimpleNamespace(
+        task_id="S8.judge-e003",
+        task={"index": ["e003"]},
+        inputs={
+            "comparisons": {
+                "e003-k1": {
+                    "answer": "no",
+                    "reason": "整合している。",
+                    "sources": ["e001", "e003"],
+                },
+                "e003-k2": {
+                    "answer": "yes",
+                    "reason": "結果が食い違う。",
+                    "sources": ["e002", "e003"],
+                },
+            }
+        },
+    )
+
+    result = story_s8_judge(context)
+
+    assert result.output["invalidated"] is True
     assert result.invalidations == [
         ("S7.event-e003", "比較結果に矛盾あり：結果が食い違う。")
     ]

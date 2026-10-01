@@ -205,6 +205,7 @@ def test_s3_assignment_is_schema_valid_and_adds_the_phase1_dag(tmp_path: Path) -
 
     assert manifest["table_snapshot"] == {axis: 0 for axis in _pools()}
     assert assignment["cast"][0]["role"] == "protagonist"
+    assert assignment["cast"][0]["id"] == "c1"
     assert assignment["cast"][0]["suppressed_self_image"]["kind"] == "suppression"
     assert {"messenger", "supporter", "adversary"}.issubset(
         set(assignment["absent_roles"])

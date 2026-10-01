@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
+from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 
 
@@ -100,6 +101,17 @@ def story_s8_plan(context: CodeTaskContext) -> CodeTaskResult:
             for target_id in target_ids
         ],
     }
+    # S7 invalidation causes this plan and its comparison/judge descendants to
+    # be re-run.  The descendant task records remain in the DAG, so reuse them
+    # instead of trying to add duplicate IDs on the second planning pass.
+    run_dir = getattr(context, "run_dir", None)
+    if run_dir is not None:
+        manifest = load_manifest(run_dir / "manifest.json")
+        additions = [
+            addition
+            for addition in additions
+            if addition.task_id not in manifest.get("tasks", {})
+        ]
     return CodeTaskResult(output=output, add_tasks=additions)
 
 
@@ -111,7 +123,13 @@ def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
     if comparisons is None:
         comparisons = []
     if isinstance(comparisons, Mapping):
-        comparisons = [comparisons]
+        # S8.compare is indexed.  The selector contract therefore supplies
+        # an index-to-output object, even when only one comparison exists.
+        # Keep accepting one direct comparison for small/custom contexts.
+        if "answer" in comparisons:
+            comparisons = [comparisons]
+        else:
+            comparisons = list(comparisons.values())
     if not isinstance(comparisons, Sequence) or isinstance(comparisons, (str, bytes)):
         raise ValueError("S8.compare の出力が不正です")
 
