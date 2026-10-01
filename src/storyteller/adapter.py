@@ -223,6 +223,27 @@ def _chat_url(endpoint: str) -> str:
     return endpoint.rstrip("/") if endpoint.rstrip("/").endswith("/api/chat") else endpoint.rstrip("/") + "/api/chat"
 
 
+def _without_length_constraints(value: Any) -> Any:
+    """Return a deep copy of ``value`` with string length constraints removed.
+
+    Servers that enforce ``minLength``/``maxLength`` while generating
+    structured output can cut sentences mid-way or pad them with whitespace to
+    satisfy the constraint (docs/spec/task-model.md §6.5).  The task's own
+    schema (used for validating the submission) is left untouched; this
+    function only shapes the copy sent to the server as ``format``.
+    """
+
+    if isinstance(value, Mapping):
+        return {
+            key: _without_length_constraints(item)
+            for key, item in value.items()
+            if key not in ("minLength", "maxLength")
+        }
+    if isinstance(value, list):
+        return [_without_length_constraints(item) for item in value]
+    return value
+
+
 class OllamaAdapter:
     """Small urllib-only client for Ollama's non-streaming chat API."""
 
@@ -259,7 +280,7 @@ class OllamaAdapter:
             if mode == "schema":
                 if schema is None:
                     raise AdapterError("schema モードにはタスクの JSON Schema が必要です")
-                payload["format"] = dict(schema)
+                payload["format"] = _without_length_constraints(schema)
             elif mode == "json":
                 payload["format"] = "json"
         request = Request(

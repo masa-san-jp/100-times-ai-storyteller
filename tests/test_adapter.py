@@ -20,6 +20,7 @@ from storyteller.adapter import (
 from storyteller.dev.dummy import create_dummy_orchestrator
 from storyteller.new_run import create_story_orchestrator
 from storyteller.orchestrator import TaskSpec
+from storyteller.validation import SchemaValidationError, validate_document
 
 
 class _OllamaHandler(BaseHTTPRequestHandler):
@@ -84,6 +85,73 @@ def test_ollama_payload_contains_schema_and_options(ollama_server: str) -> None:
         "num_predict": 123,
         "num_ctx": 456,
     }
+
+
+def _collect_keys(value: Any, keys: set[str]) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in keys:
+                found.add(key)
+            found |= _collect_keys(item, keys)
+    elif isinstance(value, list):
+        for item in value:
+            found |= _collect_keys(item, keys)
+    return found
+
+
+def test_ollama_payload_strips_length_constraints_including_nested(
+    ollama_server: str,
+) -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["intro", "sources"],
+        "properties": {
+            "intro": {"type": "string", "minLength": 1, "maxLength": 50},
+            "sources": {"$ref": "#/$defs/sources"},
+            "variant": {
+                "anyOf": [
+                    {"type": "string", "minLength": 2, "maxLength": 10},
+                    {"type": "null"},
+                ]
+            },
+        },
+        "$defs": {
+            "sources": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string", "minLength": 1, "maxLength": 20},
+            }
+        },
+    }
+
+    adapter = OllamaAdapter(_model(ollama_server))
+    adapter.complete("次のJSONだけを出力すること。", schema=schema)
+
+    sent_format = _OllamaHandler.requests[-1]["format"]
+    assert _collect_keys(sent_format, {"minLength", "maxLength"}) == set()
+    # Other constraints survive the copy.
+    assert sent_format["$defs"]["sources"]["minItems"] == 1
+    assert sent_format["properties"]["intro"]["type"] == "string"
+
+    # The caller's schema object (the one used for validating the
+    # submission) must be left untouched.
+    assert schema["properties"]["intro"]["maxLength"] == 50
+    assert schema["$defs"]["sources"]["items"]["maxLength"] == 20
+
+
+def test_submission_validation_still_enforces_original_max_length() -> None:
+    schema_path = (
+        Path(__file__).resolve().parents[1] / "schemas" / "tasks" / "S5.intro.schema.json"
+    )
+    too_long = {"intro": "あ" * 51, "sources": ["S1"]}
+
+    with pytest.raises(SchemaValidationError):
+        validate_document(too_long, schema_path)
+
+    ok = {"intro": "あ" * 50, "sources": ["S1"]}
+    assert validate_document(ok, schema_path) == ok
 
 
 def test_non_local_endpoint_is_rejected() -> None:
