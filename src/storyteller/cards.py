@@ -100,6 +100,7 @@ def generate_task_card(
             "## 守ること",
             "- 入力に書かれていないことを付け加えない。",
             "- 出力形式以外の文章を書かない。",
+            "- 日本語で書く（ID・列挙値を除く）。",
         ]
     )
     if retry_reason is not None:

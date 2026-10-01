@@ -141,6 +141,8 @@ def test_s8_compare_inputs_are_only_the_two_event_descriptions() -> None:
     assert inputs["event_b"]["id"] == "e003"
     assert "Aの結果" in card
     assert "Bの結果" in card
+    assert "事実として両立しないことだけを指す" in card
+    assert "人物の心情・関係・状況の変化や展開は矛盾に含めない" in card
     assert "比較計画" not in card
     input_section = card.split("## 手順", 1)[0]
     assert "e002" not in input_section
@@ -281,6 +283,43 @@ def test_s8_judge_flattens_indexed_comparison_outputs() -> None:
     assert result.invalidations == [
         ("S7.event-e003", "比較結果に矛盾あり：結果が食い違う。")
     ]
+
+
+def test_s8_judge_adopts_last_s7_output_at_invalidation_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    manifest = {
+        "tasks": {"S7.event-e003": {"invalidations": 2}},
+        "warnings": [],
+    }
+    monkeypatch.setattr(
+        "storyteller.story_s8.load_manifest",
+        lambda _path: manifest,
+    )
+    context = SimpleNamespace(
+        task_id="S8.judge-e003",
+        task={"index": ["e003"]},
+        run_dir=tmp_path,
+        inputs={
+            "comparisons": [
+                {
+                    "answer": "yes",
+                    "reason": "結果が食い違う。",
+                    "sources": ["e002", "e003"],
+                }
+            ]
+        },
+    )
+
+    result = story_s8_judge(context)
+
+    assert result.output == {"slot": "e003", "invalidated": False}
+    assert result.invalidations == []
+    assert result.manifest_updates == {
+        "warnings": [
+            "S7.event-e003: 矛盾あり判定が無効化上限（2回）に達したため、最後の出力を採用"
+        ]
+    }
 
 
 def test_s8_judge_does_not_invalidate_without_yes() -> None:

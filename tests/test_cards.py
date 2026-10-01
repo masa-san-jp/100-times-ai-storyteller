@@ -105,6 +105,7 @@ def test_card_has_fixed_sections_and_hides_task_metadata():
     assert "## 手順\n1. 項目を一つずつ確認する。" in card
     assert "## 出力形式\n次のJSONだけを出力すること。前後に説明を書かないこと。" in card
     assert "## 守ること" in card
+    assert "- 日本語で書く（ID・列挙値を除く）。" in card
     assert "D2.echo" not in card
     assert "D1.items" not in card
     assert "run" not in card

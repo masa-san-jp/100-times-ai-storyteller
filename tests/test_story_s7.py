@@ -71,6 +71,11 @@ def test_s7_definition_and_schema_are_valid() -> None:
     assert definition["id"] == "S7.event"
     assert definition["candidates"] == 1
     assert definition["validate"]["schema"] == "schemas/tasks/S7.event.schema.json"
+    assert any(
+        "why・where・when は、この出来事に固有の内容にし" in step
+        and "人物の動機をそのまま書き写さない" in step
+        for step in definition["card"]["steps"]
+    )
     assert set(definition["inputs"]) == {
         "stage_definition",
         "stage_guidance",
