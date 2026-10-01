@@ -25,11 +25,10 @@ from urllib.request import Request, urlopen
 
 import yaml
 
-from .dev.dummy import create_dummy_orchestrator
 from .manifest import load_manifest, write_manifest
 from .orchestrator import Orchestrator
 from .storage import acquire_lock, atomic_write_json, manifest_lock
-from .validation import parse_json_object
+from .validation import YamlValidationError, parse_json_object, validate_document
 
 
 class AdapterError(ValueError):
@@ -51,6 +50,8 @@ class ModelConfig:
     max_tokens: int
     context_length: int
     json_mode: str
+    think: bool | str | None = None
+    timeout_seconds: float = 600.0
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,9 @@ class AdapterResponse:
 
 
 _JSON_MODES = ("schema", "json", "off")
+_THINK_VALUES = (False, "low", "medium", "high")
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "models.yaml"
+_MODEL_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "models.schema.json"
 
 
 def register_auto_command(subparsers: Any) -> None:
@@ -100,8 +103,15 @@ def run_auto_command(args: argparse.Namespace) -> int:
             f"provider {model.provider!r} は Phase 1 では未対応です（ollama のみ）"
         )
     _validate_local_endpoint(model.endpoint)
-    orchestrator = create_dummy_orchestrator(data_dir)
-    runner = AutoRunner(data_dir, model, orchestrator)
+    from .cli import _orchestrator
+
+    orchestrator = _orchestrator(data_dir, args.run_id) if args.run_id else None
+    runner = AutoRunner(
+        data_dir,
+        model,
+        orchestrator,
+        orchestrator_factory=lambda run_id: _orchestrator(data_dir, run_id),
+    )
     runner.run(
         run_id=args.run_id,
         workers=args.workers,
@@ -137,6 +147,10 @@ def load_model_config(
         raise AdapterError(f"モデル設定を読み込めません: {path}") from error
     if not isinstance(document, Mapping) or not isinstance(document.get("models"), Mapping):
         raise AdapterError("config/models.yaml の models が不正です")
+    try:
+        validate_document(document, _MODEL_SCHEMA_PATH, source_path=path)
+    except (YamlValidationError, OSError) as error:
+        raise AdapterError(f"モデル設定の形式が不正です: {path}") from error
     raw = document["models"].get(model)
     if not isinstance(raw, Mapping):
         raise AdapterError(f"モデル設定がありません: {model}")
@@ -155,6 +169,8 @@ def load_model_config(
     max_tokens = raw.get("max_tokens")
     context_length = raw.get("context_length")
     json_mode = raw.get("json_mode", "schema")
+    think = raw.get("think") if "think" in raw else None
+    timeout_seconds = raw.get("timeout_seconds", 600)
     if (
         isinstance(temperature, bool)
         or not isinstance(temperature, (int, float))
@@ -166,8 +182,14 @@ def load_model_config(
         or not isinstance(context_length, int)
         or context_length < 1
         or json_mode not in _JSON_MODES
+        or (think is not None and think not in _THINK_VALUES)
+        or isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or timeout_seconds <= 0
     ):
-        raise AdapterError(f"モデル設定の数値または json_mode が不正です: {model}")
+        raise AdapterError(
+            f"モデル設定の数値、json_mode、think または timeout_seconds が不正です: {model}"
+        )
     return ModelConfig(
         name=model,
         provider=resolved_provider,
@@ -176,6 +198,8 @@ def load_model_config(
         max_tokens=max_tokens,
         context_length=context_length,
         json_mode=json_mode,
+        think=think,
+        timeout_seconds=float(timeout_seconds),
     )
 
 
@@ -199,15 +223,36 @@ def _chat_url(endpoint: str) -> str:
     return endpoint.rstrip("/") if endpoint.rstrip("/").endswith("/api/chat") else endpoint.rstrip("/") + "/api/chat"
 
 
+def _without_length_constraints(value: Any) -> Any:
+    """Return a deep copy of ``value`` with string length constraints removed.
+
+    Servers that enforce ``minLength``/``maxLength`` while generating
+    structured output can cut sentences mid-way or pad them with whitespace to
+    satisfy the constraint (docs/spec/task-model.md §6.5).  The task's own
+    schema (used for validating the submission) is left untouched; this
+    function only shapes the copy sent to the server as ``format``.
+    """
+
+    if isinstance(value, Mapping):
+        return {
+            key: _without_length_constraints(item)
+            for key, item in value.items()
+            if key not in ("minLength", "maxLength")
+        }
+    if isinstance(value, list):
+        return [_without_length_constraints(item) for item in value]
+    return value
+
+
 class OllamaAdapter:
     """Small urllib-only client for Ollama's non-streaming chat API."""
 
-    def __init__(self, model: ModelConfig, *, timeout: float = 60.0) -> None:
+    def __init__(self, model: ModelConfig, *, timeout: float | None = None) -> None:
         if model.provider != "ollama":
             raise AdapterError("OllamaAdapter は provider=ollama に限ります")
         _validate_local_endpoint(model.endpoint)
         self.model = model
-        self.timeout = timeout
+        self.timeout = model.timeout_seconds if timeout is None else timeout
 
     def complete(
         self,
@@ -229,11 +274,13 @@ class OllamaAdapter:
                 "num_ctx": self.model.context_length,
             },
         }
+        if self.model.think is not None:
+            payload["think"] = self.model.think
         if schema is not None or _card_requests_json(card):
             if mode == "schema":
                 if schema is None:
                     raise AdapterError("schema モードにはタスクの JSON Schema が必要です")
-                payload["format"] = dict(schema)
+                payload["format"] = _without_length_constraints(schema)
             elif mode == "json":
                 payload["format"] = "json"
         request = Request(
@@ -257,7 +304,8 @@ class OllamaAdapter:
                 last_error = AdapterRequestError(f"Ollama への接続に失敗しました: {error}")
             except AdapterRequestError as error:
                 last_error = error
-        raise AdapterRequestError("Ollama への接続に3回失敗しました") from last_error
+        detail = f": {last_error}" if last_error is not None else ""
+        raise AdapterRequestError(f"Ollama への接続に3回失敗しました{detail}") from last_error
 
     @staticmethod
     def _decode_response(document: Any) -> AdapterResponse:
@@ -334,13 +382,15 @@ class AutoRunner:
         self,
         data_dir: str | Path,
         model: ModelConfig,
-        orchestrator: Orchestrator,
+        orchestrator: Orchestrator | None,
         *,
+        orchestrator_factory: Callable[[str], Orchestrator] | None = None,
         adapter_factory: Callable[[ModelConfig], OllamaAdapter] | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
         self.model = model
         self.orchestrator = orchestrator
+        self.orchestrator_factory = orchestrator_factory
         self.state = _StateStore(self.data_dir)
         self.adapter_factory = adapter_factory or OllamaAdapter
 
@@ -361,11 +411,7 @@ class AutoRunner:
     def _worker(self, *, run_id: str | None, until_empty: bool) -> None:
         adapter = self.adapter_factory(self.model)
         while True:
-            claim = self.orchestrator.claim_next(
-                run_id,
-                executor_id=None,
-                isolation="adapter",
-            )
+            claim, orchestrator = self._claim_next(run_id)
             if claim is None:
                 if not until_empty:
                     time.sleep(0.2)
@@ -375,14 +421,15 @@ class AutoRunner:
                 time.sleep(0.05)
                 continue
             try:
-                claim_info = self.orchestrator.validate_claim(claim["ticket"])
-                definition = self.orchestrator.task_definitions[
-                    self.orchestrator.load_run(claim_info["run_id"])["tasks"][claim_info["task_id"]]["type"]
+                claim_info = orchestrator.validate_claim(claim["ticket"])
+                definition = orchestrator.task_definitions[
+                    orchestrator.load_run(claim_info["run_id"])["tasks"][claim_info["task_id"]]["type"]
                 ]
-                schema = self._load_schema(definition)
+                schema = self._load_schema(definition, orchestrator)
                 mode = self.state.current(self.model)["json_mode"]
                 response = adapter.complete(claim["card"], schema=schema, json_mode=mode)
-                invalid = not response.content.strip() or (
+                empty_response = not response.content.strip()
+                invalid = empty_response or (
                     _card_requests_json(claim["card"])
                     and _is_unparseable_json(response.content)
                 )
@@ -391,10 +438,17 @@ class AutoRunner:
                 )
                 if switched:
                     self._record_warning(
+                        orchestrator,
                         claim_info["run_id"],
                         f"モデル {self.model.name} の json_mode を {new_mode} に切り替えました",
                     )
-                result = self.orchestrator.submit(
+                if empty_response:
+                    orchestrator.record_executor_failure(
+                        claim["ticket"],
+                        "Ollama の応答本文が空です",
+                    )
+                    continue
+                result = orchestrator.submit(
                     claim["ticket"],
                     response.content,
                     truncated=response.done_reason == "length",
@@ -402,17 +456,78 @@ class AutoRunner:
                 if not result.accepted:
                     continue
             except AdapterRequestError as error:
-                print(f"警告: {error}。claim は lease 切れに任せます。", file=sys.stderr)
+                try:
+                    orchestrator.record_executor_failure(claim["ticket"], str(error))
+                except (AdapterError, OSError, ValueError) as submit_error:
+                    print(
+                        f"警告: LLMタスクの失敗を記録できません: {submit_error}",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(f"警告: {error}", file=sys.stderr)
             except (AdapterError, OSError, ValueError) as error:
                 print(f"警告: LLMタスクを処理できません: {error}", file=sys.stderr)
 
-    def _load_schema(self, definition: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    def _claim_next(
+        self, run_id: str | None
+    ) -> tuple[dict[str, str] | None, Orchestrator | None]:
+        """Claim from one run using the orchestrator selected for that run."""
+        if run_id is not None:
+            orchestrator = self._orchestrator_for_run(run_id)
+            return (
+                orchestrator.claim_next(
+                    run_id,
+                    executor_id=None,
+                    isolation="adapter",
+                ),
+                orchestrator,
+            )
+        for candidate_run_id in self._candidate_run_ids():
+            orchestrator = self._orchestrator_for_run(candidate_run_id)
+            claim = orchestrator.claim_next(
+                candidate_run_id,
+                executor_id=None,
+                isolation="adapter",
+            )
+            if claim is not None:
+                return claim, orchestrator
+        return None, None
+
+    def _orchestrator_for_run(self, run_id: str) -> Orchestrator:
+        if self.orchestrator_factory is not None:
+            return self.orchestrator_factory(run_id)
+        if self.orchestrator is not None:
+            return self.orchestrator
+        raise AdapterError("run のオーケストレータが指定されていません")
+
+    def _candidate_run_ids(self) -> list[str]:
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.is_dir():
+            return []
+        candidates: list[tuple[str, str]] = []
+        for entry in runs_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            try:
+                manifest = load_manifest(entry / "manifest.json")
+            except (OSError, ValueError):
+                continue
+            if manifest["status"] in {"active", "stalled"}:
+                candidates.append((manifest["created_at"], manifest["run_id"]))
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        return [candidate[1] for candidate in candidates]
+
+    def _load_schema(
+        self,
+        definition: Mapping[str, Any],
+        orchestrator: Orchestrator,
+    ) -> Mapping[str, Any] | None:
         if definition.get("output") != "json" or self.state.current(self.model)["json_mode"] != "schema":
             return None
         schema_ref = (definition.get("validate") or {}).get("schema")
         if not isinstance(schema_ref, str):
             return None
-        path = self.orchestrator.definition_root / schema_ref
+        path = orchestrator.definition_root / schema_ref
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -421,8 +536,10 @@ class AutoRunner:
             raise AdapterError(f"JSON Schema がオブジェクトではありません: {path}")
         return value
 
-    def _record_warning(self, run_id: str, warning: str) -> None:
-        run_dir = self.orchestrator.run_dir(run_id)
+    def _record_warning(
+        self, orchestrator: Orchestrator, run_id: str, warning: str
+    ) -> None:
+        run_dir = orchestrator.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
             if warning not in manifest["warnings"]:

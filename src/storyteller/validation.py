@@ -12,7 +12,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -119,13 +119,17 @@ def validate_output(
     *,
     harness_root: str | Path | None = None,
     common_words_path: str | Path | None = None,
+    index: Sequence[str] | str | None = None,
 ) -> ValidationResult:
     """Validate one LLM output according to ``task_definition``.
 
     The input mapping contains the values rendered in the task card, keyed by
-    input-slot name.  It is used by source and input-dependent checks.  The
-    function only parses and validates data; retry counters, attempts, and
-    task state are deliberately outside its scope.
+    input-slot name.  It is used by source and input-dependent checks.
+    ``index`` is the task's own index (for example ``["c2"]``); it is used to
+    resolve ``default_sources`` (task-model.md §2.1) and the ``{slot}``
+    placeholder within it.  The function only parses and validates data;
+    retry counters, attempts, and task state are deliberately outside its
+    scope.
     """
 
     output_kind = task_definition.get("output")
@@ -133,7 +137,7 @@ def validate_output(
         raise ValidationConfigurationError("task definition output must be json or text")
 
     try:
-        value = parse_output(raw_output, output_kind)
+        value = _strip_output_strings(parse_output(raw_output, output_kind))
     except OutputParseError as error:
         return ValidationResult(None, errors=(str(error),))
 
@@ -158,6 +162,14 @@ def validate_output(
     checks = validation.get("checks", [])
     if not isinstance(checks, list):
         raise ValidationConfigurationError("validate.checks must be a list")
+    sources_checked = False
+    for check in checks:
+        name, _ = _normalise_check(check)
+        if name == "sources_exist" and not sources_checked:
+            _remove_unknown_sources(value, slot_values, warnings)
+            _apply_default_sources(value, slot_values, task_definition, index, warnings)
+            sources_checked = True
+    value = _apply_ends_complete_fixes(value, checks, warnings)
     for check in checks:
         try:
             name, arguments = _normalise_check(check)
@@ -281,9 +293,8 @@ def _run_check(
         if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
             return ["sources_exist: sources が配列ではありません"], []
         allowed = _ids_from_inputs(inputs)
-        unknown = [source for source in output["sources"] if source not in allowed]
-        if unknown:
-            return [f"sources_exist: 未知のIDがあります: {unknown!r}"], []
+        if not any(source in allowed for source in output["sources"]):
+            return ["sources_exist: 有効な出典 ID がありません"], []
         return [], []
 
     if name in {"max_chars", "min_chars"}:
@@ -474,28 +485,152 @@ def _read_field(value: Any, field: str | None) -> tuple[Any, bool]:
 
 def _ids_from_inputs(inputs: Mapping[str, Any]) -> set[Any]:
     ids: set[Any] = set()
-    for value in inputs.values():
-        ids.update(_ids_from_value(value))
+    for key, value in inputs.items():
+        ids.update(
+            _ids_from_value(
+                value,
+                include_own_ids=key not in {"role_definition", "plot_requirements"},
+            )
+        )
     return ids
 
 
-def _ids_from_value(value: Any) -> set[Any]:
+def _ids_from_value(value: Any, *, include_own_ids: bool = True) -> set[Any]:
     if isinstance(value, list):
         ids: set[Any] = set()
         for item in value:
-            ids.update(_ids_from_value(item))
+            ids.update(_ids_from_value(item, include_own_ids=include_own_ids))
         return ids
     if isinstance(value, Mapping):
         ids: set[Any] = set()
-        for key in ("id", "set_id"):
-            identifier = value.get(key)
-            if identifier is not None:
-                ids.add(identifier)
-        for item in value.values():
+        if include_own_ids:
+            for key in ("id", "set_id"):
+                identifier = value.get(key)
+                if identifier is not None:
+                    ids.add(identifier)
+        for key, item in value.items():
+            if key in {"role_definition", "plot_context"}:
+                continue
             if isinstance(item, (Mapping, list)):
-                ids.update(_ids_from_value(item))
+                ids.update(_ids_from_value(item, include_own_ids=include_own_ids))
         return ids
     return set()
+
+
+def _remove_unknown_sources(
+    output: Any,
+    inputs: Mapping[str, Any],
+    warnings: list[str],
+) -> None:
+    """Remove source IDs that are not present in the rendered card inputs."""
+
+    if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
+        return
+    allowed = _ids_from_inputs(inputs)
+    sources = output["sources"]
+    unknown = [source for source in sources if source not in allowed]
+    if not unknown:
+        return
+    output["sources"] = [source for source in sources if source in allowed]
+    warnings.append(f"未知の出典 ID を除去: {unknown!r}")
+
+
+def _apply_default_sources(
+    output: Any,
+    inputs: Mapping[str, Any],
+    task_definition: Mapping[str, Any],
+    index: Sequence[str] | str | None,
+    warnings: list[str],
+) -> None:
+    """Fill ``sources`` from ``default_sources`` when no valid ID survived.
+
+    Only runs after :func:`_remove_unknown_sources` has already stripped IDs
+    that do not appear in the card's inputs, and only when that leaves
+    ``sources`` empty.  A task without ``default_sources`` is left untouched,
+    so it fails ``sources_exist`` as before (task-model.md §2.1, §6.2).
+    """
+
+    if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
+        return
+    if output["sources"]:
+        return
+    default_sources = task_definition.get("default_sources")
+    if not default_sources:
+        return
+    resolved = [
+        _resolve_default_source(expression, index) for expression in default_sources
+    ]
+    output["sources"] = resolved
+    warnings.append(f"出典を補完: {resolved!r}")
+
+
+def _resolve_default_source(expression: Any, index: Sequence[str] | str | None) -> str:
+    if not isinstance(expression, str) or not expression:
+        raise ValidationConfigurationError(
+            "default_sources の要素は空でない文字列にしてください"
+        )
+    if "{slot}" not in expression:
+        return expression
+    slot = _first_index_value(index)
+    if not slot:
+        raise ValidationConfigurationError(
+            "default_sources の{slot}を解決するタスクの添字がありません"
+        )
+    return expression.replace("{slot}", slot)
+
+
+def _first_index_value(index: Sequence[str] | str | None) -> str | None:
+    if index is None:
+        return None
+    if isinstance(index, str):
+        return index or None
+    try:
+        value = index[0]
+    except (IndexError, TypeError, KeyError):
+        return None
+    return value if isinstance(value, str) and value else None
+
+
+def _apply_ends_complete_fixes(
+    value: Any,
+    checks: list[Any],
+    warnings: list[str],
+) -> Any:
+    """Append a closing mark for ``ends_complete`` checks with ``fix: append``.
+
+    This runs before the main checks loop because, unlike every other check,
+    it can rewrite the submitted value instead of only accepting or
+    rejecting it (task-model.md §6.2).  Malformed check arguments are left
+    for the main loop to report as usual.
+    """
+
+    for check in checks:
+        name, arguments = _normalise_check(check)
+        if name != "ends_complete" or arguments.get("fix") != "append":
+            continue
+        field, field_error = _field_argument(arguments)
+        if field_error:
+            continue
+        field_value, missing = _read_field(value, field)
+        if missing or not isinstance(field_value, str):
+            continue
+        if text_ends_complete(field_value):
+            continue
+        fixed = field_value + "。"
+        if field is None:
+            value = fixed
+        else:
+            _set_field(value, field, fixed)
+        warnings.append("文末を補完")
+    return value
+
+
+def _set_field(container: Any, field: str, new_value: Any) -> None:
+    parts = field.split(".")
+    current = container
+    for part in parts[:-1]:
+        current = current[part]
+    current[parts[-1]] = new_value
 
 
 def _item_id(value: Any) -> Any:
@@ -655,7 +790,21 @@ def _normalize_for_substring(value: str) -> str:
 
 
 def _char_length(value: str) -> int:
-    return len(_normalise(value))
+    return sum(not character.isspace() for character in _normalise(value))
+
+
+def _strip_output_strings(value: Any) -> Any:
+    """Strip surrounding whitespace from every submitted string value."""
+
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        return {key: _strip_output_strings(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_strip_output_strings(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_output_strings(item) for item in value)
+    return value
 
 
 def _is_nonnegative_integer(value: Any) -> bool:

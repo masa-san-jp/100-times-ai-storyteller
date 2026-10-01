@@ -22,6 +22,7 @@ def manifest() -> dict:
         "input": {},
         "scale": {},
         "harness": {"schemas/manifest.schema.json": "a" * 64},
+        "harness_kind": "story",
         "input_ratio": None,
         "table_snapshot": {},
         "tasks": {

@@ -100,8 +100,11 @@ def generate_task_card(
             "## 守ること",
             "- 入力に書かれていないことを付け加えない。",
             "- 出力形式以外の文章を書かない。",
+            "- 日本語で書く（ID・列挙値を除く）。",
         ]
     )
+    if output == "json":
+        lines.append("- sources には、入力に [ ] で示された ID だけを書く。")
     if retry_reason is not None:
         lines.extend(["", "## 前回の不合格理由", _limit_retry_reason(retry_reason)])
     if continuation_tail is not None:
@@ -261,11 +264,16 @@ def _render_input_body(
         if not isinstance(slot, Mapping) or not isinstance(slot.get("label"), str):
             raise TaskCardError(f"input slot has no label: {name}")
         lines.append(f"### {slot['label']}")
-        lines.append(_render_value(values[name]))
+        lines.append(
+            _render_value(
+                values[name],
+                context_only=name in {"role_definition", "plot_requirements"},
+            )
+        )
     return "\n".join(lines)
 
 
-def _render_value(value: Any) -> str:
+def _render_value(value: Any, *, context_only: bool = False) -> str:
     if isinstance(value, str):
         return unicodedata.normalize("NFC", value)
     if isinstance(value, list):
@@ -279,15 +287,45 @@ def _render_value(value: Any) -> str:
             )
         return "\n".join(f"- {_render_list_item(item)}" for item in value)
     if isinstance(value, Mapping):
+        value = _prepare_mapping_for_card(value, context_only=context_only)
         return yaml.safe_dump(
             value, allow_unicode=True, sort_keys=False, default_flow_style=False
         ).rstrip("\n")
     return yaml.safe_dump(value, allow_unicode=True, sort_keys=False).rstrip("\n")
 
 
+def _prepare_mapping_for_card(
+    value: Mapping[str, Any],
+    *,
+    context_only: bool = False,
+) -> dict[str, Any]:
+    """Make source IDs explicit and keep context identifiers out of cards."""
+
+    prepared: dict[str, Any] = {}
+    for key, item in value.items():
+        if context_only and key in {"id", "set_id"}:
+            continue
+        if key in {"role_definition", "plot_context"} and isinstance(item, Mapping):
+            prepared[key] = _prepare_mapping_for_card(item, context_only=True)
+        elif key in {"id", "set_id"} and isinstance(item, str):
+            prepared[key] = f"[{item}]"
+        elif isinstance(item, Mapping):
+            prepared[key] = _prepare_mapping_for_card(item)
+        elif isinstance(item, list):
+            prepared[key] = [
+                _prepare_mapping_for_card(entry) if isinstance(entry, Mapping) else entry
+                for entry in item
+            ]
+        else:
+            prepared[key] = item
+    return prepared
+
+
 def _render_list_item(value: Any) -> str:
     if isinstance(value, str):
         return unicodedata.normalize("NFC", value)
+    if isinstance(value, Mapping):
+        value = _prepare_mapping_for_card(value)
     if isinstance(value, (Mapping, list)):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     return str(value)

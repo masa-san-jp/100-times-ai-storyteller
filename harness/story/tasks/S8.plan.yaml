@@ -1,0 +1,10 @@
+id: S8.plan
+version: 1
+kind: code
+handler: story_s8_plan
+inputs:
+  slots:
+    label: 構造展開
+    from: S6.expand
+    select: output
+    required: true

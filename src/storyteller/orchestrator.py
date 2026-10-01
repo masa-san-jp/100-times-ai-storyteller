@@ -57,13 +57,14 @@ _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _TICKET = re.compile(r"^[a-f0-9]{32}$")
 _EXECUTOR_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
+_HARNESS_KINDS = frozenset({"story", "dummy"})
 _TERMINAL_RUN_STATUSES = frozenset({"halted", "completed", "duplicate"})
 _MISSING: Final = object()
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "blocked": frozenset({"ready", "skipped"}),
     "ready": frozenset({"claimed", "done", "failed", "skipped"}),
-    "claimed": frozenset({"done", "ready", "failed"}),
+    "claimed": frozenset({"done", "ready", "failed", "skipped"}),
     "done": frozenset(),
     "failed": frozenset({"ready", "blocked"}),
     "skipped": frozenset(),
@@ -217,6 +218,7 @@ class Orchestrator:
         clock: Callable[[], datetime] | None = None,
         harness_root: str | Path | None = None,
         repository_root: str | Path | None = None,
+        harness_kind: str | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
         self.definition_root = (
@@ -229,6 +231,12 @@ class Orchestrator:
             if repository_root is not None
             else _repository_root_for_definition_root(self.definition_root)
         )
+        resolved_harness_kind = harness_kind or (
+            "dummy" if _is_dummy_harness_root(self.definition_root) else "story"
+        )
+        if resolved_harness_kind not in _HARNESS_KINDS:
+            raise ValueError(f"invalid harness_kind: {resolved_harness_kind!r}")
+        self.harness_kind = resolved_harness_kind
         self.task_definitions = _validate_task_definitions(
             task_definitions,
             schema_root=self.definition_root,
@@ -255,6 +263,7 @@ class Orchestrator:
         scale: Mapping[str, Any] | None = None,
         table_snapshot: Mapping[str, Any] | None = None,
         run_id: str | None = None,
+        harness_kind: str | None = None,
     ) -> str:
         """Create and persist a run, returning its run ID.
 
@@ -275,6 +284,13 @@ class Orchestrator:
             raise ValueError("batch_id must be a non-empty string or None")
         if input_type not in {"narrative", "free"}:
             raise ValueError("input_type must be narrative or free")
+        resolved_harness_kind = harness_kind or self.harness_kind
+        if resolved_harness_kind not in _HARNESS_KINDS:
+            raise ValueError(f"invalid harness_kind: {resolved_harness_kind!r}")
+        if resolved_harness_kind != self.harness_kind:
+            raise ValueError(
+                "harness_kind must match the orchestrator's harness_kind"
+            )
 
         created_at = _timestamp(self._clock)
         resolved_run_id = run_id or _make_run_id(created_at, run_seed)
@@ -330,6 +346,7 @@ class Orchestrator:
                 "input": input_record,
                 "scale": dict(scale or {}),
                 "harness": resolved_harness,
+                "harness_kind": resolved_harness_kind,
                 "input_ratio": None,
                 "table_snapshot": dict(table_snapshot or {}),
                 "tasks": {},
@@ -730,6 +747,7 @@ class Orchestrator:
                 inputs=inputs,
                 harness_root=self.definition_root,
                 common_words_path=self.repository_root / "tables" / "common_words.yaml",
+                index=task["index"],
             )
         return self._commit_submission(
             ticket,
@@ -743,6 +761,35 @@ class Orchestrator:
     # Names used by internal callers and by the future CLI layer.
     submit_output = submit
     process_submission = submit
+
+    def record_executor_failure(self, ticket: str, reason: str) -> SubmissionResult:
+        """Record an executor or adapter failure as a failed submission."""
+
+        if not isinstance(reason, str) or not reason.strip():
+            raise OrchestrationError("実行者の失敗理由が空です")
+        claim_info = self.validate_claim(ticket)
+        run_id = claim_info["run_id"]
+        task_id = claim_info["task_id"]
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if self._halt_if_harness_changed(manifest):
+                _touch_manifest(manifest, self._now())
+                write_manifest(run_dir / "manifest.json", manifest)
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            if manifest["status"] == "halted":
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            inputs = _load_card_inputs(self.task_dir(run_id, task_id))
+        return self._commit_submission(
+            ticket,
+            run_id,
+            task_id,
+            None,
+            ValidationResult(None, errors=(reason.strip(),)),
+            inputs,
+        )
+
+    submit_failure = record_executor_failure
 
     def _commit_submission(
         self,
@@ -838,8 +885,16 @@ class Orchestrator:
             task["error"] = reason
             task["cache_key"] = None
             task["claim"] = None
-            max_attempts = int(self.task_definitions[task["type"]].get("max_attempts", 3))
-            next_state = "failed" if task["tries"] >= max_attempts else "ready"
+            task_definition = self.task_definitions[task["type"]]
+            max_attempts = int(task_definition.get("max_attempts", 5))
+            exhausted = task["tries"] >= max_attempts
+            on_exhausted = task_definition.get("on_exhausted", "fail")
+            if exhausted and on_exhausted == "skip":
+                next_state = "skipped"
+            elif exhausted:
+                next_state = "failed"
+            else:
+                next_state = "ready"
             _set_task_state(
                 manifest,
                 task_id,
@@ -848,6 +903,11 @@ class Orchestrator:
                 reason=reason,
                 executor_id=claim["executor_id"],
             )
+            if next_state == "skipped":
+                manifest["warnings"].append(
+                    f"{task_id}: 試行の上限に達したため省略: {reason}"
+                )
+                _refresh_blocked_tasks(manifest, at)
             _update_run_status(manifest)
             _touch_manifest(manifest, at)
             write_manifest(run_dir / "manifest.json", manifest)
@@ -2580,8 +2640,8 @@ def _validate_transition(
             for dependency in task["deps"]
         ):
             raise InvalidTransition("blocked task dependencies are not complete")
-    if state == "skipped" and old_state not in {"blocked", "ready"}:
-        raise InvalidTransition("only blocked or ready tasks may be skipped")
+    if state == "skipped" and old_state not in {"blocked", "ready", "claimed"}:
+        raise InvalidTransition("only blocked, ready, or claimed tasks may be skipped")
 
 
 def _set_task_state(
@@ -2851,36 +2911,71 @@ def _source_outputs(
             and manifest["tasks"][dependency]["state"] == "done"
             and dependency in dependency_outputs
         ]
-        # An explicit `output` selector asks for the collection of all
-        # matching dependency outputs.  Other selectors use the task with the
-        # same index when one exists, which keeps per-character inputs local.
-        select = slot_definition.get("select")
-        explicit_output_access = (
-            isinstance(select, str)
-            and (select == "output" or select.startswith("output["))
-        )
-        if len(matching) > 1 and task["index"] and not explicit_output_access:
-            indexed_task_id = f"{slot}-{task['index'][0]}"
-            if indexed_task_id in matching:
-                matching = [indexed_task_id]
-        if isinstance(select, str) and select.startswith("output["):
-            source_value = [dependency_outputs[task_id] for task_id in matching]
-        elif len(matching) == 1:
-            source_value: Any = dependency_outputs[matching[0]]
-        elif matching:
-            source_value = [dependency_outputs[task_id] for task_id in matching]
-        else:
+        if not matching:
             continue
-        if (
-            task.get("type") == "S8.compare"
-            and slot == "S8.plan"
-            and len(matching) == 1
-        ):
-            source_value = _prepare_s8_compare_plan(source_value, task)
+
+        indexed = any(
+            _dependency_index_key(dependency, manifest["tasks"][dependency]) is not None
+            for dependency in matching
+        )
+        if indexed:
+            # References to an indexed task type always expose an object whose
+            # keys are the dependency indexes.  This deliberately does not
+            # collapse a single matching dependency: the task definition must
+            # explicitly select its own (or another) index.
+            source_value = {}
+            for dependency in matching:
+                dependency_record = manifest["tasks"][dependency]
+                index_key = _dependency_index_key(dependency, dependency_record)
+                if index_key is None:
+                    raise TaskCardError(
+                        f"添字付きタスクの添字がありません: {dependency}"
+                    )
+                value = dependency_outputs[dependency]
+                if (
+                    task.get("type") == "S8.compare"
+                    and slot == "S8.plan"
+                    and len(matching) == 1
+                ):
+                    value = _prepare_s8_compare_plan(value, task)
+                source_value[index_key] = value
+        elif len(matching) == 1:
+            # An unindexed task type refers to its output directly.
+            source_value = dependency_outputs[matching[0]]
+        else:
+            # There cannot normally be multiple unindexed dependencies of the
+            # same type, but preserve all values if a custom harness creates
+            # such a graph rather than silently discarding one.
+            source_value = [dependency_outputs[task_id] for task_id in matching]
         if slot_name == "prerequisite_items" and slot == "S4.item":
             source_value = _summarize_world_items(source_value)
         result[slot] = source_value
     return result
+
+
+def _dependency_index_key(
+    task_id: str,
+    task: Mapping[str, Any],
+) -> str | None:
+    """Return the complete index used as a key for an indexed dependency."""
+
+    raw_index = task.get("index")
+    if isinstance(raw_index, (list, tuple)) and raw_index:
+        if not all(isinstance(value, str) and value for value in raw_index):
+            raise TaskCardError(f"タスクの添字が不正です: {task_id}")
+        return "-".join(raw_index)
+
+    # A few lightweight test/custom-harness contexts omit the manifest index
+    # while retaining the canonical ``<type>-<index>`` task ID.  Recovering it
+    # here keeps the source contract identical for those contexts; real run
+    # manifests always carry the explicit index list.
+    task_type = task.get("type")
+    prefix = f"{task_type}-" if isinstance(task_type, str) else ""
+    if prefix and task_id.startswith(prefix):
+        suffix = task_id[len(prefix) :]
+        if suffix:
+            return suffix
+    return None
 
 
 def _prepare_s8_compare_plan(
@@ -2919,7 +3014,12 @@ def _prepare_s8_compare_plan(
 def _summarize_world_items(value: Any) -> list[dict[str, str]]:
     """Make list-section outputs compact prerequisite context for S4 cards."""
 
-    values = value if isinstance(value, list) else [value]
+    if isinstance(value, Mapping):
+        values = list(value.values())
+    elif isinstance(value, list):
+        values = value
+    else:
+        values = [value]
     summaries: list[dict[str, str]] = []
     for item in values:
         if not isinstance(item, Mapping):

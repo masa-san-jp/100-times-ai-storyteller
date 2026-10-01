@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/models.schema.json",
+  "title": "Storyteller local model configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["models"],
+  "properties": {
+    "models": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        ".+": {
+          "$ref": "#/$defs/model"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "endpoint",
+        "temperature",
+        "max_tokens",
+        "context_length",
+        "json_mode"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["ollama", "openai-compatible"]
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "context_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "json_mode": {
+          "type": "string",
+          "enum": ["schema", "json", "off"]
+        },
+        "think": {
+          "enum": [false, "low", "medium", "high"]
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  }
+}

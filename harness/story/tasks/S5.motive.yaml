@@ -10,18 +10,19 @@ inputs:
   name:
     label: 名前
     from: S5.name
-    select: name
+    select: "[{slot}].name"
     required: true
   profile:
     label: プロフィール
     from: S5.profile
-    select: profile
+    select: "[{slot}].profile"
     required: true
   other_characters:
     label: 他の人物の役
     from: S3.assign
     select: cast
-    required: true
+    required: false
+    truncate: drop
   names:
     label: 人物の名前
     from: S5.name
@@ -40,17 +41,17 @@ inputs:
   protagonist_name:
     label: 主人公の名前
     from: S5.name
-    select: output[0].name
+    select: "[c1].name"
     required: false
   protagonist_role:
     label: 主人公の役
     from: S3.assign
-    select: cast[0].role
+    select: cast[c1].role
     required: false
   protagonist_intro:
     label: 主人公の紹介
     from: S5.intro
-    select: intro
+    select: "[c1].intro"
     required: false
 output: json
 card:
@@ -69,3 +70,4 @@ validate:
         field: motive
         n: 120
 max_input_chars: 3000
+default_sources: ["{slot}"]

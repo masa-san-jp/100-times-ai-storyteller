@@ -261,6 +261,11 @@ def test_yaml_parse_errors_are_wrapped(tmp_path):
         load_yaml(path, TASK_SCHEMA)
 
 
+def test_task_definition_schema_defaults_max_attempts_to_five():
+    schema = json.loads(TASK_SCHEMA.read_text(encoding="utf-8"))
+    assert schema["properties"]["max_attempts"]["default"] == 5
+
+
 def test_schemas_are_valid_draft_2020_12_schemas():
     # Loading the schemas through the common path exercises schema checking;
     # this also prevents an invalid schema from hiding behind an empty test.
@@ -269,13 +274,16 @@ def test_schemas_are_valid_draft_2020_12_schemas():
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
 
 
-def output_task(output="json", checks=None, schema=None):
+def output_task(output="json", checks=None, schema=None, default_sources=None):
     validation = {}
     if checks is not None:
         validation["checks"] = checks
     if schema is not None:
         validation["schema"] = schema
-    return {"output": output, "validate": validation}
+    task = {"output": output, "validate": validation}
+    if default_sources is not None:
+        task["default_sources"] = default_sources
+    return task
 
 
 def test_json_output_is_rescued_from_surrounding_text_and_ignores_braces_in_strings():
@@ -314,6 +322,130 @@ def test_json_schema_is_applied_after_json_rescue(tmp_path: Path):
     result = validate_output(task, '{"text": 3}', harness_root=tmp_path)
     assert not result.passed
     assert any("schema" in error for error in result.errors)
+
+
+def test_character_count_excludes_ascii_fullwidth_and_line_whitespace() -> None:
+    task = output_task(
+        output="json",
+        checks=[{"max_chars": {"field": "text", "n": 3}}],
+    )
+
+    result = validate_output(
+        task,
+        json.dumps({"text": " あ　い\t\nう "}, ensure_ascii=False),
+    )
+
+    assert result.passed
+
+
+def test_submitted_string_values_are_stripped_before_validation_and_storage() -> None:
+    task = output_task(output="json")
+
+    result = validate_output(
+        task,
+        json.dumps(
+            {"text": "　本文　", "items": ["\n項目\t"]},
+            ensure_ascii=False,
+        ),
+    )
+
+    assert result.passed
+    assert result.value == {"text": "本文", "items": ["項目"]}
+
+
+def test_sources_exist_removes_unknown_ids_and_keeps_valid_ids() -> None:
+    task = output_task(checks=["sources_exist"])
+    inputs = {
+        "character": {
+            "id": "c1",
+            "role_definition": {"id": "adversary", "definition": "定義"},
+            "plot_context": {"id": "romance", "character_requirements": "要件"},
+            "name_sound": {"set_id": "sound-05"},
+        },
+        "role_definition": {"id": "adversary", "definition": "定義"},
+        "plot_requirements": {"id": "romance", "character_requirements": "要件"},
+    }
+
+    result = validate_output(
+        task,
+        json.dumps(
+            {
+                "sources": [
+                    "c1",
+                    "role_definition:adversary",
+                    "plot_context:romance",
+                    "name_sound:set_id sound-05",
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        inputs=inputs,
+    )
+
+    assert result.passed
+    assert result.value == {"sources": ["c1"]}
+    assert result.warnings == (
+        "未知の出典 ID を除去: "
+        "['role_definition:adversary', 'plot_context:romance', "
+        "'name_sound:set_id sound-05']",
+    )
+
+
+def test_sources_exist_rejects_when_all_ids_are_unknown() -> None:
+    result = validate_output(
+        output_task(checks=["sources_exist"]),
+        '{"sources": ["missing"]}',
+        inputs={"character": {"id": "c1"}},
+    )
+
+    assert not result.passed
+    assert result.value == {"sources": []}
+    assert any("有効な出典 ID がありません" in error for error in result.errors)
+
+
+def test_default_sources_fills_in_the_task_s_own_id_when_no_source_survives() -> None:
+    task = output_task(checks=["sources_exist"], default_sources=["{slot}"])
+
+    result = validate_output(
+        task,
+        '{"sources": ["c1"]}',
+        inputs={"character": {"id": "c2"}},
+        index=["c2"],
+    )
+
+    assert result.passed
+    assert result.value == {"sources": ["c2"]}
+    assert result.warnings == (
+        "未知の出典 ID を除去: ['c1']",
+        "出典を補完: ['c2']",
+    )
+
+
+def test_default_sources_does_not_run_when_a_valid_source_already_survives() -> None:
+    task = output_task(checks=["sources_exist"], default_sources=["{slot}"])
+
+    result = validate_output(
+        task,
+        '{"sources": ["c2"]}',
+        inputs={"character": {"id": "c2"}},
+        index=["c2"],
+    )
+
+    assert result.passed
+    assert result.value == {"sources": ["c2"]}
+    assert result.warnings == ()
+
+
+def test_sources_exist_still_fails_without_default_sources() -> None:
+    result = validate_output(
+        output_task(checks=["sources_exist"]),
+        '{"sources": ["c1"]}',
+        inputs={"character": {"id": "c2"}},
+        index=["c2"],
+    )
+
+    assert not result.passed
+    assert any("有効な出典 ID がありません" in error for error in result.errors)
 
 
 @pytest.mark.parametrize(
@@ -370,6 +502,44 @@ def test_each_output_check_accepts_and_rejects_examples(check, good, bad):
     bad_raw = bad if output == "text" else json.dumps(bad, ensure_ascii=False)
     assert validate_output(task, good_raw, inputs=inputs).passed
     assert not validate_output(task, bad_raw, inputs=inputs).passed
+
+
+def test_ends_complete_fix_append_completes_the_sentence_and_warns() -> None:
+    task = output_task(
+        output="json",
+        checks=[{"ends_complete": {"field": "intro", "fix": "append"}}],
+    )
+
+    result = validate_output(task, '{"intro": "文の途中"}')
+
+    assert result.passed
+    assert result.value == {"intro": "文の途中。"}
+    assert result.warnings == ("文末を補完",)
+
+
+def test_ends_complete_fix_append_does_nothing_when_already_complete() -> None:
+    task = output_task(
+        output="json",
+        checks=[{"ends_complete": {"field": "intro", "fix": "append"}}],
+    )
+
+    result = validate_output(task, '{"intro": "文は完結。"}')
+
+    assert result.passed
+    assert result.value == {"intro": "文は完結。"}
+    assert result.warnings == ()
+
+
+def test_ends_complete_without_fix_still_rejects_an_incomplete_sentence() -> None:
+    task = output_task(
+        output="json",
+        checks=[{"ends_complete": {"field": "intro"}}],
+    )
+
+    result = validate_output(task, '{"intro": "文の途中"}')
+
+    assert not result.passed
+    assert result.value == {"intro": "文の途中"}
 
 
 def test_no_new_proper_nouns_supports_warn_and_fail(tmp_path: Path):
@@ -434,6 +604,30 @@ def test_avoid_listed_checks_selected_fields_after_nfkc_normalization(tmp_path: 
     assert accepted.passed
     assert not rejected.passed
     assert "hero" in rejected.errors[0]
+
+
+def test_avoid_listed_real_cliches_table_has_no_short_substring_false_positives():
+    task = output_task(
+        checks=[
+            {
+                "avoid_listed": {
+                    "fields": ["items"],
+                    "table": "tables/cliches.yaml",
+                }
+            }
+        ]
+    )
+
+    accepted = validate_output(
+        task,
+        json.dumps(
+            {"items": ["祭りの夜に灯火を掲げて歩く", "囲炉裏の炭火で暖を取る"]},
+            ensure_ascii=False,
+        ),
+        harness_root=ROOT,
+    )
+
+    assert accepted.passed
 
 
 def test_no_new_proper_nouns_excludes_input_and_allowed_words(tmp_path: Path):

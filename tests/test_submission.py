@@ -70,15 +70,19 @@ def continuation_definition(**extra: object) -> dict:
     return definition
 
 
-def test_submit_uses_the_truncated_card_input_and_records_rejection(tmp_path: Path) -> None:
+def test_submit_removes_unknown_sources_before_storing_output(tmp_path: Path) -> None:
     clock = Clock()
-    orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition()}, clock=clock)
-    run_id = orchestrator.create_run(seed=1, input_data={"given": "abcdefghijk"})
+    orchestrator = Orchestrator(
+        tmp_path, {"D1.echo": llm_definition(max_input_chars=100)}, clock=clock
+    )
+    run_id = orchestrator.create_run(
+        seed=1, input_data={"given": {"id": "a1", "text": "abcdefghijk"}}
+    )
     claimed = orchestrator.claim_next(run_id, executor_id="worker")
     assert claimed is not None
     task_dir = tmp_path / "runs" / run_id / "tasks" / "D1.echo"
     assert json.loads((task_dir / "input.json").read_text(encoding="utf-8")) == {
-        "given": "abcdefg"
+        "given": {"id": "a1", "text": "abcdefghijk"}
     }
 
     rejected = orchestrator.submit(
@@ -100,9 +104,18 @@ def test_submit_uses_the_truncated_card_input_and_records_rejection(tmp_path: Pa
     assert replacement is not None
     accepted = orchestrator.submit(
         replacement["ticket"],
-        json.dumps({"text": "ok", "sources": []}),
+        json.dumps({"text": "ok", "sources": ["a1", "missing"]}),
     )
     assert accepted.accepted
+    assert accepted.value == {"text": "ok", "sources": ["a1"]}
+    assert json.loads((task_dir / "output.json").read_text(encoding="utf-8")) == {
+        "text": "ok",
+        "sources": ["a1"],
+    }
+    assert any(
+        warning.startswith("D1.echo: 未知の出典 ID を除去:")
+        for warning in orchestrator.load_run(run_id)["warnings"]
+    )
     assert orchestrator.load_run(run_id)["status"] == "completed"
 
 
@@ -250,6 +263,78 @@ def test_submit_reaches_failed_at_max_attempts_and_retry_resets_counters(
     assert task["invalidations"] == 0
     assert task["attempt"] == 2
     assert task["error"] is None
+
+
+def test_submit_defaults_max_attempts_to_five_when_omitted(tmp_path: Path) -> None:
+    clock = Clock()
+    definition = llm_definition()
+    assert "max_attempts" not in definition
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": definition}, clock=clock)
+    run_id = orchestrator.create_run(seed=1, input_data={"given": "a"})
+    for attempt in range(1, 5):
+        claimed = orchestrator.claim_next(run_id, executor_id="worker")
+        assert claimed is not None
+        result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+        assert not result.accepted
+        task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
+        assert task["state"] == "ready", f"attempt {attempt} should not exhaust yet"
+
+    claimed = orchestrator.claim_next(run_id, executor_id="worker")
+    assert claimed is not None
+    result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+    assert not result.accepted
+    task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
+    assert task["tries"] == 5
+    assert task["state"] == "failed"
+
+
+def test_submit_skips_at_max_attempts_when_on_exhausted_is_skip_and_unblocks_dependents(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    definition = llm_definition(max_attempts=2, on_exhausted="skip")
+    after_definition = {
+        "id": "D2.after",
+        "version": 1,
+        "kind": "code",
+        "handler": "after",
+    }
+    orchestrator = Orchestrator(
+        tmp_path,
+        {"D1.echo": definition, "D2.after": after_definition},
+        {"after": lambda context: CodeTaskResult(output={"ok": True})},
+        clock=clock,
+    )
+    run_id = orchestrator.create_run(
+        seed=1,
+        input_data={"given": "a"},
+        tasks={
+            "D1.echo": {"type": "D1.echo"},
+            "D2.after": {"type": "D2.after", "deps": ["D1.echo"]},
+        },
+    )
+    for _ in range(2):
+        claimed = orchestrator.claim_next(run_id, executor_id="worker")
+        assert claimed is not None
+        result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+        assert not result.accepted
+
+    manifest = orchestrator.load_run(run_id)
+    task = manifest["tasks"]["D1.echo"]
+    assert task["state"] == "skipped"
+    assert task["tries"] == 2
+    assert manifest["status"] != "stalled"
+    assert any(
+        warning.startswith("D1.echo: 試行の上限に達したため省略: ")
+        for warning in manifest["warnings"]
+    )
+
+    # A task that is only skipped (never retried) stays skipped forever.
+    assert orchestrator.advance(run_id)["tasks"]["D1.echo"]["state"] == "skipped"
+
+    manifest = orchestrator.advance(run_id)
+    assert manifest["tasks"]["D2.after"]["state"] == "done"
+    assert manifest["status"] == "completed"
 
 
 def test_submit_rechecks_lease_under_manifest_lock(tmp_path: Path, monkeypatch) -> None:

@@ -28,10 +28,12 @@
 | `max_input_chars` | llm | 任意 | 1以上の整数 | 3000 | タスクカードの「入力」節の文字数予算（文字数の数え方は §3.3） |
 | `candidates` | llm | 任意 | 1以上の整数 | 1 | §7 |
 | `select_candidate` | llm | 任意 | `random` / `least_similar` | `random` | §7 |
-| `max_attempts` | llm | 任意 | 1以上の整数 | 3 | §6.3 |
+| `max_attempts` | llm | 任意 | 1以上の整数 | 5 | §6.3 |
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
+| `default_sources` | llm | 任意 | ID の文字列の配列（`{slot}` はタスクの添字の最初の要素に置き換える） | なし | `sources_exist` で正しい ID が1つも残らない場合に、出典として補う ID（例：S5 では `["{slot}"]`、その人物自身）。補った場合は manifest の `warnings` に記録する |
+| `on_exhausted` | llm | 任意 | `fail` / `skip` | `fail` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
 | `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー |
 
 - 表にない項目はエラーにする（`additionalProperties: false`）。
@@ -71,6 +73,7 @@ card:
 引数   := 式 | "{slot}" | 整数 | 文字列リテラル
 ```
 
+- `from` が、添字を持つタスク（例：`S5.name-c1`、`S5.name-c2`）の種別を指す場合、参照の値は「添字 → 出力」のオブジェクトになる（そのタスクの依存に含まれ、`done` のものだけ）。添字を持たないタスクの種別を指す場合は、その出力そのものになる。例：自分の名前は `from: S5.name`、`select: "[{slot}].name"`、主人公の名前は `select: "[c1].name"`。
 - `output` は参照先タスクの出力、`input` は run の入力（`input.json`）、それ以外の名前は参照先の出力の最上位のキーを指す。
 - `[...]` の中が文字列（`{slot}` を置き換えた結果を含む）の場合、対象が配列なら `id` がその文字列に一致する要素を、対象がオブジェクトならそのキーの値を取り出す。整数の場合は配列の位置として扱う。
 - `{slot}` は、そのタスクの添字（[data-layout.md](data-layout.md) §2 の task_id の添字）の最初の要素に置き換える。
@@ -113,6 +116,7 @@ card:
 ## 守ること
 - 入力に書かれていないことを付け加えない。
 - 出力形式以外の文章を書かない。
+- 日本語で書く（ID・列挙値を除く）。
 
 ## 前回の不合格理由        ← 再試行・無効化のときだけ
 <理由。500字を超える場合は500字で切り、末尾に「…」を付ける>
@@ -142,7 +146,9 @@ card:
 
 ### 3.3 文字数の数え方
 
-この文書群で「文字数」「字」というときは、NFC 正規化した文字列の Unicode コードポイント数（Python の `len(unicodedata.normalize("NFC", s))`）を指す。改行も1文字と数える。
+この文書群で「文字数」「字」というときは、NFC 正規化した文字列から空白文字（半角・全角の空白、タブ、改行）を除いた Unicode コードポイント数を指す。空白で字数を水増しさせないためである。
+
+提出された出力の文字列の値は、検証の前に前後の空白を取り除く（`str.strip()`。全角空白を含む）。
 
 ## 4. DAG とタスクの状態
 
@@ -214,20 +220,21 @@ card:
 
 | チェック | 引数 | 合格の条件 |
 |---|---|---|
-| `sources_exist` | なし | 出力の `sources` の各IDが、カードの「入力」節に列挙したIDに含まれる |
+| `sources_exist` | なし | 出力の `sources` のうち、カードの「入力」節に列挙したIDに含まれるものが1つ以上ある。含まれない ID は検証の前に取り除き、manifest の `warnings` に記録する（出典の書き誤りであり、素材の持ち込みではないため） |
 | `max_chars` | `field`（任意）, `n` | 文字数が n 以下 |
 | `min_chars` | `field`（任意）, `n` | 文字数が n 以上 |
 | `count` | `field`, `n` または `min`・`max` | 配列の件数が n、または min 以上 max 以下 |
 | `ids_subset` | `field`, `slot` | 配列の各IDが、指定した入力スロットに含まれるIDの部分集合 |
 | `uses_given` | `field`, `slot`, `n` | 文字列が、指定した入力スロットの要素のうち n 個以上を部分文字列として含む |
-| `ends_complete` | `field`（任意） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか |
+| `ends_complete` | `field`（任意）, `fix`（任意、`append`） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか。`fix: append` の場合は、満たさないとき末尾に「。」を補って合格とし、manifest の `warnings` に記録する（1文で完結する短い項目に使う。途中で切れた長文には使わない） |
 | `avoid_listed` | `fields`（任意）, `table`（例：`tables/cliches.yaml`） | 指定したテーブルの表現を、正規化後の部分文字列として含まない |
 | `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` では `sources` を除くすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
 
 ### 6.3 不合格の扱い
 
+- 実行者が出力を作れなかった場合（LLMアダプタの接続の失敗、タイムアウト、空の応答）も、不合格と同じに扱う。理由には失敗の内容を書く。アダプタは、同じタスクを lease 切れまで放置して取り直すことを繰り返さない。
 - 不合格の場合、出力と理由を `attempts/<n>.json` に保存し、`tries` と `attempt` を1ずつ増やす。
-- `tries` が `max_attempts` に達していなければ `ready` に戻し、次のカードの「前回の不合格理由」に理由を書く。達していれば `failed` にする。
+- `tries` が `max_attempts` に達していなければ `ready` に戻し、次のカードの「前回の不合格理由」に理由を書く。達していれば、`on_exhausted` が `fail` なら `failed`、`skip` なら `skipped` にする。
 - `st retry` は、`failed` のタスクだけを対象とし（他の状態なら終了コード 1）、`tries` と `invalidations` と `continuation_step` を0に戻し、`error` を null にして（元の値は `history` に残す）、依存がすべて `done` または `skipped` なら `ready`、そうでなければ `blocked` にする。`partial.md` があれば削除し、`attempts/` は残す。`attempt` は戻さない（同じ seed の再利用を避けるため）。依存先のタスクは変更しない。コードタスクは自動では再試行しないが、`st retry` の対象にはなり、`ready` になった時点で再実行される。
 
 ### 6.4 固有名詞の検出（`no_new_proper_nouns`）
@@ -249,7 +256,7 @@ card:
 
 | 値 | 動作 |
 |---|---|
-| `schema`（既定） | サーバーの構造化出力機能に、タスクの JSON Schema を渡す |
+| `schema`（既定） | サーバーの構造化出力機能に、タスクの JSON Schema を渡す。渡すスキーマからは文字列の長さの制約（`minLength`・`maxLength`）を除く。サーバーが生成の時点で長さを強制すると、文の途中で打ち切ったり空白で水増ししたりするためである。字数は §6 の検証で確かめる |
 | `json` | サーバーの JSON モードだけを使う |
 | `off` | サーバーの機能を使わず、プロンプトの指示と §6.1 の救済だけに頼る |
 

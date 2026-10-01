@@ -71,6 +71,11 @@ def test_s7_definition_and_schema_are_valid() -> None:
     assert definition["id"] == "S7.event"
     assert definition["candidates"] == 1
     assert definition["validate"]["schema"] == "schemas/tasks/S7.event.schema.json"
+    assert any(
+        "why・where・when は、この出来事に固有の内容にし" in step
+        and "人物の動機をそのまま書き写さない" in step
+        for step in definition["card"]["steps"]
+    )
     assert set(definition["inputs"]) == {
         "stage_definition",
         "stage_guidance",
@@ -174,7 +179,7 @@ def test_s7_input_selectors_use_s6_slot_and_previous_judge_result() -> None:
     assert inputs["characters"]["select"] == "slots[{slot}].characters"
     assert inputs["world_sections"]["select"] == "slots[{slot}].world_sections"
     assert inputs["previous_result"]["from"] == "S8.judge"
-    assert inputs["previous_result"]["select"] == "result"
+    assert inputs["previous_result"]["select"] == "output"
     assert inputs["climax"]["required"] is False
 
     slot = _slot()

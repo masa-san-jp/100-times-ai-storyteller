@@ -86,10 +86,10 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `tables/element_axes.yaml` | `axes`：`key`・`name`・`definition`・`generation_rules`（S2 でその軸の要素を作るときの規則。heroes の生成規則と world-building の観点を軸ごとに書く） |
 | `tables/elements/<axis>.yaml` | `items`：オブジェクトの配列 `{"text": 日本語, "source": 原文（先行リポジトリ由来の場合）}`。ID は `<axis>:t<1から始まる行番号>`。heroes 由来の軸は heroes の全件（want 100・ability 100・duty 99・age 16・gender 10・species 50）、それ以外の軸は各100件。heroes に由来しない軸は、表層から深層まで、また観点を散らして書き、似た要素を並べない |
 | `tables/roles.yaml` | `roles`：`id`（protagonist・messenger・supporter・adversary・bystander）・`name`・`definition`（heros-journey・world-building の役の定義の文章） |
-| `tables/cliches.yaml` | `phrases`：S2 で使わない、ありきたりな表現の一覧（heroes の禁止例を含む） |
+| `tables/cliches.yaml` | `phrases`：S2 で使わない、ありきたりな表現の一覧（heroes の禁止例を含む）。各項目は2文字以上の句とし、普通の語の一部に一致する1文字の語（「火」「闇」など）を置かない |
 | `tables/name_sounds.yaml` | `sets`：`id`・`description`・`sounds`（カタカナの音節、12個以上） |
 | `tables/common_words.yaml` | `words`：文字列の配列 |
-| `config/models.yaml` | `models`：モデル名ごとに `provider`・`endpoint`（既定 `http://127.0.0.1:11434`）・`temperature`・`max_tokens`・`context_length`・`json_mode` |
+| `config/models.yaml` | `models`：モデル名ごとに `provider`・`endpoint`（既定 `http://127.0.0.1:11434`）・`temperature`・`max_tokens`・`context_length`・`json_mode`・`think`（推論の深さ。Ollama の `think` にそのまま渡す：`false`・`low`・`medium`・`high`。省略時は送らない）・`timeout_seconds`（既定 600） |
 | `adapters/state.json` | `{"models": {モデル名: {"json_mode": 値, "empty_streak": 整数}}}`。更新は `adapters.lock`（data-layout §5 のロック）を取ってから行う。`empty_streak` はプロセスをまたいでモデル単位で数え、空でない応答で0に戻す |
 
 ## 作業項目ごとの決定事項
@@ -101,6 +101,6 @@ P1-11 + P1-12 + P1-13 → P1-15
 | P1-09 | 受け入れ条件の「入力が限られている」は、S7 のカードに、story-pipeline S7 に列挙した入力以外（直前以外の出来事、割り当てていない人物、3件目以降の世界セクション）が含まれないことで確認する |
 | P1-11 | 受け入れ条件に、正本のすべての ID 参照（`who`・`thread`・`sources`）が正本の中に実在することの検査を加える。`story.md` は、題（プロット型の名前と主人公の名前から作る）、登場人物の一覧、世界の一覧、出来事の順に並べ、出来事は「<when>、<where>で、<who の名前>が、<why>ために、<what>。その結果、<result>。」の文型で書く |
 | P1-12 | Claude Code は、ワークスペースの `.claude/settings.json` の権限設定で、`st next`・`st submit` の実行とワークスペース内の `out.txt` の書き込みだけを許可し、それ以外の読み取りを拒否する。Codex は、読み取りを拒否する設定がない場合、隔離の種類を `placement` とする。検証は、各エージェントを非対話モードでワークスペースから起動し、リポジトリの `AGENTS.md` を読むよう指示して、拒否されることを確かめる。使った製品のバージョンと設定を architecture §4 に記録する |
-| P1-13 | Ollama には `POST /api/chat` に `{"model", "messages": [{"role": "user", "content": カード}], "stream": false, "format": スキーマ・"json"・省略, "options": {"temperature", "num_predict", "num_ctx"}}` を送り、`message.content` を提出する。`done_reason` が `length` のときは `--truncated` を付ける。接続エラー・HTTP エラーは3回まで再試行し、なお失敗した場合は提出せずに claim を lease 切れに任せ、次のタスクに進む |
+| P1-13 | Ollama には `POST /api/chat` に `{"model", "messages": [{"role": "user", "content": カード}], "stream": false, "format": スキーマ・"json"・省略, "options": {"temperature", "num_predict", "num_ctx"}}` を送り、`message.content` を提出する。`done_reason` が `length` のときは `--truncated` を付ける。接続エラー・HTTP エラー・タイムアウトは3回まで再試行し、なお失敗した場合、または応答の本文が空の場合は、実行者の失敗として不合格と同じに扱う（task-model §6.3） |
 | P1-14 | 誤検出率は、P1-15 の run（3本以上）の `warn` の記録について、オーケストレータが各候補を固有名詞か否か判定して求める。タスク種別ごとに「誤検出を1つ以上含む出力の数 ÷ 出力の数」とし、出力が20以上あり5%未満の種別を `fail` に切り替える。判定結果はプルリクエストに記録する |
 | P1-15 | ローカルモデルは Ollama の `gpt-oss:20b`。入力は開発者が書いた自由入力 `examples/inputs/free-01.md`（3〜5段落、個人情報を含まない）。規模は `short`。完走の判定は、run が `completed` で、正本がスキーマと ID 参照の検査に通り、出来事数が派生値の範囲内であること。Claude Code と Codex の完走は、オーケストレータが実行者ワークスペースから非対話モードで起動して確かめる |

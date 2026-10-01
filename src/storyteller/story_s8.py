@@ -7,10 +7,12 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
+from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 
 
 _EVENT_ID = re.compile(r"^e[0-9]{3}$")
+_S7_MAX_INVALIDATIONS = 2
 
 
 def story_s8_plan(context: CodeTaskContext) -> CodeTaskResult:
@@ -100,6 +102,17 @@ def story_s8_plan(context: CodeTaskContext) -> CodeTaskResult:
             for target_id in target_ids
         ],
     }
+    # S7 invalidation causes this plan and its comparison/judge descendants to
+    # be re-run.  The descendant task records remain in the DAG, so reuse them
+    # instead of trying to add duplicate IDs on the second planning pass.
+    run_dir = getattr(context, "run_dir", None)
+    if run_dir is not None:
+        manifest = load_manifest(run_dir / "manifest.json")
+        additions = [
+            addition
+            for addition in additions
+            if addition.task_id not in manifest.get("tasks", {})
+        ]
     return CodeTaskResult(output=output, add_tasks=additions)
 
 
@@ -111,7 +124,13 @@ def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
     if comparisons is None:
         comparisons = []
     if isinstance(comparisons, Mapping):
-        comparisons = [comparisons]
+        # S8.compare is indexed.  The selector contract therefore supplies
+        # an index-to-output object, even when only one comparison exists.
+        # Keep accepting one direct comparison for small/custom contexts.
+        if "answer" in comparisons:
+            comparisons = [comparisons]
+        else:
+            comparisons = list(comparisons.values())
     if not isinstance(comparisons, Sequence) or isinstance(comparisons, (str, bytes)):
         raise ValueError("S8.compare の出力が不正です")
 
@@ -122,6 +141,7 @@ def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
     ]
     invalidated = bool(yes_results)
     invalidations: list[tuple[str, str]] = []
+    manifest_updates: dict[str, list[str]] = {}
     if invalidated:
         reasons = [
             reason
@@ -135,12 +155,58 @@ def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
             if not detail
             else f"比較結果に矛盾あり：{detail}"
         )
-        invalidations.append((f"S7.event-{event_id}", reason))
+        target_id = f"S7.event-{event_id}"
+        invalidation_count, existing_warnings = _s7_invalidation_state(
+            context, target_id
+        )
+        if invalidation_count is None or invalidation_count < _S7_MAX_INVALIDATIONS:
+            invalidations.append((target_id, reason))
+        else:
+            warning = (
+                f"{target_id}: 矛盾あり判定が無効化上限（{_S7_MAX_INVALIDATIONS}回）に達したため、"
+                "最後の出力を採用"
+            )
+            if warning not in existing_warnings:
+                manifest_updates["warnings"] = [warning]
 
     return CodeTaskResult(
-        output={"slot": event_id, "invalidated": invalidated},
+        output={"slot": event_id, "invalidated": bool(invalidations)},
         invalidations=invalidations,
+        manifest_updates=manifest_updates,
     )
+
+
+def _s7_invalidation_state(
+    context: CodeTaskContext,
+    task_id: str,
+) -> tuple[int | None, list[str]]:
+    """Read the durable S7 invalidation count before requesting a retry.
+
+    Lightweight unit-test contexts do not have a run directory; in those
+    contexts the normal invalidation behavior remains observable.  A real
+    orchestrator context always has the manifest, which is the source of the
+    retry count shared across processes.
+    """
+
+    run_dir = getattr(context, "run_dir", None)
+    if run_dir is None:
+        return None, []
+    manifest = load_manifest(run_dir / "manifest.json")
+    tasks = manifest.get("tasks")
+    if not isinstance(tasks, Mapping):
+        raise ValueError("manifest の tasks がありません")
+    task = tasks.get(task_id)
+    if not isinstance(task, Mapping):
+        raise ValueError(f"S7 のタスクがありません: {task_id}")
+    count = task.get("invalidations")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise ValueError(f"S7 の invalidations が不正です: {task_id}")
+    warnings = manifest.get("warnings", [])
+    if not isinstance(warnings, list) or not all(
+        isinstance(warning, str) for warning in warnings
+    ):
+        raise ValueError("manifest の warnings が不正です")
+    return count, warnings
 
 
 def _event_id(context: CodeTaskContext) -> str:

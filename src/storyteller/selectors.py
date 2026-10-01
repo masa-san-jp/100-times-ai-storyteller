@@ -22,6 +22,7 @@ class MissingSelectorValueError(SelectorError):
 
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _INTEGER = re.compile(r"0|[1-9][0-9]*")
+_STRING_INDEX = re.compile(r"[A-Za-z0-9_.:-]+")
 
 
 def resolve_selector(
@@ -47,22 +48,30 @@ def resolve_selector(
         raise SelectorError("selector must be a non-empty string")
 
     position = 0
-    root_match = _NAME.match(expression)
-    if root_match is None:
-        raise SelectorError(f"invalid selector: {expression!r}")
-    root = root_match.group(0)
-    position = root_match.end()
-    if position < len(expression) and expression[position] == "(":
-        raise SelectorError(f"selector function is not registered: {root}")
-
-    if root == "output":
+    if expression.startswith("["):
+        # A source selected by ``from`` is already the selector root.  This
+        # form is used for indexed task types, for example
+        # ``[{slot}].name`` and ``[c1].name``.
         value = source
-    elif root == "input":
-        value = run_input
     else:
-        if not isinstance(source, Mapping) or root not in source:
-            raise MissingSelectorValueError(f"selector value does not exist: {root}")
-        value = source[root]
+        root_match = _NAME.match(expression)
+        if root_match is None:
+            raise SelectorError(f"invalid selector: {expression!r}")
+        root = root_match.group(0)
+        position = root_match.end()
+        if position < len(expression) and expression[position] == "(":
+            raise SelectorError(f"selector function is not registered: {root}")
+
+        if root == "output":
+            value = source
+        elif root == "input":
+            value = run_input
+        else:
+            if not isinstance(source, Mapping) or root not in source:
+                raise MissingSelectorValueError(
+                    f"selector value does not exist: {root}"
+                )
+            value = source[root]
 
     while position < len(expression):
         marker = expression[position]
@@ -150,7 +159,7 @@ def _read_index(
         if not slot:
             raise SelectorError(f"selector requires a non-empty task index: {expression!r}")
         token = slot
-    elif not _INTEGER.fullmatch(token):
+    elif not _INTEGER.fullmatch(token) and not _STRING_INDEX.fullmatch(token):
         raise SelectorError(f"invalid selector index: {expression!r}")
     try:
         position: int | str = int(token) if _INTEGER.fullmatch(token) else token

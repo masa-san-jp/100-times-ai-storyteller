@@ -49,3 +49,4 @@ validate:
     - no_new_proper_nouns:
         mode: warn
 max_input_chars: 24000
+default_sources: ["{slot}"]

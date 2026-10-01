@@ -40,6 +40,8 @@ def test_selector_resolves_roots_access_and_slot_placeholder():
     source = {"cast": [{"id": "d1"}, {"id": "d2"}]}
     assert resolve_selector("cast[{slot}].id", source, index="1") == "d2"
     assert resolve_selector("output.cast[0].id", source) == "d1"
+    assert resolve_selector("[{slot}].name", {"d2": {"name": "beta"}}, index="d2") == "beta"
+    assert resolve_selector("[c1].name", {"c1": {"name": "主人公"}}) == "主人公"
     assert resolve_selector("input.context", source, {"context": "given"}) == "given"
 
     resolved = resolve_inputs(
@@ -103,10 +105,62 @@ def test_card_has_fixed_sections_and_hides_task_metadata():
     assert "## 手順\n1. 項目を一つずつ確認する。" in card
     assert "## 出力形式\n次のJSONだけを出力すること。前後に説明を書かないこと。" in card
     assert "## 守ること" in card
+    assert "- 日本語で書く（ID・列挙値を除く）。" in card
+    assert "- sources には、入力に [ ] で示された ID だけを書く。" in card
     assert "D2.echo" not in card
     assert "D1.items" not in card
     assert "run" not in card
     assert "S1" not in card
+
+
+def test_card_marks_source_ids_and_hides_context_ids() -> None:
+    task = llm_task(
+        inputs={
+            "character": {
+                "label": "人物",
+                "from": "input",
+                "select": "input.character",
+                "required": True,
+            },
+            "role_definition": {
+                "label": "役の定義",
+                "from": "input",
+                "select": "input.role_definition",
+                "required": True,
+            },
+            "plot_requirements": {
+                "label": "プロット型の人物要件",
+                "from": "input",
+                "select": "input.plot_requirements",
+                "required": True,
+            },
+        }
+    )
+    card = generate_task_card(
+        task,
+        "ticket",
+        run_input={
+            "character": {
+                "id": "c1",
+                "role_definition": {"id": "adversary", "definition": "定義"},
+                "plot_context": {"id": "romance", "character_requirements": "要件"},
+            },
+            "role_definition": {"id": "adversary", "definition": "定義"},
+            "plot_requirements": {"id": "romance", "character_requirements": "要件"},
+        },
+    )
+
+    assert "id: '[c1]'" in card
+    assert "id: adversary" not in card
+    assert "id: romance" not in card
+
+    list_card = generate_task_card(
+        llm_task(),
+        "ticket",
+        outputs={"D1.items": {"items": [{"id": "e001", "name": "出来事"}]}},
+        run_input={"context": "文脈"},
+    )
+    assert '"id":"[e001]"' in list_card
 
 
 def test_card_truncates_optional_slots_in_reverse_order():
