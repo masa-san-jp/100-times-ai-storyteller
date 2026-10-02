@@ -27,7 +27,6 @@ _TRAILING_PUNCTUATION = "。、"
 _WHY_SUFFIXES = ("ために", "ため", "から")
 
 # S7.detail のタスクID（docs/plan/phase-1.md: S7.detail-e<3桁>-b<番号>）。
-# S7.detail はまだ存在しないため（P1-19 で追加）、通常は一致しない。
 _DETAIL_TASK_ID = re.compile(r"^S7\.detail-(e[0-9]+)-b([0-9]+)$")
 
 # characters.md に並べる S5 の項目（存在するものだけを表示する。story-pipeline.md §8 の
@@ -363,9 +362,8 @@ def render_story_markdown(story: Mapping[str, Any], details: Mapping[str, str] |
     """Render story.md: event summaries, each followed by its scene detail.
 
     ``details`` maps an event ID to its S7.detail text (already joined across
-    beats). S7.detail does not exist yet (phase-1.md P1-19 adds it), so an
-    empty mapping renders the summary sentences alone, as story-pipeline.md
-    S9 手順1 requires.
+    beats). An empty mapping renders the summary sentences alone, which keeps
+    the renderer useful for partial assembly contexts.
     """
 
     details = details or {}
@@ -464,7 +462,7 @@ def _collect_event_details(outputs: Mapping[str, Any]) -> dict[str, str]:
     """Group S7.detail scene text by event ID, in beat order.
 
     Task IDs follow ``S7.detail-<event>-b<beat>`` (docs/plan/phase-1.md).
-    S7.detail does not exist yet, so this normally finds nothing.
+    Missing detail tasks are simply omitted from the mapping.
     """
 
     beats_by_event: dict[str, list[tuple[int, str]]] = {}

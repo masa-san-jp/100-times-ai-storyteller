@@ -18,3 +18,8 @@ inputs:
     from: S7.event
     select: output
     required: true
+  details:
+    label: 場面の詳述
+    from: S7.detail
+    select: output
+    required: true

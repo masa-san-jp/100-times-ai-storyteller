@@ -37,7 +37,8 @@ def resolve_selector(
     ``source`` is the output selected by the input slot's ``from`` value.
     A bare name reads a top-level key from that output; ``output`` and
     ``input`` explicitly select the two roots.  The ``{slot}`` placeholder
-    in an array access is replaced by the first task index.
+    in an array access is replaced by the first task index.  ``{beat}`` uses
+    the second index for tasks indexed by an event and a scene number.
 
     Function calls are rejected.  Phase 0 registers no selector functions,
     and rejecting them here also ensures that arbitrary code is never
@@ -152,13 +153,32 @@ def _read_index(
     index: Sequence[str] | str | None,
     expression: str,
 ) -> Any:
-    if token == "{slot}":
+    if token in {"{slot}", "{beat}"}:
         if index is None:
             raise SelectorError(f"selector requires a task index: {expression!r}")
-        slot = index[0] if not isinstance(index, str) else index
-        if not slot:
+        if isinstance(index, str):
+            if token != "{slot}":
+                raise SelectorError(
+                    f"selector requires a second task index: {expression!r}"
+                )
+            replacement = index
+        else:
+            index_position = 0 if token == "{slot}" else 1
+            try:
+                replacement = index[index_position]
+            except (IndexError, TypeError, KeyError):
+                raise SelectorError(
+                    f"selector requires the task index for {token}: {expression!r}"
+                ) from None
+        if not isinstance(replacement, str) or not replacement:
             raise SelectorError(f"selector requires a non-empty task index: {expression!r}")
-        token = slot
+        if token == "{beat}":
+            beat_number = replacement.removeprefix("b")
+            if not _INTEGER.fullmatch(beat_number) or int(beat_number) < 1:
+                raise SelectorError(f"invalid beat task index: {expression!r}")
+            token = str(int(beat_number) - 1)
+        else:
+            token = replacement
     elif not _INTEGER.fullmatch(token) and not _STRING_INDEX.fullmatch(token):
         raise SelectorError(f"invalid selector index: {expression!r}")
     try:

@@ -147,6 +147,12 @@ def _fake_output(
             "sources": [character_ids[0]],
         }
 
+    if task_type == "S7.detail":
+        # Keep the harness fixture inside tables/volume.yaml's story_beat
+        # range so S9 can verify the short-scale floor using real text output.
+        sentence = "人物は場面の状況を確認し、行動の結果を受け止めた。"
+        return sentence * 80
+
     if task_type == "S8.compare":
         event_a = inputs["event_a"]["id"]
         event_b = inputs["event_b"]["id"]
@@ -205,11 +211,16 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             comparison_answers.append(output["answer"])
             if output["answer"] == "yes":
                 sent_comparison_yes = True
+        submitted_output = (
+            output
+            if task["type"] == "S7.detail"
+            else json.dumps(output, ensure_ascii=False)
+        )
         submitted = _cli(
             data_dir,
             "submit",
             claim["ticket"],
-            input_text=json.dumps(output, ensure_ascii=False),
+            input_text=submitted_output,
         )
         assert submitted.returncode == 0, (task_id, submitted.stderr, submitted.stdout)
         current = _manifest(data_dir, run_id)
@@ -235,6 +246,9 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     assert markdown_path.is_file()
     story = json.loads(story_path.read_text(encoding="utf-8"))
     validate_document(story, ROOT / "schemas" / "story.schema.json")
+    story_markdown = markdown_path.read_text(encoding="utf-8")
+    assert "人物は場面の状況を確認し、行動の結果を受け止めた。" in story_markdown
+    assert story["meta"]["volume"]["story"]["chars"] >= 100_000
 
     outputs: dict[str, Any] = {}
     for task_id, task in final_manifest["tasks"].items():

@@ -7,8 +7,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from storyteller.story_s6 import allocate_stage_counts, story_s6_expand
+from storyteller.scale import derive_scale
 from storyteller.tables import load_table
 from storyteller.validation import validate_document
+from storyteller.volume import compute_initial_volume
 
 
 ROOT = Path(__file__).parents[1]
@@ -147,6 +149,17 @@ def test_s6_assigns_absent_role_note_object_and_world_excerpt() -> None:
     assert "comparison_targets" not in slots[0]
 
 
+def test_s6_carries_optional_character_intro_and_voice_to_slots() -> None:
+    context = _context(_assignment())
+    context.dependency_outputs["S5.intro-c1"] = {"intro": "道を探す旅人。"}
+    context.dependency_outputs["S5.voice-c1"] = {"voice": "短く話す。"}
+
+    slots = story_s6_expand(context).output["slots"]
+
+    assert slots[0]["characters"][0]["intro"] == "道を探す旅人。"
+    assert slots[0]["characters"][0]["voice"] == "短く話す。"
+
+
 def test_s6_passes_climax_condition_only_to_climax_stages() -> None:
     output = story_s6_expand(_context(_assignment())).output
     expected_climax = load_table("plot_types", repository_root=ROOT)["types"][0][
@@ -191,6 +204,37 @@ def test_s6_adds_chronological_s7_s8_s9_dependencies() -> None:
     assemble = by_id["S9.assemble"]
     assert assemble.deps[0] == "S6.expand"
     assert set(judge_ids) <= set(assemble.deps)
+    detail_ids = [
+        task.task_id for task in additions if task.type == "S7.detail"
+    ]
+    assert detail_ids
+    assert set(detail_ids) <= set(assemble.deps)
+    for task_id in detail_ids:
+        detail = by_id[task_id]
+        event_id, beat_id = task_id.removeprefix("S7.detail-").split("-b")
+        assert f"S7.event-{event_id}" in detail.deps
+        assert f"S8.judge-{event_id}" in detail.deps
+        if beat_id != "1":
+            assert f"S7.detail-{event_id}-b{int(beat_id) - 1}" in detail.deps
+
+
+def test_s6_creates_the_volume_allocated_number_of_detail_tasks() -> None:
+    assignment = _assignment()
+    context = _context(assignment)
+    scale = derive_scale("short", seed=7, repository_root=ROOT).value
+    scale["derived"]["events"] = sum(
+        thread["events"] for thread in assignment["threads"]
+    )
+    context.scale = scale
+
+    result = story_s6_expand(context)
+    allocation = compute_initial_volume(scale, repository_root=ROOT)["story"]
+    detail_tasks = [task for task in result.add_tasks if task.type == "S7.detail"]
+
+    assert len(detail_tasks) == sum(allocation["scene_counts"])
+    assert sum(allocation["scene_counts"]) * allocation["scene_chars"] >= 100_000
+    assert all(len(slot["beats"]) >= 1 for slot in result.output["slots"])
+    assert result.output["slots"][0]["beats"][0]["id"] == "opening"
 
 
 def test_s6_allocation_when_event_count_equals_stage_count() -> None:

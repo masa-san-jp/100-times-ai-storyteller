@@ -2920,25 +2920,29 @@ def _source_outputs(
         )
         if indexed:
             # References to an indexed task type always expose an object whose
-            # keys are the dependency indexes.  This deliberately does not
-            # collapse a single matching dependency: the task definition must
-            # explicitly select its own (or another) index.
-            source_value = {}
-            for dependency in matching:
-                dependency_record = manifest["tasks"][dependency]
-                index_key = _dependency_index_key(dependency, dependency_record)
-                if index_key is None:
-                    raise TaskCardError(
-                        f"添字付きタスクの添字がありません: {dependency}"
-                    )
-                value = dependency_outputs[dependency]
-                if (
-                    task.get("type") == "S8.compare"
-                    and slot == "S8.plan"
-                    and len(matching) == 1
-                ):
-                    value = _prepare_s8_compare_plan(value, task)
-                source_value[index_key] = value
+            # keys are the dependency indexes.  Indexed sources stay grouped
+            # unless a task explicitly asks for the previous scene text,
+            # whose single dependency is reduced to its required tail.
+            if slot_name == "previous_scene" and slot == "S7.detail" and len(matching) == 1:
+                value = dependency_outputs[matching[0]]
+                source_value = value[-600:] if isinstance(value, str) else value
+            else:
+                source_value = {}
+                for dependency in matching:
+                    dependency_record = manifest["tasks"][dependency]
+                    index_key = _dependency_index_key(dependency, dependency_record)
+                    if index_key is None:
+                        raise TaskCardError(
+                            f"添字付きタスクの添字がありません: {dependency}"
+                        )
+                    value = dependency_outputs[dependency]
+                    if (
+                        task.get("type") == "S8.compare"
+                        and slot == "S8.plan"
+                        and len(matching) == 1
+                    ):
+                        value = _prepare_s8_compare_plan(value, task)
+                    source_value[index_key] = value
         elif len(matching) == 1:
             # An unindexed task type refers to its output directly.
             source_value = dependency_outputs[matching[0]]
