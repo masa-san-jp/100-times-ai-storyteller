@@ -1,0 +1,20 @@
+id: S5.relationship_context
+version: 1
+kind: code
+handler: story_s5_relationship_context
+inputs:
+  name:
+    label: 名前
+    from: S5.name
+    select: "[{slot}].name"
+    required: true
+  role:
+    label: 役
+    from: S3.assign
+    select: cast[{slot}].role
+    required: true
+  intro:
+    label: 紹介
+    from: S5.intro
+    select: "[{slot}].intro"
+    required: true

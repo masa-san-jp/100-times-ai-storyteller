@@ -13,8 +13,10 @@ from storyteller.story_s3 import (
     _structure_for,
     story_s3_assign,
 )
+from storyteller.story_s5 import story_s5_relationship_context
 from storyteller.tables import load_table
 from storyteller.validation import validate_document
+from storyteller.volume import multiplier_for_preset
 
 
 ROOT = Path(__file__).parents[1]
@@ -24,6 +26,12 @@ ALL_S5_TYPES = (
     "S5.intro",
     "S5.appearance",
     "S5.motive",
+    "S5.personality",
+    "S5.values",
+    "S5.voice",
+    "S5.inner_conflict",
+    "S5.backstory",
+    "S5.relationship",
     "S5.catchphrase",
 )
 
@@ -66,6 +74,9 @@ def _definitions(material_kind: str = "suppression") -> dict[str, dict[str, obje
         },
         "S4.section": _llm_definition("S4.section"),
         "S4.item": _llm_definition("S4.item"),
+        "S5.relationship_context": _code_definition(
+            "S5.relationship_context", "relationship_context"
+        ),
         "S6.expand": _code_definition("S6.expand", "s6"),
     }
     definitions.update({task_id: _llm_definition(task_id) for task_id in ALL_S5_TYPES})
@@ -116,6 +127,7 @@ def _make_orchestrator(
             "extract": extract,
             "merge": merge,
             "assign": story_s3_assign,
+            "relationship_context": story_s5_relationship_context,
             "s6": lambda _context: {"ok": True},
         },
         harness_root=ROOT,
@@ -343,46 +355,134 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
         ]
         assert tasks[task_id]["deps"] == ["S3.assign", *prerequisite_ids]
 
-    person_ids = [person["id"] for person in _assignment(orchestrator, run_id)["cast"]]
+    assignment = _assignment(orchestrator, run_id)
+    person_ids = [person["id"] for person in assignment["cast"]]
+    counts_by_person = {
+        entry["id"]: entry["item_counts"]
+        for entry in manifest["scale"]["derived"]["volume"]["characters"]
+    }
     name_ids = [f"S5.name-{person_id}" for person_id in person_ids]
     protagonist_name_id = name_ids[0]
     protagonist_intro_id = f"S5.intro-{person_ids[0]}"
+
+    relationship_context_ids = {
+        person_id: f"S5.relationship_context-{person_id}" for person_id in person_ids
+    }
+    for person_id in person_ids:
+        context_id = relationship_context_ids[person_id]
+        assert tasks[context_id]["deps"] == [
+            "S3.assign",
+            f"S5.name-{person_id}",
+            f"S5.intro-{person_id}",
+        ]
+
     for position, person_id in enumerate(person_ids):
         profile_id = f"S5.profile-{person_id}"
         motive_id = f"S5.motive-{person_id}"
         context_name_deps = [] if position == 0 else [protagonist_name_id]
         context_intro_deps = [] if position == 0 else [protagonist_intro_id]
+        parallel_deps = ["S3.assign", profile_id, *context_name_deps]
         assert tasks[f"S5.name-{person_id}"]["deps"] == ["S3.assign"]
         assert tasks[profile_id]["deps"] == [
             "S3.assign",
             *context_name_deps,
             f"S5.name-{person_id}",
         ]
-        assert tasks[f"S5.intro-{person_id}"]["deps"] == [
-            "S3.assign",
-            profile_id,
-            *context_name_deps,
-        ]
-        assert tasks[f"S5.appearance-{person_id}"]["deps"] == [
-            "S3.assign",
-            profile_id,
-            *context_name_deps,
-        ]
+        for field in ("intro", "appearance", "personality", "values", "voice", "inner_conflict"):
+            assert tasks[f"S5.{field}-{person_id}"]["deps"] == parallel_deps
         assert tasks[motive_id]["deps"] == [
             "S3.assign",
             profile_id,
             *name_ids,
             *context_intro_deps,
         ]
+
+        counts = counts_by_person[person_id]
+        backstory_ids = [
+            f"S5.backstory-{person_id}-p{ordinal}"
+            for ordinal in range(1, counts["backstory"] + 1)
+        ]
+        for backstory_id in backstory_ids:
+            assert tasks[backstory_id]["deps"] == parallel_deps
+        assert len(backstory_ids) >= 2
+
+        relationship_targets = [other for other in person_ids if other != person_id]
+        assert counts["relationship"] == len(relationship_targets)
+        relationship_ids = [
+            f"S5.relationship-{person_id}-{other_id}" for other_id in relationship_targets
+        ]
+        for relationship_id, other_id in zip(relationship_ids, relationship_targets):
+            assert tasks[relationship_id]["deps"] == [
+                *parallel_deps,
+                relationship_context_ids[other_id],
+            ]
+
         assert tasks[f"S5.catchphrase-{person_id}"]["deps"] == [
             "S3.assign",
             motive_id,
+            f"S5.personality-{person_id}",
+            f"S5.values-{person_id}",
+            f"S5.voice-{person_id}",
+            f"S5.inner_conflict-{person_id}",
+            *backstory_ids,
+            *relationship_ids,
             *context_name_deps,
             *context_intro_deps,
         ]
 
     s5_ids = [task_id for task_id in tasks if task_id.startswith("S5.")]
     assert tasks["S6.expand"]["deps"] == ["S3.assign", *s4_ids, *s5_ids]
+
+
+def test_s3_character_volume_reaches_the_floor_and_matches_created_task_counts(
+    tmp_path: Path,
+) -> None:
+    scale = _multi_thread_scale()
+    orchestrator, run_id = _run(
+        tmp_path / "data",
+        323,
+        run_number=1,
+        scale=scale,
+        pools=_rich_pools(),
+    )
+    manifest = orchestrator.load_run(run_id)
+    tasks = manifest["tasks"]
+    assignment = _assignment(orchestrator, run_id)
+    person_ids = [person["id"] for person in assignment["cast"]]
+    characters_volume = manifest["scale"]["derived"]["volume"]["characters"]
+    assert {entry["id"] for entry in characters_volume} == set(person_ids)
+
+    multiplier = multiplier_for_preset(scale["preset"])
+    floor = load_table("volume")["floor_chars"]["characters"] * multiplier
+    assert sum(entry["target_chars"] for entry in characters_volume) >= floor
+
+    for entry in characters_volume:
+        person_id = entry["id"]
+        counts = entry["item_counts"]
+        for field in (
+            "profile",
+            "intro",
+            "appearance",
+            "motive",
+            "personality",
+            "values",
+            "voice",
+            "inner_conflict",
+            "catchphrase",
+        ):
+            assert f"S5.{field}-{person_id}" in tasks
+        backstory_ids = [
+            task_id
+            for task_id in tasks
+            if task_id.startswith(f"S5.backstory-{person_id}-p")
+        ]
+        assert len(backstory_ids) == counts["backstory"]
+        relationship_ids = [
+            task_id
+            for task_id in tasks
+            if task_id.startswith(f"S5.relationship-{person_id}-")
+        ]
+        assert len(relationship_ids) == counts["relationship"] == len(person_ids) - 1
 
 
 def test_s3_input_ratio_controls_input_or_table_source() -> None:

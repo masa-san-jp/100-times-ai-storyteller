@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/tasks/S5.backstory.schema.json",
+  "title": "S5 character backstory period",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["backstory", "sources"],
+  "properties": {
+    "backstory": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "sources": {"$ref": "#/$defs/sources"}
+  },
+  "$defs": {
+    "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+  }
+}

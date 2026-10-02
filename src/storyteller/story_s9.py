@@ -190,13 +190,29 @@ def _copy_threads(value: Any) -> list[dict[str, Any]]:
     return [deepcopy(dict(item)) for item in value]
 
 
+_SINGLE_CHARACTER_FIELDS: tuple[str, ...] = (
+    "name",
+    "profile",
+    "intro",
+    "appearance",
+    "motive",
+    "personality",
+    "values",
+    "voice",
+    "inner_conflict",
+    "catchphrase",
+)
+_BACKSTORY_TASK = re.compile(r"^S5\.backstory-(c[0-9]+)-p([0-9]+)$")
+_RELATIONSHIP_TASK = re.compile(r"^S5\.relationship-(c[0-9]+)-(c[0-9]+)$")
+
+
 def _assemble_cast(person: Any, outputs: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(person, Mapping) or not isinstance(person.get("id"), str):
         raise ValueError("assignment の人物が不正です")
     person_id = person["id"]
     fields: dict[str, Any] = {}
     source_ids: list[str] = []
-    for field in ("name", "profile", "intro", "appearance", "motive", "catchphrase"):
+    for field in _SINGLE_CHARACTER_FIELDS:
         output = _mapping_output(outputs, f"S5.{field}-{person_id}")
         value = output.get(field)
         if not isinstance(value, str) or not value:
@@ -208,6 +224,12 @@ def _assemble_cast(person: Any, outputs: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(reading, str) or not reading:
         raise ValueError(f"S5.name の reading が不正です: {person_id}")
     _extend_ids(source_ids, name_output.get("sources"))
+    backstory = _collect_indexed_field(
+        outputs, _BACKSTORY_TASK, person_id, "backstory", source_ids, require_at_least_one=True
+    )
+    relationship = _collect_indexed_field(
+        outputs, _RELATIONSHIP_TASK, person_id, "relationship", source_ids, require_at_least_one=False
+    )
     elements = person.get("elements")
     if not isinstance(elements, Mapping):
         raise ValueError(f"人物の elements が不正です: {person_id}")
@@ -220,6 +242,12 @@ def _assemble_cast(person: Any, outputs: Mapping[str, Any]) -> dict[str, Any]:
         "profile": fields["profile"],
         "motive": fields["motive"],
         "appearance": fields["appearance"],
+        "personality": fields["personality"],
+        "values": fields["values"],
+        "voice": fields["voice"],
+        "inner_conflict": fields["inner_conflict"],
+        "backstory": backstory,
+        "relationship": relationship,
         "catchphrase": fields["catchphrase"],
         "elements": deepcopy(dict(elements)),
         "name_sound": deepcopy(person.get("name_sound")),
@@ -305,6 +333,45 @@ def _assemble_events(slots: Sequence[Mapping[str, Any]], outputs: Mapping[str, A
             event["foreshadowing"] = ""
         events.append(event)
     return events
+
+
+def _collect_indexed_field(
+    outputs: Mapping[str, Any],
+    pattern: re.Pattern[str],
+    person_id: str,
+    field: str,
+    source_ids: list[str],
+    *,
+    require_at_least_one: bool,
+) -> list[str]:
+    """Gather one S5 item that has several per-character task instances.
+
+    ``S5.backstory-<person>-p<n>`` and ``S5.relationship-<person>-<other>``
+    each produce one entry per task rather than one task per character
+    (story-pipeline.md S5: backstory is per time period, relationship is per
+    other character).  This orders backstory by period number and
+    relationship by the counterpart's ID, both taken from ``pattern``'s
+    second capture group, which sorts numerically rather than lexically so
+    ``c2`` precedes ``c10``.
+    """
+
+    entries: list[tuple[int, str]] = []
+    for task_id, output in outputs.items():
+        if not isinstance(task_id, str) or not isinstance(output, Mapping):
+            continue
+        match = pattern.match(task_id)
+        if match is None or match.group(1) != person_id:
+            continue
+        value = output.get(field)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{pattern.pattern} の出力が不正です: {task_id}")
+        ordinal = int(re.sub(r"[^0-9]", "", match.group(2)))
+        entries.append((ordinal, value))
+        _extend_ids(source_ids, output.get("sources"))
+    if require_at_least_one and not entries:
+        raise ValueError(f"{field} の出力がありません: {person_id}")
+    entries.sort(key=lambda entry: entry[0])
+    return [value for _, value in entries]
 
 
 def _extend_ids(target: list[str], value: Any) -> None:

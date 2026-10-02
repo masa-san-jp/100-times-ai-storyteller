@@ -11,6 +11,7 @@ from .scale import derive_scale
 from .seed import generated_seed
 from .story_s2 import story_s2_merge, story_s2_plan
 from .story_s3 import story_s3_assign
+from .story_s5 import story_s5_relationship_context
 from .story_s6 import story_s6_expand
 from .story_s8 import story_s8_judge, story_s8_plan
 from .story_s9 import story_s9_assemble
@@ -101,6 +102,7 @@ def create_story_orchestrator(data_dir: str | Path) -> Orchestrator:
             "story_s2_plan": story_s2_plan,
             "story_s2_merge": story_s2_merge,
             "story_s3_assign": story_s3_assign,
+            "story_s5_relationship_context": story_s5_relationship_context,
             "story_s6_expand": story_s6_expand,
             "story_s8_judge": story_s8_judge,
             "story_s8_plan": story_s8_plan,

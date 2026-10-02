@@ -76,6 +76,19 @@ def _first_id(value: Any) -> str:
     raise AssertionError("入力に ID がありません")
 
 
+def _filler_text(person_id: str, field: str, length: int) -> str:
+    """Build placeholder text of exactly ``length`` characters.
+
+    Used for the S5 items whose validation checks a min/max character range
+    (task-model.md §6.2 min_chars/max_chars); a short fixed sentence like the
+    other fake S5 outputs would fail those checks.
+    """
+
+    unit = f"{person_id}の{field}に関する具体的な記述。"
+    repeated = unit * (length // len(unit) + 2)
+    return repeated[:length]
+
+
 def _fake_output(
     task_id: str,
     task: dict[str, Any],
@@ -115,21 +128,37 @@ def _fake_output(
             return {"name": "一覧の項目", "body": "町の暮らしを支える小さな仕組み。", "sources": [source]}
         return {"body": "町の暮らしと場所の変化が重なる。", "sources": [source]}
 
+    if task_type == "S5.name":
+        sound = inputs["name_sound"]
+        reading = "".join(sound["sounds"][:2])
+        return {"name": reading, "reading": reading, "sources": [sound["set_id"]]}
+
     if task_type.startswith("S5."):
         field = task_type.removeprefix("S5.")
-        if field == "name":
-            sound = inputs["name_sound"]
-            reading = "".join(sound["sounds"][:2])
-            return {"name": reading, "reading": reading, "sources": [sound["set_id"]]}
         person_id = inputs["character"]["id"]
-        values = {
+        short_values = {
             "profile": f"{person_id}の属性をまとめたプロフィール。",
             "intro": f"{person_id}の短い紹介。",
             "appearance": f"{person_id}の外見と魅力。",
             "motive": f"{person_id}が行動する動機。",
             "catchphrase": f"私は{person_id}として進む。",
         }
-        return {field: values[field], "sources": [person_id]}
+        if field in short_values:
+            return {field: short_values[field], "sources": [person_id]}
+        # story-pipeline.md §8 / ADR-0007: the new S5 items each enforce a
+        # min_chars/max_chars range (tables/volume.yaml), so the placeholder
+        # text must actually land inside it, not just be non-empty.
+        volume_ranges = {
+            "personality": (500, 1000),
+            "values": (400, 800),
+            "voice": (400, 800),
+            "inner_conflict": (500, 1000),
+            "backstory": (1000, 2000),
+            "relationship": (300, 600),
+        }
+        minimum, maximum = volume_ranges[field]
+        target_length = (minimum + maximum) // 2
+        return {field: _filler_text(person_id, field, target_length), "sources": [person_id]}
 
     if task_type == "S7.event":
         characters = inputs["characters"]
