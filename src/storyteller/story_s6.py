@@ -7,9 +7,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 from .tables import load_table
 from .validation import validate_document
+from .volume import compute_initial_volume
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -57,7 +59,8 @@ def story_s6_expand(context: CodeTaskContext) -> CodeTaskResult:
         )
 
     chronological = _interleave_threads(context, threads, per_thread)
-    slots = _finalise_slots(chronological)
+    scene_counts = _scene_counts(context, len(chronological))
+    slots = _finalise_slots(chronological, scene_counts)
     output = {"slots": slots}
     validate_document(output, _REPOSITORY_ROOT / "schemas" / "story" / "slots.schema.json")
 
@@ -321,14 +324,17 @@ def _assign_characters(
         motive = output.get("motive")
         if not isinstance(name, str) or not name or not isinstance(motive, str) or not motive:
             raise ValueError(f"S5 の人物出力が不正です: {person_id}")
-        characters.append(
-            {
-                "id": person_id,
-                "name": name,
-                "role": person["role"],
-                "motive": motive,
-            }
-        )
+        character = {
+            "id": person_id,
+            "name": name,
+            "role": person["role"],
+            "motive": motive,
+        }
+        for field in ("intro", "voice"):
+            value = output.get(field)
+            if isinstance(value, str) and value:
+                character[field] = value
+        characters.append(character)
     absent_note = stage.get("absent_role_note") if absent else None
     if absent_note is not None and not isinstance(absent_note, str):
         raise ValueError("段階の absent_role_note が不正です")
@@ -370,7 +376,18 @@ def _character_outputs(
         motive = motive_output.get("motive")
         if not isinstance(name, str) or not isinstance(motive, str):
             raise ValueError(f"S5 の名前または動機の出力が不正です: {person_id}")
-        result[person_id] = {"name": name, "motive": motive}
+        character_output = {"name": name, "motive": motive}
+        # P1-17 adds S5.voice and other character fields independently.  Keep
+        # the slot format compatible with both branches: detail cards use the
+        # fields when present and omit them while the task is not available.
+        for field in ("intro", "voice"):
+            optional_output = dependency_outputs.get(f"S5.{field}-{person_id}")
+            if not isinstance(optional_output, Mapping):
+                continue
+            value = optional_output.get(field)
+            if isinstance(value, str) and value:
+                character_output[field] = value
+        result[person_id] = character_output
     return result
 
 
@@ -511,9 +528,14 @@ def _interleave_threads(
     return result
 
 
-def _finalise_slots(chronological: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _finalise_slots(
+    chronological: Sequence[Mapping[str, Any]], scene_counts: Sequence[int]
+) -> list[dict[str, Any]]:
+    if len(chronological) != len(scene_counts):
+        raise ValueError("出来事と場面数の件数が一致しません")
     result: list[dict[str, Any]] = []
     for index, raw_slot in enumerate(chronological, start=1):
+        beats = _assign_beats(scene_counts[index - 1])
         slot = {
             "id": f"e{index:03d}",
             "thread": raw_slot["thread"],
@@ -526,8 +548,99 @@ def _finalise_slots(chronological: Sequence[Mapping[str, Any]]) -> list[dict[str
             "object": deepcopy(raw_slot["object"]),
             "theme": deepcopy(raw_slot["theme"]),
             "world_sections": deepcopy(raw_slot["world_sections"]),
+            "beats": beats,
         }
         result.append(slot)
+    return result
+
+
+def _scene_counts(context: CodeTaskContext, event_count: int) -> list[int]:
+    """Read or calculate the §8 story allocation for chronological events."""
+
+    scale = getattr(context, "scale", None)
+    run_dir = getattr(context, "run_dir", None)
+    if not isinstance(scale, Mapping) and isinstance(run_dir, Path):
+        manifest = load_manifest(run_dir / "manifest.json")
+        scale = manifest.get("scale")
+
+    if isinstance(scale, Mapping):
+        derived = scale.get("derived")
+        if not isinstance(derived, Mapping):
+            raise ValueError("manifest の scale.derived が不正です")
+        volume = derived.get("volume")
+        if not isinstance(volume, Mapping) or not isinstance(volume.get("story"), Mapping):
+            initial_volume = compute_initial_volume(
+                scale, repository_root=_REPOSITORY_ROOT
+            )
+            if isinstance(volume, Mapping):
+                volume = {**volume, "story": initial_volume["story"]}
+            else:
+                volume = initial_volume
+        story = volume.get("story")
+        if not isinstance(story, Mapping):
+            raise ValueError("分量配分の story がありません")
+        counts = story.get("scene_counts")
+        if (
+            isinstance(counts, list)
+            and len(counts) == event_count
+            and all(
+                isinstance(count, int) and not isinstance(count, bool) and count >= 1
+                for count in counts
+            )
+        ):
+            return list(counts)
+        raise ValueError("分量配分の出来事数とS6のスロット数が一致しません")
+
+    # Lightweight S6 unit contexts do not have a manifest.  Apply the same
+    # short-scale floor and median as volume.py so they still exercise the
+    # production-sized DAG rather than silently creating one scene per event.
+    total_beats = max(event_count, 50)  # ceil(100000 / median(1500, 2500))
+    base, extra = divmod(total_beats, event_count)
+    return [base + (1 if index < extra else 0) for index in range(event_count)]
+
+
+def _assign_beats(scene_count: int) -> list[dict[str, str]]:
+    """Return the beat functions assigned by tables/beats.yaml."""
+
+    if isinstance(scene_count, bool) or not isinstance(scene_count, int) or scene_count < 1:
+        raise ValueError("場面数が不正です")
+    table = load_table("beats", repository_root=_REPOSITORY_ROOT)
+    beat_by_id = {
+        beat["id"]: beat for beat in table["beats"] if isinstance(beat, Mapping)
+    }
+    if scene_count < 4:
+        selected = next(
+            (
+                entry["beats"]
+                for entry in table["short_sequences"]
+                if entry.get("scene_count") == scene_count
+            ),
+            None,
+        )
+        if selected is None:
+            raise ValueError(f"場面数に対応する短い並びがありません: {scene_count}")
+        beat_ids = list(selected)
+    else:
+        sequence = list(table["sequence"])
+        if scene_count <= len(sequence):
+            beat_ids = sequence[:scene_count]
+        else:
+            # Keep the opening, turn, and aftermath fixed while repeating the
+            # table's repeatable development function in the middle.
+            beat_ids = [sequence[0], *([sequence[1]] * (scene_count - 3)), *sequence[2:]]
+
+    result: list[dict[str, str]] = []
+    for beat_id in beat_ids:
+        beat = beat_by_id.get(beat_id)
+        if not isinstance(beat, Mapping):
+            raise ValueError(f"未知の場面の働きです: {beat_id}")
+        result.append(
+            {
+                "id": beat["id"],
+                "name": beat["name"],
+                "definition": beat["definition"],
+            }
+        )
     return result
 
 
@@ -562,6 +675,29 @@ def _build_downstream_tasks(
             )
         )
 
+    detail_ids: list[str] = []
+    for slot in slots:
+        event_id = slot["id"]
+        beat_definitions = slot.get("beats")
+        if not isinstance(beat_definitions, list) or not beat_definitions:
+            raise ValueError(f"slot の場面定義がありません: {event_id}")
+        previous_detail: str | None = None
+        for number, _beat in enumerate(beat_definitions, start=1):
+            detail_id = f"S7.detail-{event_id}-b{number}"
+            deps = [parent_task_id, f"S7.event-{event_id}", f"S8.judge-{event_id}"]
+            if previous_detail is not None:
+                deps.append(previous_detail)
+            additions.append(
+                TaskSpec(
+                    detail_id,
+                    "S7.detail",
+                    deps=_unique(deps),
+                    index=(event_id, f"b{number}"),
+                )
+            )
+            detail_ids.append(detail_id)
+            previous_detail = detail_id
+
     judge_ids = [f"S8.judge-{slot['id']}" for slot in slots]
     # S9 consumes S3--S8 outputs.  Keep the upstream task IDs as direct
     # dependencies so the generic selector layer exposes those outputs to
@@ -577,7 +713,15 @@ def _build_downstream_tasks(
             # S8.plan creates these judge nodes after the actual S7 `who`
             # values are available.  The orchestrator retains these declared
             # S8.judge dependencies until those nodes are added.
-            deps=_unique((parent_task_id, *upstream_ids, *s7_ids_in_time_order, *judge_ids)),
+            deps=_unique(
+                (
+                    parent_task_id,
+                    *upstream_ids,
+                    *s7_ids_in_time_order,
+                    *judge_ids,
+                    *detail_ids,
+                )
+            ),
         )
     )
     return additions

@@ -370,6 +370,7 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
         "S4.item": _llm_definition("S4.item"),
         "S6.expand": _code_definition("S6.expand", "expand"),
         "S7.event": _llm_definition("S7.event"),
+        "S7.detail": _llm_definition("S7.detail"),
         "S8.plan": _code_definition("S8.plan", "plan"),
         "S8.compare": _llm_definition("S8.compare"),
         "S8.judge": _code_definition("S8.judge", "judge"),
@@ -436,8 +437,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
         harness_root=ROOT,
         repository_root=ROOT,
     )
-    # The S4/S5 task outputs are injected through the internal test seam; the
-    # production harness intentionally has no S7-S9 definition files yet.
+    # The S4/S5 task outputs are injected through the internal test seam.
     run_id = orchestrator.create_run(
         seed=12,
         input_data={"kind": "free", "source_sha256": "a" * 64, "paragraphs": []},
@@ -502,6 +502,8 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
                 output = {"motive": "道を確かめたい。"}
             elif task_id.startswith("S7.event-"):
                 output = {"who": ["c1"], "result": task_id}
+            elif task_id.startswith("S7.detail-"):
+                output = "場面の説明。"
             else:
                 output = {"answer": "no", "reason": "整合している", "sources": []}
             orchestrator._complete_task(run_id, task_id, output)
