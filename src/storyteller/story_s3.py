@@ -756,6 +756,15 @@ def _build_downstream_tasks(
                     index=(world_task["id"],),
                 )
             )
+        if section["kind"] == "single":
+            additions.append(
+                TaskSpec(
+                    f"S4.diversity-{section_id}",
+                    "S4.diversity",
+                    deps=(parent_task_id, *world_task_ids[section_id]),
+                    index=(section_id,),
+                )
+            )
 
     cast = assignment.get("cast")
     if not isinstance(cast, list):
@@ -900,7 +909,9 @@ def _build_downstream_tasks(
             )
         )
     s4_ids = tuple(
-        addition.task_id for addition in additions if addition.type in {"S4.section", "S4.item"}
+        addition.task_id
+        for addition in additions
+        if addition.type in {"S4.section", "S4.item", "S4.diversity"}
     )
     s5_ids = tuple(
         addition.task_id for addition in additions if addition.type.startswith("S5.")

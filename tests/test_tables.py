@@ -24,6 +24,7 @@ def test_all_phase_one_tables_are_loaded_and_schema_validated():
     tables = load_all_tables(repository_root=ROOT)
 
     assert set(table_names()) == {
+        "dedup",
         "scales",
         "structures",
         "plot_types",

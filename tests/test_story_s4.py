@@ -100,6 +100,7 @@ def test_s4_task_definitions_and_output_schemas_are_valid() -> None:
     item = _load_definition("S4.item")
 
     for definition in (section, item):
+        assert "物語の place・era の要素や前提セクションの文を言い換えて書き始めない。観点と切り口から書き始める。" in definition["card"]["steps"]
         assert definition["output"] == "text"
         assert definition["extend_to_min"] is True
         assert "schema" not in definition["validate"]
