@@ -1,5 +1,5 @@
 id: S5.inner_conflict
-version: 2
+version: 3
 kind: llm
 inputs:
   character:
@@ -32,24 +32,19 @@ inputs:
     from: S3.assign
     select: cast[c1].role
     required: false
-output: json
+output: text
+extend_to_min: true
 card:
   role: 割り当てられた属性とプロフィールから、人物が抱える内面の自己矛盾や葛藤を書く。
   steps:
     - 願望と役割・課題、または禁忌や抑圧されている自己像が入力されていれば、それらの間で相容れない点を具体的に書く。
     - その矛盾が、本人にどのような迷いや苦しさとして現れるかを書く。
-    - 500〜1000字を目安にし、入力にない出来事や関係を付け加えない。sources には使った入力のIDを記録する。
-  output_example: '{"inner_conflict": "...", "sources": ["c1"]}'
+    - 500〜1000字を目安にし、入力にない出来事や関係を付け加えない。
 validate:
-  schema: schemas/tasks/S5.inner_conflict.schema.json
   checks:
-    - sources_exist
     - min_chars:
-        field: inner_conflict
         n: 500
     - max_chars:
-        field: inner_conflict
         n: 1000
         fix: trim
-max_input_chars: 3000
-default_sources: ["{slot}"]
+max_input_chars: 5000

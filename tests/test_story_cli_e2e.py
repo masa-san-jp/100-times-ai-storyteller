@@ -99,7 +99,7 @@ def _filler_text(person_id: str, field: str, length: int) -> str:
 
     unit = f"{person_id}の{field}に関する具体的な記述。"
     repeated = unit * (length // len(unit) + 2)
-    return repeated[:length]
+    return repeated[:length - 1] + "。"
 
 
 def _fake_output(
@@ -108,7 +108,7 @@ def _fake_output(
     inputs: dict[str, Any],
     *,
     send_comparison_yes: bool,
-) -> dict[str, Any]:
+) -> dict[str, Any] | str:
     task_type = task["type"]
     index = task.get("index", [])
 
@@ -135,20 +135,12 @@ def _fake_output(
             "sources": [source],
         }
 
+    if task_type == "S4.item_name":
+        reading = "".join(inputs["name_sound"]["sounds"][:2])
+        return {"name": reading, "reading": reading}
+
     if task_type in {"S4.section", "S4.item"}:
-        source = inputs.get("cut", {}).get("id") if isinstance(inputs.get("cut"), dict) else _first_id(inputs)
-        if task_type == "S4.item":
-            sound = inputs["name_sound"]["sounds"]
-            name = "".join(sound[:2])
-            return {
-                "name": name,
-                "body": _filler_text(task_id, "world_item", 900),
-                "sources": [source],
-            }
-        return {
-            "body": _filler_text(task_id, "world_facet", 1150),
-            "sources": [source],
-        }
+        return _filler_text("世界", "本文", 900 if task_type == "S4.item" else 1150)
 
     if task_type == "S5.name":
         sound = inputs["name_sound"]
@@ -159,9 +151,7 @@ def _fake_output(
         field = task_type.removeprefix("S5.")
         person_id = inputs["character"]["id"]
         short_values = {
-            "profile": f"{person_id}の属性をまとめたプロフィール。",
             "intro": f"{person_id}の短い紹介。",
-            "appearance": f"{person_id}の外見と魅力。",
             "motive": f"{person_id}が行動する動機。",
             "catchphrase": f"私は{person_id}として進む。",
         }
@@ -171,6 +161,8 @@ def _fake_output(
         # min_chars/max_chars range (tables/volume.yaml), so the placeholder
         # text must actually land inside it, not just be non-empty.
         volume_ranges = {
+            "profile": (800, 1500),
+            "appearance": (400, 800),
             "personality": (500, 1000),
             "values": (400, 800),
             "voice": (400, 800),
@@ -180,7 +172,7 @@ def _fake_output(
         }
         minimum, maximum = volume_ranges[field]
         target_length = (minimum + maximum) // 2
-        return {field: _filler_text(person_id, field, target_length), "sources": [person_id]}
+        return _filler_text("人物", "項目", target_length)
 
     if task_type == "S7.event":
         characters = inputs["characters"]
@@ -246,6 +238,9 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     invalidated_s7 = False
     trimmed_tasks: set[str] = set()
     trim_counts: dict[str, int] = {}
+    extended_types: set[str] = set()
+    continuation_outputs: dict[str, str] = {}
+    extended_tasks: set[str] = set()
     for _ in range(500):
         claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
         if claimed is None:
@@ -278,13 +273,26 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
                     output = long_text
                 trimmed_tasks.add(task_id)
                 trim_counts[task["type"]] = trim_counts.get(task["type"], 0) + 1
+        definition = harness.task_definitions[task["type"]]
+        if definition.get("extend_to_min"):
+            if task_id in continuation_outputs:
+                assert "既出の文章を繰り返さず、同じ内容をさらに具体的に書き足す" in claimed["card"]
+                output = continuation_outputs.pop(task_id)
+            elif task["type"] not in extended_types and task_id not in trimmed_tasks:
+                assert isinstance(output, str)
+                minimum = next(check["min_chars"]["n"] for check in definition["validate"]["checks"] if "min_chars" in check)
+                prefix = "短い説明。" * (minimum // 12)
+                continuation_outputs[task_id] = output[len(prefix):]
+                output = prefix
+                extended_types.add(task["type"])
+                extended_tasks.add(task_id)
         if is_comparison:
             comparison_answers.append(output["answer"])
             if output["answer"] == "yes":
                 sent_comparison_yes = True
         submitted_output = (
             output
-            if task["type"] == "S7.detail"
+            if definition["output"] == "text"
             else json.dumps(output, ensure_ascii=False)
         )
         submitted = harness.submit(claimed["ticket"], submitted_output)
@@ -292,7 +300,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         if task_id in trimmed_tasks:
             assert f"{task_id}: 字数の上限で切り詰め" in submitted.warnings
             task_dir = data_dir / "runs" / run_id / "tasks" / task_id
-            if task["type"] == "S7.detail":
+            if definition["output"] == "text":
                 stored = (task_dir / "output.md").read_text(encoding="utf-8")
                 fixed_text = submitted.value
             else:
@@ -316,10 +324,15 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     assert comparison_answers and all(answer in {"yes", "no"} for answer in comparison_answers)
     assert invalidated_s7
     assert set(trim_counts) == {
-        "S4.section", "S4.item", "S5.personality", "S5.values", "S5.backstory",
+        "S4.section", "S4.item", "S5.profile", "S5.appearance", "S5.personality", "S5.values", "S5.backstory",
         "S5.relationship", "S5.voice", "S5.inner_conflict", "S7.detail",
     }
     assert trim_counts["S4.section"] == 2
+    assert extended_types == set(trim_counts)
+    for task_id in extended_tasks:
+        assert final_manifest["tasks"][task_id]["tries"] == 0
+        assert final_manifest["tasks"][task_id]["continuation_step"] == 1
+    assert not continuation_outputs
     for task_id in trimmed_tasks:
         assert final_manifest["tasks"][task_id]["tries"] == 0
         assert f"{task_id}: 字数の上限で切り詰め" in final_manifest["warnings"]
@@ -330,6 +343,11 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     assert story_path.is_file()
     assert markdown_path.is_file()
     story = json.loads(story_path.read_text(encoding="utf-8"))
+    assert story["cast"][0]["sources"]
+    for section in story["world"]["sections"]:
+        assert section["sources"]
+        for item in section["items"]:
+            assert item["sources"]
     validate_document(story, ROOT / "schemas" / "story.schema.json")
     story_markdown = markdown_path.read_text(encoding="utf-8")
     assert "人物は場面の状況を確認し、行動の結果を受け止めた。" in story_markdown

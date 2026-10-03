@@ -1,5 +1,5 @@
 id: S5.backstory
-version: 2
+version: 3
 kind: llm
 inputs:
   character:
@@ -32,24 +32,19 @@ inputs:
     from: S3.assign
     select: cast[c1].role
     required: false
-output: json
+output: text
+extend_to_min: true
 card:
   role: 割り当てられた属性とプロフィールから、人物の来歴のうち、ある一時期を具体的に書く。
   steps:
     - 人物の人生のうち、年齢や状況が分かる一時期を1つ選ぶ。これは複数の時期を分担して書くタスクの1つであり、どの時期を選ぶかは自由だが、1つの時期の範囲に収める。
     - その時期に何があり、何を得て、何を失ったかを具体的に書く。
-    - 1000〜2000字を目安にし、入力にない人物や出来事を付け加えない。sources には使った入力のIDを記録する。
-  output_example: '{"backstory": "...", "sources": ["c1"]}'
+    - 1000〜2000字を目安にし、入力にない人物や出来事を付け加えない。
 validate:
-  schema: schemas/tasks/S5.backstory.schema.json
   checks:
-    - sources_exist
     - min_chars:
-        field: backstory
         n: 1000
     - max_chars:
-        field: backstory
         n: 2000
         fix: trim
-max_input_chars: 3000
-default_sources: ["{slot}"]
+max_input_chars: 5000

@@ -86,14 +86,15 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 - 入力：セクションの定義文と観点、物語の `place`・`era`、プロット型の名前、前提セクションの本文（一覧型は各項目の名前と1行の要約）。前提セクション以外の内容は渡さない。
 - `single` のセクションは、観点ごとに、分量の配分で決めた数の面（facet）に分けて書く。各面には、コードが要素テーブルから異なる要素を1つずつ「切り口」として割り当てる（同じ観点の面どうしが同じ文の繰り返しにならないようにするため：P4）。
 - 一覧型の項目にも、コードが異なる要素（年齢・役割・願望など）と、名前の響きの音を割り当てる。項目の名前は、与えた音から組み立てさせる（LLM の典型的な名前を避けるため：§5）。
-- 出力：`single` の面は `{"body": "...", "sources": [...]}`、`list` の項目は `{"name": "...", "body": "...", "sources": [...]}`。1タスクの字数は §8 の配分に従う。
+- 出力：`single` の面は本文だけ（`output: text`、`extend_to_min: true`）。`list` の項目は、名前のタスク `S4.item_name`（`{"name": "...", "reading": "..."}`、与えた音を使う）と、本文のタスク `S4.item`（`output: text`、`extend_to_min: true`、入力に項目の名前を含む）に分ける。1タスクの字数は §8 の配分に従う。
 
 ### S5 人物 [L]
 - タスクの単位：人物1人 × 項目1つ。項目は `name` → `profile` → `intro`・`motive`・`appearance`・`personality`・`values`・`backstory`（時期ごとに複数）・`relationships`（他の人物ごとに1件）・`voice`（口調と台詞の例）・`inner_conflict` → `catchphrase` の順に依存する。各項目の字数は §8 の配分に従う。
 - 主人公以外の人物の項目には、主人公の文脈として、主人公の名前と役を入力に含める。`motive`・`catchphrase` では、主人公の `intro` も含める。主人公の割り当て要素・禁忌・抑圧されている自己像は、主人公自身の項目にだけ入力する（P1）。
 - すべての項目の入力に、その人物の役の定義文（`tables/roles.yaml`。heros-journey・world-building の4役の定義を取り込む）と、プロット型の `character_requirements` を含める。
 - `name`：入力は、S3 で割り当てた音6個と、名前の響きの説明文だけ。出力は `{"name": "...", "reading": "カタカナの読み", "sources": ["<響きの集合のID>"]}`。検証：`reading` が、与えた音のうち2個以上を含む（`uses_given`）。
-- `profile`：入力は、その人物の名前・役・割り当て要素（主人公は `taboo` を含む）。出力は `{"profile": "...", "sources": [...]}`（300字以内）。
+- `profile`：入力は、その人物の名前・役・割り当て要素（主人公は `taboo` を含む）。
+- 長い項目（profile・appearance・personality・values・backstory・relationship・voice・inner_conflict）は `output: text`、`extend_to_min: true` とし、本文だけを書かせる。短い項目（name・intro・motive・catchphrase）は JSON のままとする。
 - `motive`：入力は、その人物の名前・役・プロフィールと、他の人物の名前・役だけ。出力は `{"motive": "...", "sources": [...]}`（120字以内）。主人公に「抑圧されている自己像」が割り当てられていれば、入力に含める。
 - `intro`：短い紹介（50字以内で、文末記号で終わる1文。world-building の short_introduction）。`ends_complete` で検査する。
 - `appearance`：外見と魅力（年齢・性別・種族・体格・装い。150字以内。heroes・heros-journey の外見の項目）。
@@ -137,7 +138,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 - タスクの単位：出来事1件の場面（beat）1つ。出来事ごとの場面の数は §8 の配分で決める。場面の働き（発端・展開・転換・余韻など）は、コードが `tables/beats.yaml` から割り当てる。
 - 依存：そのスロットの `S8.judge`（整合確認の後に詳述する）と、同じ出来事の直前の場面。
 - 入力：出来事の記述（when・where・who・why・intent・what・result・emotion）、場面の働き、登場人物の名前・役・紹介・口調、S6 で選んだ世界の抜粋、同じ出来事の直前の場面の末尾（コードが600字を切り出す）。他の出来事の場面は渡さない。
-- 出力：場面の説明的な記述（`output: text`。三人称で、いつ・どこで・誰が・何をしたかが分かる書き方。小説の文体ではなく、正本としての説明的な記述）。字数は §8 の配分に従う。
+- 出力：場面の説明的な記述（`output: text`、`extend_to_min: true`。三人称で、いつ・どこで・誰が・何をしたかが分かる書き方。小説の文体ではなく、正本としての説明的な記述）。字数は §8 の配分に従う。
 
 ### S9 正本組み立て [C]
 - 入力：S3〜S8 の出力。

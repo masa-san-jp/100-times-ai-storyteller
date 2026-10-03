@@ -1,5 +1,5 @@
 id: S7.detail
-version: 2
+version: 3
 kind: llm
 inputs:
   when:
@@ -64,6 +64,7 @@ inputs:
     required: false
     truncate: tail
 output: text
+extend_to_min: true
 continuation: true
 card:
   role: 出来事の一つの場面を、正本として説明的に詳述する。
@@ -74,7 +75,6 @@ card:
     - 同じ出来事の直前の場面がある場合は、その末尾から自然につなげる。他の出来事の場面は参照しない。
     - 小説の文体や会話中心の表現にせず、いつ・どこで・誰が・何をしたかが分かる正本の説明にする。
     - 1500〜2500字を目安に、場面の説明だけを完結した文章で書く。
-  output_example: "場面の説明的な記述。"
 validate:
   checks:
     - min_chars:
@@ -82,4 +82,4 @@ validate:
     - max_chars:
         n: 2500
         fix: trim
-max_input_chars: 5000
+max_input_chars: 6000

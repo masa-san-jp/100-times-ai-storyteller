@@ -626,7 +626,7 @@ def test_task_output_schemas_have_no_string_length_constraints():
 
 
 @pytest.mark.parametrize("field, maximum", [
-    ("intro", 50), ("appearance", 150), ("motive", 120), ("profile", 300),
+    ("intro", 50), ("motive", 120),
 ])
 def test_short_s5_items_still_reject_excess_length(field, maximum):
     definition = load_yaml(ROOT / f"harness/story/tasks/S5.{field}.yaml", TASK_SCHEMA)

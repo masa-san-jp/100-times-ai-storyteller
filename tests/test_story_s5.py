@@ -34,8 +34,15 @@ def test_all_s5_task_definitions_and_schemas_are_valid() -> None:
     for name in (*S5_TYPES, *S5_NEW_SINGLE_TYPES, "relationship"):
         definition = load_task(name)
         assert definition["id"] == f"S5.{name}"
-        schema_ref = definition["validate"]["schema"]
-        assert (ROOT / schema_ref).is_file()
+        if name in {"name", "intro", "motive", "catchphrase"}:
+            assert definition["output"] == "json"
+            assert (ROOT / definition["validate"]["schema"]).is_file()
+        else:
+            assert definition["output"] == "text"
+            assert definition["extend_to_min"] is True
+            assert "schema" not in definition["validate"]
+            assert "output_example" not in definition["card"]
+            assert "sources" not in str(definition["card"])
 
 
 def test_relationship_context_is_a_code_task_keyed_by_the_counterpart() -> None:
@@ -51,10 +58,10 @@ def test_s5_new_items_enforce_the_volume_table_char_range() -> None:
     for name, (minimum, maximum) in _VOLUME_RANGES.items():
         definition = load_task(name)
         checks = definition["validate"]["checks"]
-        assert {"min_chars": {"field": name, "n": minimum}} in checks
-        assert {"max_chars": {"field": name, "n": maximum, "fix": "trim"}} in checks
-        assert "sources_exist" in checks
-        assert definition["default_sources"] == ["{slot}"]
+        assert {"min_chars": {"n": minimum}} in checks
+        assert {"max_chars": {"n": maximum, "fix": "trim"}} in checks
+        assert "sources_exist" not in checks
+        assert "default_sources" not in definition
 
 
 def test_s5_new_single_item_cards_carry_the_same_context_as_appearance() -> None:
@@ -104,9 +111,7 @@ def test_s5_default_sources_recovers_from_the_protagonist_s_id_instead_of_the_ch
     protagonist = _character("protagonist", "c1", "主人公固有")
     other = _character("adversary", "c2", "他者固有")
     for task_name, field in (
-        ("profile", "profile"),
         ("intro", "intro"),
-        ("appearance", "appearance"),
         ("motive", "motive"),
         ("catchphrase", "catchphrase"),
     ):

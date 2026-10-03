@@ -1,5 +1,5 @@
 id: S5.voice
-version: 2
+version: 3
 kind: llm
 inputs:
   character:
@@ -32,24 +32,19 @@ inputs:
     from: S3.assign
     select: cast[c1].role
     required: false
-output: json
+output: text
+extend_to_min: true
 card:
   role: 割り当てられた属性とプロフィールから、人物の口調を書く。
   steps:
     - 話す速さ・言葉選び・一人称や語尾の癖など、口調の特徴を具体的に書く。
     - その口調で話す短い台詞の例を1つ、鉤括弧（「」）で添える。
-    - 400〜800字を目安にし、入力にない出来事や関係を付け加えない。sources には使った入力のIDを記録する。
-  output_example: '{"voice": "...", "sources": ["c1"]}'
+    - 400〜800字を目安にし、入力にない出来事や関係を付け加えない。
 validate:
-  schema: schemas/tasks/S5.voice.schema.json
   checks:
-    - sources_exist
     - min_chars:
-        field: voice
         n: 400
     - max_chars:
-        field: voice
         n: 800
         fix: trim
-max_input_chars: 3000
-default_sources: ["{slot}"]
+max_input_chars: 5000

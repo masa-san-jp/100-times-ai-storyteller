@@ -1,0 +1,27 @@
+id: S4.item_name
+version: 1
+kind: llm
+inputs:
+  name_sound:
+    label: 項目名の響き
+    from: S3.assign
+    select: world_tasks[{slot}].name_sound
+    required: true
+output: json
+card:
+  role: 与えられた響きの音から、項目の名前を組み立てる。
+  steps:
+    - 与えられた音のうち2個以上を使って、項目の名前を組み立てる。
+    - 名前と、カタカナの読みだけを出力する。
+  output_example: '{"name": "...", "reading": "..."}'
+validate:
+  schema: schemas/tasks/S4.item_name.schema.json
+  checks:
+    - min_chars:
+        field: name
+        n: 1
+    - uses_given:
+        field: reading
+        slot: name_sound
+        n: 2
+max_input_chars: 3000

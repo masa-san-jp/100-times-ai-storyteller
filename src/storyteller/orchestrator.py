@@ -21,12 +21,14 @@ from pathlib import Path
 from typing import Any, Final
 
 from .cards import (
+    InputBudgetError,
     TaskCardError,
     generate_task_card,
     input_char_count,
     prepare_task_inputs,
 )
 from .cache import cache_key, lookup_cache, save_cache
+from .task_outputs import read_task_output
 from .manifest import load_manifest, write_manifest
 from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
@@ -38,6 +40,7 @@ from .storage import (
 )
 from .validation import (
     ValidationResult,
+    output_char_count,
     text_is_truncated,
     validate_document,
     validate_task_definition_output_example,
@@ -695,6 +698,9 @@ class Orchestrator:
             inputs = _load_card_inputs(self.task_dir(run_id, task_id))
 
         continuation = _continuation_enabled(definition)
+        extend_to_min = (
+            definition.get("output") == "text" and definition.get("extend_to_min", False)
+        )
         partial = _read_partial_output(self.task_dir(run_id, task_id))
         if continuation and _is_truncated_submission(raw_output, truncated):
             if int(task.get("continuation_step", 0)) >= 2:
@@ -736,19 +742,48 @@ class Orchestrator:
             submission_output = raw_output
         else:
             submission_output = raw_output
-            if continuation and partial:
+            if (continuation or extend_to_min) and partial:
                 if not isinstance(raw_output, str):
                     submission_output = raw_output
                 else:
                     submission_output = partial + raw_output
+            validation_definition = definition
+            minimum = _minimum_text_chars(definition) if extend_to_min else 0
+            short = (
+                isinstance(submission_output, str)
+                and output_char_count(submission_output) < minimum
+            )
+            if short and int(task["continuation_step"]) < 2:
+                return self._commit_truncated_submission(
+                    ticket, run_id, task_id, raw_output,
+                    reason="字数が目標に満たないため継続",
+                )
+            if short:
+                validation_definition = deepcopy(definition)
+                for check in validation_definition.get("validate", {}).get("checks", []):
+                    if (
+                        isinstance(check, dict)
+                        and "min_chars" in check
+                        and "field" not in check["min_chars"]
+                    ):
+                        check["min_chars"]["n"] = (check["min_chars"]["n"] + 1) // 2
             validation = validate_output(
-                definition,
+                validation_definition,
                 submission_output,
                 inputs=inputs,
                 harness_root=self.definition_root,
                 common_words_path=self.repository_root / "tables" / "common_words.yaml",
                 index=task["index"],
             )
+            if short and validation.passed:
+                validation = ValidationResult(
+                    validation.value,
+                    validation.errors,
+                    (
+                        *validation.warnings,
+                        f"字数が目標に届かず採用 {output_char_count(validation.value)}/{minimum}",
+                    ),
+                )
         return self._commit_submission(
             ticket,
             run_id,
@@ -756,6 +791,7 @@ class Orchestrator:
             submission_output,
             validation,
             inputs,
+            discard_partial=bool(extend_to_min),
         )
 
     # Names used by internal callers and by the future CLI layer.
@@ -820,6 +856,10 @@ class Orchestrator:
                 self._now(),
             )
             at = self._now()
+            definition = self.task_definitions[task["type"]]
+            discard_partial = discard_partial or (
+                definition.get("output") == "text" and definition.get("extend_to_min", False)
+            )
             errors = tuple(str(error) for error in validation.errors)
             warnings = tuple(str(warning) for warning in validation.warnings)
             recorded_warnings = tuple(
@@ -882,6 +922,8 @@ class Orchestrator:
             }
             task["attempt"] = next_attempt
             task["tries"] = next_tries
+            if discard_partial:
+                task["continuation_step"] = 0
             task["error"] = reason
             task["cache_key"] = None
             task["claim"] = None
@@ -936,6 +978,8 @@ class Orchestrator:
         run_id: str,
         task_id: str,
         raw_output: Any,
+        *,
+        reason: str = "出力が途中で切れたため継続",
     ) -> SubmissionResult:
         """Persist one continuation chunk without validating or caching it."""
         if not isinstance(raw_output, str):
@@ -978,7 +1022,7 @@ class Orchestrator:
                 task_id,
                 "ready",
                 at,
-                reason="出力が途中で切れたため継続",
+                reason=reason,
                 executor_id=claim["executor_id"],
             )
             _refresh_blocked_tasks(manifest, at)
@@ -1196,8 +1240,8 @@ class Orchestrator:
         try:
             card = self._build_task_card(manifest, run_id, task_id, ticket)
             context = self._build_context(manifest, run_id, task_id)
-            card_inputs = prepare_task_inputs(
-                self.task_definitions[task["type"]], inputs=context.inputs
+            card_inputs = _prepare_card_inputs(
+                self.task_definitions[task["type"]], context.inputs
             )
         except Exception as error:
             # Input rendering failure is a task failure according to the
@@ -1270,12 +1314,15 @@ class Orchestrator:
         task = _get_task(manifest, task_id)
         definition = self.task_definitions[task["type"]]
         context = self._build_context(manifest, run_id, task_id)
-        card_inputs = prepare_task_inputs(definition, inputs=context.inputs)
+        card_inputs = _prepare_card_inputs(definition, context.inputs)
         retry_reason = task.get("error")
         if not isinstance(retry_reason, str):
             retry_reason = None
         continuation_tail = None
-        if _continuation_enabled(definition) and int(task["continuation_step"]) > 0:
+        extend_to_min = False
+        if int(task["continuation_step"]) > 0 and (
+            _continuation_enabled(definition) or definition.get("extend_to_min", False)
+        ):
             partial = _read_partial_output(self.task_dir(run_id, task_id))
             remaining = int(definition.get("max_input_chars", 3000)) - input_char_count(
                 definition,
@@ -1285,6 +1332,10 @@ class Orchestrator:
                 raise TaskCardError("継続の予算が足りない")
             normalized_partial = unicodedata.normalize("NFC", partial)
             continuation_tail = normalized_partial[-min(remaining, 6000) :]
+            last_ready = next(
+                (event for event in reversed(task["history"]) if event.get("to") == "ready"), {}
+            )
+            extend_to_min = last_ready.get("reason") == "字数が目標に満たないため継続"
         return (
             generate_task_card(
                 definition,
@@ -1292,6 +1343,7 @@ class Orchestrator:
                 inputs=card_inputs,
                 retry_reason=retry_reason,
                 continuation_tail=continuation_tail,
+                extend_to_min=extend_to_min,
             ),
             card_inputs,
         )
@@ -1583,9 +1635,9 @@ class Orchestrator:
                 continue
             try:
                 context = self._build_context(manifest, run_id, task_id)
-                card_inputs = prepare_task_inputs(
+                card_inputs = _prepare_card_inputs(
                     self.task_definitions[task["type"]],
-                    inputs=context.inputs,
+                    context.inputs,
                 )
                 key = self._cache_key_for_task(manifest, task_id, card_inputs)
             except Exception as error:
@@ -1605,6 +1657,7 @@ class Orchestrator:
                 changed = True
                 continue
             output = _postprocess_accepted_output(task, output)
+            atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
             _write_submitted_output(
                 self.task_dir(run_id, task_id),
                 self.task_definitions[task["type"]],
@@ -2156,6 +2209,39 @@ def _load_card_inputs(task_dir: Path) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise OrchestrationError(f"カード入力がオブジェクトではありません: {path}")
     return dict(value)
+
+
+def _prepare_card_inputs(
+    definition: Mapping[str, Any], inputs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Leave room for the required continuation tail when inputs can shrink.
+
+    Use the normal slot order and truncation rules. If required input cannot
+    fit with a reserved tail, retain the normal budget: a complete first
+    submission is still possible, and §8 handles an insufficient tail if a
+    continuation actually becomes necessary.
+    """
+    budget = int(definition.get("max_input_chars", 3000))
+    if definition.get("output") == "text" and definition.get("extend_to_min") and budget > 1000:
+        reserved = dict(definition, max_input_chars=budget - 1000)
+        try:
+            return prepare_task_inputs(reserved, inputs=inputs)
+        except InputBudgetError:
+            pass
+    return prepare_task_inputs(definition, inputs=inputs)
+
+
+def _minimum_text_chars(definition: Mapping[str, Any]) -> int:
+    return max(
+        (
+            check["min_chars"]["n"]
+            for check in definition.get("validate", {}).get("checks", [])
+            if isinstance(check, Mapping)
+            and "min_chars" in check
+            and "field" not in check["min_chars"]
+        ),
+        default=0,
+    )
 
 
 def _continuation_enabled(definition: Mapping[str, Any]) -> bool:
@@ -3080,11 +3166,8 @@ def _read_dependency_outputs(
         output_json = run_dir / "tasks" / task_id / "output.json"
         output_md = run_dir / "tasks" / task_id / "output.md"
         try:
-            if output_json.is_file():
-                with output_json.open("r", encoding="utf-8") as stream:
-                    outputs[task_id] = json.load(stream)
-            elif output_md.is_file():
-                outputs[task_id] = output_md.read_text(encoding="utf-8")
+            if output_json.is_file() or output_md.is_file():
+                outputs[task_id] = read_task_output(run_dir / "tasks" / task_id, dependency["type"])
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise CodeTaskError(f"タスク出力を読み込めません: {task_id}") from error
     return outputs

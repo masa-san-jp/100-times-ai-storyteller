@@ -70,6 +70,127 @@ def continuation_definition(**extra: object) -> dict:
     return definition
 
 
+@pytest.mark.parametrize(
+    ("minimum", "chunks", "accepted", "actual"),
+    [
+        (20, ["最初。", "書き足す。", "具体的な説明を加えるよ。"], True, 20),
+        (20, ["最初。", "続き。", "末尾の文。"], True, 11),
+        (20, ["一文。", "二文。", "三文。"], False, 9),
+        (20, ["一文。", "二文。", "三行目。"], True, 10),
+        (21, ["一文。", "二文。", "三行目。"], False, 10),
+    ],
+)
+def test_extend_to_min_continues_then_applies_half_threshold(
+    tmp_path: Path, minimum: int, chunks: list[str], accepted: bool, actual: int,
+) -> None:
+    definition = continuation_definition(
+        extend_to_min=True,
+        max_attempts=1,
+        validate={"checks": [{"min_chars": {"n": minimum}}, "ends_complete"]},
+    )
+    harness = Orchestrator(tmp_path, {"D1.story": definition})
+    run_id = harness.create_run(seed=1)
+    for index, chunk in enumerate(chunks):
+        claim = harness.claim_next(run_id, executor_id="worker")
+        assert claim is not None
+        if index:
+            assert "既出の文章を繰り返さず、同じ内容をさらに具体的に書き足す" in claim["card"]
+        result = harness.submit(claim["ticket"], chunk)
+        task = harness.load_run(run_id)["tasks"]["D1.story"]
+        if index < 2:
+            assert result.accepted
+            assert task["state"] == "ready"
+            assert task["continuation_step"] == index + 1
+            assert task["tries"] == task["attempt"] == 0
+            assert not (tmp_path / "cache").exists()
+    assert result.accepted == accepted
+    assert not (harness.task_dir(run_id, "D1.story") / "partial.md").exists()
+    assert task["state"] == ("done" if accepted else "failed")
+    if accepted:
+        assert result.value == "".join(chunks)
+        if actual < minimum:
+            assert result.warnings == (f"D1.story: 字数が目標に届かず採用 {actual}/{minimum}",)
+        else:
+            assert not result.warnings
+    else:
+        assert task["tries"] == 1
+
+
+def test_length_and_truncation_share_continuation_quota_and_retry_starts_fresh(tmp_path: Path) -> None:
+    definition = continuation_definition(
+        extend_to_min=True, validate={"checks": [{"min_chars": {"n": 20}}]},
+    )
+    harness = Orchestrator(tmp_path, {"D1.story": definition})
+    run_id = harness.create_run(seed=1)
+    for chunk, truncated in [("一", True), ("二。", False), ("三。", False)]:
+        claim = harness.claim_next(run_id, executor_id="worker")
+        assert claim is not None
+        result = harness.submit(claim["ticket"], chunk, truncated=truncated)
+    assert not result.accepted
+    assert harness.load_run(run_id)["tasks"]["D1.story"]["continuation_step"] == 0
+    claim = harness.claim_next(run_id, executor_id="worker")
+    assert claim is not None
+    assert "これまでの出力の末尾" not in claim["card"]
+    assert harness.submit(claim["ticket"], "完結した文章。" * 3).accepted
+
+
+def test_half_threshold_does_not_bypass_other_checks(tmp_path: Path) -> None:
+    definition = continuation_definition(
+        extend_to_min=True, validate={"checks": [{"min_chars": {"n": 20}}, "ends_complete"]},
+    )
+    harness = Orchestrator(tmp_path, {"D1.story": definition})
+    run_id = harness.create_run(seed=1)
+    for chunk in ["一文。", "二文。", "完結しない末尾"]:
+        claim = harness.claim_next(run_id, executor_id="worker")
+        assert claim is not None
+        result = harness.submit(claim["ticket"], chunk)
+    assert not result.accepted
+    assert any("ends_complete" in error for error in result.errors)
+    assert not result.warnings
+
+
+def test_extend_to_min_counts_nfc_without_whitespace(tmp_path: Path) -> None:
+    definition = continuation_definition(
+        extend_to_min=True, validate={"checks": [{"min_chars": {"n": 6}}]},
+    )
+    harness = Orchestrator(tmp_path, {"D1.story": definition})
+    run_id = harness.create_run(seed=1)
+    for chunk in ["か\u3099　。\n", "き\u3099\t。", "く\u3099 。"]:
+        claim = harness.claim_next(run_id, executor_id="worker")
+        assert claim is not None
+        result = harness.submit(claim["ticket"], chunk)
+    assert result.accepted
+    assert not result.warnings
+    assert harness.load_run(run_id)["tasks"]["D1.story"]["state"] == "done"
+
+
+def test_extend_to_min_reserves_tail_budget_for_large_optional_input(tmp_path: Path) -> None:
+    definition = continuation_definition(
+        extend_to_min=True,
+        max_input_chars=2000,
+        inputs={
+            "context": {
+                "label": "背景", "from": "input", "select": "input.context",
+                "truncate": "head",
+            },
+        },
+        validate={"checks": [{"min_chars": {"n": 20}}]},
+    )
+    harness = Orchestrator(tmp_path, {"D1.story": definition})
+    run_id = harness.create_run(seed=1, input_data={"context": "背景。" * 600})
+    first = harness.claim_next(run_id, executor_id="worker")
+    assert first is not None
+    task_dir = harness.task_dir(run_id, "D1.story")
+    inputs = json.loads((task_dir / "input.json").read_text(encoding="utf-8"))
+    assert len(inputs["context"]) < 1000
+    assert harness.submit(first["ticket"], "短い文。").accepted
+    second = harness.claim_next(run_id, executor_id="worker")
+    assert second is not None
+    assert "これまでの出力の末尾" in second["card"]
+    assert json.loads((task_dir / "input.json").read_text(encoding="utf-8")) == inputs
+    assert harness.submit(second["ticket"], "さらに具体的に説明する文。" * 2).accepted
+
+
 def test_submit_removes_unknown_sources_before_storing_output(tmp_path: Path) -> None:
     clock = Clock()
     orchestrator = Orchestrator(
