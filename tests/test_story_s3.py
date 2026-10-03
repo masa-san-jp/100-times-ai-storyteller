@@ -75,6 +75,7 @@ def _definitions(material_kind: str = "suppression") -> dict[str, dict[str, obje
         "S4.section": _llm_definition("S4.section"),
         "S4.item": _llm_definition("S4.item"),
         "S4.item_name": _llm_definition("S4.item_name"),
+        "S4.diversity": _code_definition("S4.diversity", "diversity"),
         "S5.relationship_context": _code_definition(
             "S5.relationship_context", "relationship_context"
         ),
@@ -128,6 +129,7 @@ def _make_orchestrator(
             "extract": extract,
             "merge": merge,
             "assign": story_s3_assign,
+            "diversity": lambda _context: {"invalidated": []},
             "relationship_context": story_s5_relationship_context,
             "s6": lambda _context: {"ok": True},
         },
@@ -479,7 +481,18 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
         ]
 
     s5_ids = [task_id for task_id in tasks if task_id.startswith("S5.")]
-    assert tasks["S6.expand"]["deps"] == ["S3.assign", *s4_ids, *s5_ids]
+    s4_with_checks = [
+        task_id for task_id in tasks
+        if tasks[task_id]["type"] in {"S4.section", "S4.item", "S4.diversity"}
+    ]
+    assert tasks["S6.expand"]["deps"] == ["S3.assign", *s4_with_checks, *s5_ids]
+    for section_id, facet_ids in s4_by_section.items():
+        diversity_id = f"S4.diversity-{section_id}"
+        if world_sections[section_id]["kind"] == "single":
+            assert tasks[diversity_id]["deps"] == ["S3.assign", *facet_ids]
+            assert tasks[diversity_id]["index"] == [section_id]
+        else:
+            assert diversity_id not in tasks
 
 
 def test_s3_character_volume_reaches_the_floor_and_matches_created_task_counts(

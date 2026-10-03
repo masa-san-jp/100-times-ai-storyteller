@@ -1,0 +1,4 @@
+id: S4.diversity
+version: 1
+kind: code
+handler: story_s4_diversity

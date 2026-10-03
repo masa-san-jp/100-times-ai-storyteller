@@ -32,6 +32,7 @@
 | P1-18 | S4 の面（facet）への分割、面と一覧型の項目への要素の割当、一覧型の項目の名前を音から組み立てる | P1-16 | story-pipeline S4, §5, §8 | 世界資料が最低ラインを満たすタスクが作られる。同じ観点の面に異なる要素が割り当てられる |
 | P1-19 | S7.detail（場面の詳述）と、S9 での組み立て | P1-16 | story-pipeline S7.detail, S9, §8 | 物語が最低ラインを満たすタスクが作られる |
 | P1-20 | 出力の字数の検査の見直し：出力スキーマから長さの制約を除き、min_chars・max_chars で検査する。長文の max_chars に fix: trim | P1-18 | task-model §6.1, §6.2 | スキーマに長さの制約がない。上限超過の長文が文末で切り詰められる |
+| P1-22 | S4 の書き出しの多様性：カードの規則と、面どうしの書き出しの類似の検査（S4.diversity） | P1-21 | story-pipeline S4 | 書き出しが似すぎた面が無効化され、書き直される |
 | P1-15 | end-to-end：ローカルモデルとコーディングエージェントでの短編の完走（P1-16〜P1-19 の後、分量の最低ラインを満たすこと）。開発者が書いた自由入力による生成例を `examples/` に置く | P1-11, P1-12, P1-13 | ROADMAP Phase 1 | 完了条件 1〜4 |
 
 ## 順序
@@ -61,12 +62,13 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S3.assign` | C | S2.merge | assignment。S4・S5・S6 を追加 |
 | `S4.section-<section id>-<観点番号>-f<面番号>` | L | S3.assign、前提セクションのタスク | 世界セクションの観点の1面（`single`） |
 | `S4.item-<section id>-<3桁>` | L | S3.assign、前提セクションのタスク | 一覧型セクションの項目（`list`） |
+| `S4.diversity-<section id>` | C | そのセクションの面すべて | 書き出しが似すぎた面を無効化 |
 | `S5.name-c<n>` | L | S3.assign | 名前 |
 | `S5.profile-c<n>` | L | S5.name-c<n> | プロフィール |
 | `S5.intro-c<n>`・`S5.appearance-c<n>` | L | S5.profile-c<n> | 短い紹介・外見 |
 | `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて、主人公の S5.intro（主人公以外の場合） | 動機 |
 | `S5.catchphrase-c<n>` | L | S5.motive-c<n> | 決め台詞 |
-| `S6.expand` | C | S4 すべて、S5 すべて | slots。S7・S8.plan・S9 を追加 |
+| `S6.expand` | C | S4 すべて（S4.diversity を含む）、S5 すべて | slots。S7・S8.plan・S9 を追加 |
 | `S7.event-e<3桁>` | L | S6.expand、同じ筋の直前のスロットの S8.judge | 出来事 |
 | `S8.plan-e<3桁>` | C | そのスロットと、時系列でそれより前のすべてのスロットの S7 | 比較相手を決め、S8.compare と S8.judge を追加 |
 | `S8.compare-e<3桁>-k<n>` | L | S8.plan-e<3桁> | 矛盾の有無 |

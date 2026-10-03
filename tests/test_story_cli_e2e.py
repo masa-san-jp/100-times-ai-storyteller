@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import contextlib
 import io
 import os
@@ -140,7 +141,11 @@ def _fake_output(
         return {"name": reading, "reading": reading}
 
     if task_type in {"S4.section", "S4.item"}:
-        return _filler_text("世界", "本文", 900 if task_type == "S4.item" else 1150)
+        body = _filler_text("世界", "本文", 900 if task_type == "S4.item" else 1150)
+        # Deterministic, distinct synthetic openings keep the shared fixture
+        # from accidentally exercising the diversity retry limit everywhere.
+        opening = "".join(chr(0x4E00 + byte) for byte in hashlib.shake_256(task_id.encode("utf-8")).digest(80))
+        return opening + body[80:]
 
     if task_type == "S5.name":
         sound = inputs["name_sound"]
@@ -241,6 +246,8 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     extended_types: set[str] = set()
     continuation_outputs: dict[str, str] = {}
     extended_tasks: set[str] = set()
+    similar_facets: list[str] = []
+    rewritten_s4 = False
     for _ in range(500):
         claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
         if claimed is None:
@@ -254,6 +261,21 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             inputs,
             send_comparison_yes=is_comparison and not sent_comparison_yes,
         )
+        if task["type"] == "S4.section":
+            if not similar_facets:
+                similar_facets = sorted(
+                    name for name in _manifest(data_dir, run_id)["tasks"]
+                    if name.startswith("S4.section-place-")
+                )[-2:]
+                assert len(similar_facets) == 2
+            if task_id in similar_facets and task["invalidations"] == 0:
+                opening = "丘の頂上に立つと、風が皮膚に触れ、草の揺れが足元の道筋を知らせる。" * 3
+                output = opening[:80] + output[80:]
+            if task["invalidations"]:
+                assert task_id == similar_facets[1]
+                assert "この書き出しと似ないように書き始める" in claimed["card"]
+                assert "丘の頂上に立つと" in claimed["card"]
+                rewritten_s4 = True
         # Mix normal outputs with overlong outputs for each long task type.
         # Two section facets reproduce the observed f1/f2 failures.
         if trim_counts.get(task["type"], 0) < (2 if task["type"] == "S4.section" else 1):
@@ -323,6 +345,30 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     assert comparison_answers.count("yes") == 1
     assert comparison_answers and all(answer in {"yes", "no"} for answer in comparison_answers)
     assert invalidated_s7
+    assert rewritten_s4
+    assert final_manifest["tasks"][similar_facets[0]]["invalidations"] == 0
+    assert final_manifest["tasks"][similar_facets[1]]["invalidations"] == 1
+    diversity_ids = {
+        name for name, record in final_manifest["tasks"].items()
+        if record["type"] == "S4.diversity"
+    }
+    assert diversity_ids
+    for name in ("S6.expand", "S9.assemble"):
+        assert diversity_ids <= set(final_manifest["tasks"][name]["deps"])
+    for diversity_id in diversity_ids:
+        record = final_manifest["tasks"][diversity_id]
+        section_id = record["index"][0]
+        facet_ids = {
+            name for name in final_manifest["tasks"]
+            if name.startswith(f"S4.section-{section_id}-")
+        }
+        assert set(record["deps"]) == {"S3.assign", *facet_ids}
+        assert record["state"] == "done"
+    assert any(
+        history["to"] == "blocked"
+        for history in final_manifest["tasks"]["S4.diversity-place"]["history"]
+    )
+    assert not any("書き出しの類似が無効化上限" in warning for warning in final_manifest["warnings"])
     assert set(trim_counts) == {
         "S4.section", "S4.item", "S5.profile", "S5.appearance", "S5.personality", "S5.values", "S5.backstory",
         "S5.relationship", "S5.voice", "S5.inner_conflict", "S7.detail",
