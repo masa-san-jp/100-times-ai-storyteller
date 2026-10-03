@@ -15,6 +15,7 @@ from .orchestrator import CodeTaskContext, CodeTaskResult
 from .storage import atomic_write_json, atomic_write_text
 from .tables import load_table
 from .validation import validate_document
+from .task_outputs import read_task_output
 from .volume import multiplier_for_preset
 
 
@@ -121,17 +122,10 @@ def _all_outputs(context: CodeTaskContext) -> dict[str, Any]:
             continue
         json_path = context.run_dir / "tasks" / task_id / "output.json"
         md_path = context.run_dir / "tasks" / task_id / "output.md"
-        if json_path.is_file():
+        if json_path.is_file() or md_path.is_file():
             try:
-                with json_path.open("r", encoding="utf-8") as stream:
-                    outputs[task_id] = json.load(stream)
+                outputs[task_id] = read_task_output(context.run_dir / "tasks" / task_id, task["type"])
             except (OSError, UnicodeError, json.JSONDecodeError) as error:
-                raise ValueError(f"タスク出力を読み込めません: {task_id}") from error
-        elif md_path.is_file():
-            # output: text のタスク（例：S7.detail）は output.md に生の文字列を持つ。
-            try:
-                outputs[task_id] = md_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as error:
                 raise ValueError(f"タスク出力を読み込めません: {task_id}") from error
     return outputs
 

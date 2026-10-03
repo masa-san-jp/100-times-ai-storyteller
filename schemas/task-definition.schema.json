@@ -89,6 +89,10 @@
       "enum": ["fail", "skip"],
       "default": "fail"
     },
+    "extend_to_min": {
+      "type": "boolean",
+      "default": false
+    },
     "continuation": {
       "type": "boolean"
     }
@@ -116,7 +120,8 @@
             {"required": ["lease_minutes"]},
             {"required": ["default_sources"]},
             {"required": ["on_exhausted"]},
-            {"required": ["continuation"]}
+            {"required": ["continuation"]},
+            {"required": ["extend_to_min"]}
           ]
         }
       }

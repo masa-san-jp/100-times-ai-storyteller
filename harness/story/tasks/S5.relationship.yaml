@@ -1,5 +1,5 @@
 id: S5.relationship
-version: 2
+version: 3
 kind: llm
 inputs:
   character:
@@ -37,24 +37,19 @@ inputs:
     from: S5.relationship_context
     select: output
     required: true
-output: json
+output: text
+extend_to_min: true
 card:
   role: 割り当てられた人物と、相手の人物の名前・役・紹介だけを使って、二人の関係を書く。
   steps:
     - 自分のプロフィールと、相手の人物の名前・役・紹介から、相手に対する関係・感情・距離感を具体的に書く。
     - 相手の人物にない属性や、二人の間の出来事を新たに付け加えない。
-    - 300〜600字を目安にし、sources には使った入力のIDを記録する。
-  output_example: '{"relationship": "...", "sources": ["c1"]}'
+    - 300〜600字を目安に書く。
 validate:
-  schema: schemas/tasks/S5.relationship.schema.json
   checks:
-    - sources_exist
     - min_chars:
-        field: relationship
         n: 300
     - max_chars:
-        field: relationship
         n: 600
         fix: trim
-max_input_chars: 3000
-default_sources: ["{slot}"]
+max_input_chars: 5000

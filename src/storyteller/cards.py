@@ -30,6 +30,7 @@ def generate_task_card(
     index: Sequence[str] | str | None = None,
     retry_reason: str | None = None,
     continuation_tail: str | None = None,
+    extend_to_min: bool = False,
 ) -> str:
     """Render one Markdown card.
 
@@ -76,7 +77,11 @@ def generate_task_card(
             raise TaskCardError("card.steps must contain non-empty strings")
         lines.append(f"{number}. {step}")
     if continuation_tail is not None:
-        lines.append("既出の文章を繰り返さず、末尾の直後から続きを書いて完結させる。")
+        lines.append(
+            "既出の文章を繰り返さず、同じ内容をさらに具体的に書き足す。"
+            if extend_to_min
+            else "既出の文章を繰り返さず、末尾の直後から続きを書いて完結させる。"
+        )
 
     lines.extend(["", "## 出力形式"])
     if output == "json":
@@ -103,7 +108,7 @@ def generate_task_card(
             "- 日本語で書く（ID・列挙値を除く）。",
         ]
     )
-    if output == "json":
+    if output == "json" and "sources" in str(card.get("output_example", "")):
         lines.append("- sources には、入力に [ ] で示された ID だけを書く。")
     if retry_reason is not None:
         lines.extend(["", "## 前回の不合格理由", _limit_retry_reason(retry_reason)])

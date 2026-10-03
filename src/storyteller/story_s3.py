@@ -737,15 +737,25 @@ def _build_downstream_tasks(
         ]
         deps = _unique_dependencies((parent_task_id, *prerequisite_ids))
         task_type = "S4.section" if section["kind"] == "single" else "S4.item"
-        additions.extend(
-            TaskSpec(
-                f"{task_type}-{world_task['id']}",
-                task_type,
-                deps=deps,
-                index=(world_task["id"],),
+        for world_task in section_tasks:
+            item_deps = deps
+            if task_type == "S4.item":
+                name_id = f"S4.item_name-{world_task['id']}"
+                additions.append(
+                    TaskSpec(
+                        name_id, "S4.item_name", deps=(parent_task_id,),
+                        index=(world_task["id"],),
+                    )
+                )
+                item_deps = (*deps, name_id)
+            additions.append(
+                TaskSpec(
+                    f"{task_type}-{world_task['id']}",
+                    task_type,
+                    deps=item_deps,
+                    index=(world_task["id"],),
+                )
             )
-            for world_task in section_tasks
-        )
 
     cast = assignment.get("cast")
     if not isinstance(cast, list):

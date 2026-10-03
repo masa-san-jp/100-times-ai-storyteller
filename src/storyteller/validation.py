@@ -490,6 +490,16 @@ def _read_field(value: Any, field: str | None) -> tuple[Any, bool]:
     return current, False
 
 
+def input_source_ids(inputs: Mapping[str, Any]) -> list[str]:
+    """Return the source IDs shown in the fitted card input, in stable order."""
+    return sorted(identifier for identifier in _ids_from_inputs(inputs) if isinstance(identifier, str))
+
+
+def output_char_count(value: str) -> int:
+    """Count non-whitespace NFC code points (task-model §3.3)."""
+    return _char_length(value)
+
+
 def _ids_from_inputs(inputs: Mapping[str, Any]) -> set[Any]:
     ids: set[Any] = set()
     for key, value in inputs.items():

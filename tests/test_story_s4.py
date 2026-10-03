@@ -99,23 +99,15 @@ def test_s4_task_definitions_and_output_schemas_are_valid() -> None:
     section = _load_definition("S4.section")
     item = _load_definition("S4.item")
 
-    assert section["validate"]["schema"] == "schemas/tasks/S4.section.schema.json"
-    assert item["validate"]["schema"] == "schemas/tasks/S4.item.schema.json"
-    assert section["card"]["output_example"] == (
-        '{"body": "...", "sources": ["<切り口のID>"]}'
-    )
-    assert item["card"]["output_example"] == (
-        '{"name": "...", "body": "...", "sources": ["<切り口のID>"]}'
-    )
-
-    validate_document(
-        {"body": "水" * 800, "sources": ["place:t1"]},
-        ROOT / "schemas" / "tasks" / "S4.section.schema.json",
-    )
-    validate_document(
-        {"name": "カナ", "body": "水" * 600, "sources": ["place:t1"]},
-        ROOT / "schemas" / "tasks" / "S4.item.schema.json",
-    )
+    for definition in (section, item):
+        assert definition["output"] == "text"
+        assert definition["extend_to_min"] is True
+        assert "schema" not in definition["validate"]
+        assert "output_example" not in definition["card"]
+        assert "sources" not in str(definition["card"])
+    name = _load_definition("S4.item_name")
+    assert name["output"] == "json"
+    validate_document({"name": "カナ", "reading": "カナ"}, ROOT / name["validate"]["schema"])
 
 
 def test_s4_card_contains_only_the_current_section_viewpoints() -> None:
@@ -139,14 +131,16 @@ def test_s4_list_prerequisites_are_name_and_one_line_summaries() -> None:
         "tasks": {
             "S3.assign": {"type": "S3.assign", "state": "done"},
             "S4.item-people-001": {"type": "S4.item", "state": "done"},
+            "S4.item_name-future-001": {"type": "S4.item_name", "state": "done"},
         }
     }
     task = {
-        "deps": ["S3.assign", "S4.item-people-001"],
+        "deps": ["S3.assign", "S4.item-people-001", "S4.item_name-future-001"],
         "index": ["future-001"],
     }
     dependency_outputs = {
         "S3.assign": assignment,
+        "S4.item_name-future-001": {"name": "カナ", "reading": "カナ"},
         "S4.item-people-001": {
             "name": "記録係",
             "body": "最初の行。\n二行目は渡さない。",
@@ -165,7 +159,7 @@ def test_s4_list_prerequisites_are_name_and_one_line_summaries() -> None:
 
 
 def test_s4_item_name_validation_requires_two_given_sounds() -> None:
-    definition = _load_definition("S4.item")
+    definition = _load_definition("S4.item_name")
     assignment = _assignment()
     inputs = resolve_inputs(
         definition,
@@ -176,7 +170,7 @@ def test_s4_item_name_validation_requires_two_given_sounds() -> None:
     valid = validate_output(
         definition,
         json.dumps(
-            {"name": "カナ", "body": "水" * 600, "sources": ["era:t1"]},
+            {"name": "表記", "reading": "カナ"},
             ensure_ascii=False,
         ),
         inputs,
@@ -186,7 +180,7 @@ def test_s4_item_name_validation_requires_two_given_sounds() -> None:
     invalid = validate_output(
         definition,
         json.dumps(
-            {"name": "カ", "body": "水" * 600, "sources": ["era:t1"]},
+            {"name": "表記", "reading": "カ"},
             ensure_ascii=False,
         ),
         inputs,

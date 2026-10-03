@@ -74,6 +74,7 @@ def _definitions(material_kind: str = "suppression") -> dict[str, dict[str, obje
         },
         "S4.section": _llm_definition("S4.section"),
         "S4.item": _llm_definition("S4.item"),
+        "S4.item_name": _llm_definition("S4.item_name"),
         "S5.relationship_context": _code_definition(
             "S5.relationship_context", "relationship_context"
         ),
@@ -382,7 +383,7 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
         for entry in assignment["world_tasks"]
     }
 
-    s4_ids = [task_id for task_id in tasks if task_id.startswith("S4.")]
+    s4_ids = [task_id for task_id in tasks if task_id.startswith(("S4.section-", "S4.item-"))]
     s4_by_section: dict[str, list[str]] = {}
     for task_id in s4_ids:
         section_id = task_section[task_id]
@@ -394,7 +395,14 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
             for prerequisite in world_sections[section_id]["prerequisites"]
             for dependency in s4_by_section.get(prerequisite, [])
         ]
-        assert tasks[task_id]["deps"] == ["S3.assign", *prerequisite_ids]
+        expected_deps = ["S3.assign", *prerequisite_ids]
+        if task_id.startswith("S4.item-"):
+            name_id = task_id.replace("S4.item-", "S4.item_name-", 1)
+            expected_deps.append(name_id)
+            assert tasks[name_id]["type"] == "S4.item_name"
+            assert tasks[name_id]["deps"] == ["S3.assign"]
+            assert tasks[name_id]["index"] == tasks[task_id]["index"]
+        assert tasks[task_id]["deps"] == expected_deps
 
     person_ids = [person["id"] for person in assignment["cast"]]
     counts_by_person = {
