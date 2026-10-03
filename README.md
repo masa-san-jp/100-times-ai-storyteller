@@ -63,3 +63,12 @@ Claude Code は実機確認で、`permissions.deny` によりワークスペー�
 - [100-times-ai-heros-journey](https://github.com/masa-san-jp/100-times-ai-heros-journey)：自己ナラティブからヒーローズ・ジャーニー形式の物語を生成
 - [100-times-ai-world-building](https://github.com/masa-san-jp/100-times-ai-world-building)：世界観構築ワークフロー
 - [100-times-ai-manga-drawing](https://github.com/masa-san-jp/100-times-ai-manga-drawing)：マンガ作画ワークフロー
+
+## 用語を使った読み方
+
+たとえば同じ物語の出来事を小説と映画シナリオで読みたい場合、出来事を記録する「正本」と、その表現を変える「様式化」を分けて考えます。これは目的を理解するための利用例で、各様式の実装完了を示すものではありません。用語の正式な定義は [GLOSSARY](docs/GLOSSARY.md)、実装の現在地は [ROADMAP](docs/plan/ROADMAP.md) を参照してください。
+
+## 系譜をたどる入口
+
+このハーネスの成立背景は、シリーズ先行3作の定義・知見を取り込み、重複工程を整理する方針にあります。コードの移植や実行時依存とは区別しており、取り込む対象と理由の原本は [LINEAGE](docs/LINEAGE.md)、独立化の判断は [ADR-0001](docs/adr/0001-independent-harness.md) にあります。
+
