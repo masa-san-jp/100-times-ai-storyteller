@@ -517,6 +517,171 @@ def test_ends_complete_fix_append_completes_the_sentence_and_warns() -> None:
     assert result.warnings == ("文末を補完",)
 
 
+@pytest.mark.parametrize("ending", list("。．.！!？?」』）)】…"))
+@pytest.mark.parametrize("output_kind", ["json", "text"])
+def test_max_chars_trim_uses_the_last_ending_within_the_limit(ending, output_kind):
+    arguments = {"n": 6, "fix": "trim"}
+    text = f"あ。いう{ending}えお。"
+    if output_kind == "json":
+        arguments["field"] = "nested.body"
+        raw = json.dumps({"nested": {"body": text}, "other": "そのまま"}, ensure_ascii=False)
+        expected = {"nested": {"body": f"あ。いう{ending}"}, "other": "そのまま"}
+    else:
+        raw = text
+        expected = f"あ。いう{ending}"
+    task = output_task(output=output_kind, checks=[{"max_chars": arguments}])
+
+    result = validate_output(task, raw)
+
+    assert result.passed, result.errors
+    assert result.value == expected
+    assert result.warnings == ("字数の上限で切り詰め",)
+
+
+def test_max_chars_trim_counts_nfc_characters_and_excludes_whitespace():
+    task = output_task(output="text", checks=[{"max_chars": {"n": 4, "fix": "trim"}}])
+
+    result = validate_output(task, "か\u3099 \t。\nあ　！続き。")
+
+    assert result.passed
+    assert result.value == "が \t。\nあ　！"
+    assert result.warnings == ("字数の上限で切り詰め",)
+
+
+@pytest.mark.parametrize("text", ["あ。い！", "か\u3099\t。\nあ　！"])
+def test_max_chars_trim_does_nothing_at_or_below_the_limit(text):
+    task = output_task(output="text", checks=[{"max_chars": {"n": 4, "fix": "trim"}}])
+
+    result = validate_output(task, text)
+
+    assert result.passed
+    assert result.value == text
+    assert result.warnings == ()
+
+
+@pytest.mark.parametrize("text, limit", [("あいうえ。", 4), ("あいうえ", 4 - 1), ("。", 0)])
+def test_max_chars_trim_rejects_without_an_ending_within_the_limit(text, limit):
+    task = output_task(output="text", checks=[{"max_chars": {"n": limit, "fix": "trim"}}])
+
+    result = validate_output(task, text)
+
+    assert not result.passed
+    assert result.value == text
+    assert result.warnings == ()
+    assert any("max_chars" in error for error in result.errors)
+
+
+def test_other_checks_inspect_the_trimmed_output_regardless_of_check_order(tmp_path):
+    (tmp_path / "denied.yaml").write_text("phrases: [禁止]\n", encoding="utf-8")
+    task = output_task(output="text", checks=[
+        {"avoid_listed": {"table": "denied.yaml"}},
+        "ends_complete",
+        {"max_chars": {"n": 4, "fix": "trim"}},
+    ])
+
+    result = validate_output(task, "本文。禁止", harness_root=tmp_path)
+
+    assert result.passed
+    assert result.value == "本文。"
+
+
+def test_min_chars_is_checked_after_trimming():
+    task = output_task(output="text", checks=[
+        {"min_chars": {"n": 4}},
+        {"max_chars": {"n": 5, "fix": "trim"}},
+    ])
+
+    result = validate_output(task, "あ。いうえお。")
+
+    assert not result.passed
+    assert result.value == "あ。"
+    assert any("min_chars" in error for error in result.errors)
+
+
+def test_task_definition_schema_accepts_trim_only_for_max_chars():
+    definition = load_yaml(ROOT / "harness/story/tasks/S7.detail.yaml", TASK_SCHEMA)
+    validate_document(definition, TASK_SCHEMA)
+    definition["validate"]["checks"] = [{"min_chars": {"n": 1, "fix": "trim"}}]
+    with pytest.raises(SchemaValidationError):
+        validate_document(definition, TASK_SCHEMA)
+    definition["validate"]["checks"] = [{"max_chars": {"n": 1, "fix": "append"}}]
+    with pytest.raises(SchemaValidationError):
+        validate_document(definition, TASK_SCHEMA)
+
+
+def test_task_output_schemas_have_no_string_length_constraints():
+    def check_keys(value):
+        if isinstance(value, dict):
+            assert not {"minLength", "maxLength"}.intersection(value)
+            for child in value.values():
+                check_keys(child)
+        elif isinstance(value, list):
+            for child in value:
+                check_keys(child)
+
+    paths = sorted((ROOT / "schemas/tasks").glob("*.schema.json"))
+    assert paths
+    for path in paths:
+        check_keys(json.loads(path.read_text(encoding="utf-8")))
+
+
+@pytest.mark.parametrize("field, maximum", [
+    ("intro", 50), ("appearance", 150), ("motive", 120), ("profile", 300),
+])
+def test_short_s5_items_still_reject_excess_length(field, maximum):
+    definition = load_yaml(ROOT / f"harness/story/tasks/S5.{field}.yaml", TASK_SCHEMA)
+    result = validate_output(
+        definition,
+        json.dumps({field: "人。" * (maximum // 2 + 1), "sources": ["c1"]}, ensure_ascii=False),
+        inputs={"character": {"id": "c1"}},
+    )
+
+    assert not result.passed
+    assert any("max_chars" in error for error in result.errors)
+    assert not any("schema:" in error for error in result.errors)
+    assert "字数の上限で切り詰め" not in result.warnings
+
+
+@pytest.mark.parametrize("length, passed", [(9, False), (10, True), (40, True), (41, False)])
+def test_s2_counterpart_keeps_its_former_schema_char_range(length, passed):
+    definition = load_yaml(ROOT / "harness/story/tasks/S2.expand.yaml", TASK_SCHEMA)
+    result = validate_output(
+        definition,
+        json.dumps({"items": ["素" * 10] * 5, "counterpart": "対" * length, "sources": ["m001"]}, ensure_ascii=False),
+        inputs={"material": {"id": "m001"}},
+    )
+
+    assert result.passed is passed
+    assert not any("schema:" in error for error in result.errors)
+
+
+@pytest.mark.parametrize("task_id, field, minimum, maximum", [
+    ("S1.extract", "materials", 10, 30),
+    ("S2.expand", "items", 10, 40),
+])
+@pytest.mark.parametrize("position", range(5))
+@pytest.mark.parametrize("boundary", ["minimum", "maximum"])
+def test_array_item_char_ranges_are_enforced_by_checks(task_id, field, minimum, maximum, position, boundary):
+    definition = load_yaml(ROOT / f"harness/story/tasks/{task_id}.yaml", TASK_SCHEMA)
+    texts = ["素" * minimum] * 5
+    source_id = "p001" if task_id == "S1.extract" else "m001"
+
+    def submit():
+        values = [{"text": text, "kind": "theme"} for text in texts] if field == "materials" else texts
+        output = {field: values, "sources": [source_id]}
+        if task_id == "S2.expand":
+            output["counterpart"] = "対" * minimum
+        return validate_output(definition, json.dumps(output, ensure_ascii=False), inputs={"source": {"id": source_id}})
+
+    texts[position] = "素" * (minimum if boundary == "minimum" else maximum)
+    assert submit().passed
+    texts[position] = "素" * (minimum - 1 if boundary == "minimum" else maximum + 1)
+    rejected = submit()
+    assert not rejected.passed
+    assert any(("min_chars" if boundary == "minimum" else "max_chars") in error for error in rejected.errors)
+    assert not any("schema:" in error for error in rejected.errors)
+
+
 def test_ends_complete_fix_append_does_nothing_when_already_complete() -> None:
     task = output_task(
         output="json",

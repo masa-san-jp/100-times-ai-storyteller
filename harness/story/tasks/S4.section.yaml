@@ -1,5 +1,5 @@
 id: S4.section
-version: 1
+version: 2
 kind: llm
 inputs:
   section:
@@ -62,6 +62,7 @@ validate:
     - max_chars:
         field: body
         n: 1500
+        fix: trim
     - no_new_proper_nouns:
         mode: warn
 max_input_chars: 24000

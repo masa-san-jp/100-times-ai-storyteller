@@ -240,7 +240,7 @@
           "additionalProperties": false,
           "properties": {
             "sources_exist": {},
-            "max_chars": {"$ref": "#/$defs/char-check"},
+            "max_chars": {"$ref": "#/$defs/max-char-check"},
             "min_chars": {"$ref": "#/$defs/char-check"},
             "count": {"$ref": "#/$defs/count-check"},
             "ids_subset": {"$ref": "#/$defs/ids-subset-check"},
@@ -258,6 +258,16 @@
           }
         }
       ]
+    },
+    "max-char-check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n"],
+      "properties": {
+        "field": {"type": "string", "minLength": 1},
+        "n": {"type": "integer", "minimum": 0},
+        "fix": {"type": "string", "enum": ["trim"]}
+      }
     },
     "char-check": {
       "type": "object",

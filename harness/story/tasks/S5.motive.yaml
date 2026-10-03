@@ -1,5 +1,5 @@
 id: S5.motive
-version: 1
+version: 2
 kind: llm
 inputs:
   character:
@@ -65,6 +65,9 @@ card:
 validate:
   schema: schemas/tasks/S5.motive.schema.json
   checks:
+    - min_chars:
+        field: motive
+        n: 1
     - sources_exist
     - max_chars:
         field: motive

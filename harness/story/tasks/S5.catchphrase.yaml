@@ -1,5 +1,5 @@
 id: S5.catchphrase
-version: 1
+version: 2
 kind: llm
 inputs:
   character:
@@ -47,6 +47,9 @@ card:
 validate:
   schema: schemas/tasks/S5.catchphrase.schema.json
   checks:
+    - min_chars:
+        field: catchphrase
+        n: 1
     - sources_exist
     - ends_complete:
         field: catchphrase

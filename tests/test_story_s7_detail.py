@@ -27,7 +27,7 @@ def test_s7_detail_is_text_with_the_volume_range_and_continuation() -> None:
     assert definition["continuation"] is True
     assert definition["validate"]["checks"] == [
         {"min_chars": {"n": 1500}},
-        {"max_chars": {"n": 2500}},
+        {"max_chars": {"n": 2500, "fix": "trim"}},
     ]
     output = "説明的な場面の記述。" * 200
     result = validate_output(definition, output, inputs={})

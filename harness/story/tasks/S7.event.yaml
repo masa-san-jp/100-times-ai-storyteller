@@ -1,5 +1,5 @@
 id: S7.event
-version: 1
+version: 2
 kind: llm
 inputs:
   stage_definition:
@@ -72,6 +72,27 @@ card:
 validate:
   schema: schemas/tasks/S7.event.schema.json
   checks:
+    - min_chars:
+        field: when
+        n: 1
+    - min_chars:
+        field: where
+        n: 1
+    - min_chars:
+        field: why
+        n: 1
+    - min_chars:
+        field: intent
+        n: 1
+    - min_chars:
+        field: what
+        n: 1
+    - min_chars:
+        field: result
+        n: 1
+    - min_chars:
+        field: emotion
+        n: 1
     - sources_exist
     - ids_subset:
         field: who

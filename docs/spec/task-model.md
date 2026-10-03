@@ -211,7 +211,7 @@ card:
 ### 6.1 検証の順序
 
 1. **形式**：`output: json` の場合、JSON のオブジェクトとして解析できること。解析できない場合は、出力の中から最初の `{` と、JSON の文字列リテラル内の括弧を無視して数えた対応する `}` までを取り出し、再度解析する。配列は救済の対象にしない。
-2. **スキーマ**：`validate.schema` に指定した JSON Schema（Draft 2020-12）に適合すること。`validate.schema` は、ハーネスのルート（本物のハーネスはリポジトリのルート、ダミーのハーネスは `src/storyteller/dev/dummy/`）からの相対パスの文字列で書き、`.schema.json` で終わるものとする（例：`schemas/tasks/S5.profile.schema.json`）。定義の中に JSON Schema を直接書かない。
+2. **スキーマ**：`validate.schema` に指定した JSON Schema（Draft 2020-12）に適合すること。タスクの出力スキーマには文字列の長さの制約（`minLength`・`maxLength`）を書かず、字数は §6.2 のチェック（`min_chars`・`max_chars`）で検査する（字数の数え方を §3.3 に揃え、切り詰めなどの扱いをチェックで決められるようにするため）。`validate.schema` は、ハーネスのルート（本物のハーネスはリポジトリのルート、ダミーのハーネスは `src/storyteller/dev/dummy/`）からの相対パスの文字列で書き、`.schema.json` で終わるものとする（例：`schemas/tasks/S5.profile.schema.json`）。定義の中に JSON Schema を直接書かない。
 3. **チェック**：`validate.checks` に書いた検査（§6.2）。
 
 ### 6.2 チェック
@@ -221,7 +221,7 @@ card:
 | チェック | 引数 | 合格の条件 |
 |---|---|---|
 | `sources_exist` | なし | 出力の `sources` のうち、カードの「入力」節に列挙したIDに含まれるものが1つ以上ある。含まれない ID は検証の前に取り除き、manifest の `warnings` に記録する（出典の書き誤りであり、素材の持ち込みではないため） |
-| `max_chars` | `field`（任意）, `n` | 文字数が n 以下 |
+| `max_chars` | `field`（任意）, `n`, `fix`（任意、`trim`） | 文字数が n 以下。`fix: trim` の場合は、超えたとき n 以内の最後の文末記号の直後で切り詰めて合格とし、manifest の `warnings` に記録する（文末記号が n 以内にない場合は不合格） |
 | `min_chars` | `field`（任意）, `n` | 文字数が n 以上 |
 | `count` | `field`, `n` または `min`・`max` | 配列の件数が n、または min 以上 max 以下 |
 | `ids_subset` | `field`, `slot` | 配列の各IDが、指定した入力スロットに含まれるIDの部分集合 |

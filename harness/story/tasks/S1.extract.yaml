@@ -1,5 +1,5 @@
 id: S1.extract
-version: 1
+version: 2
 kind: llm
 inputs:
   paragraph:
@@ -19,6 +19,36 @@ card:
 validate:
   schema: schemas/tasks/S1.extract.schema.json
   checks:
+    - min_chars:
+        field: materials.0.text
+        n: 10
+    - max_chars:
+        field: materials.0.text
+        n: 30
+    - min_chars:
+        field: materials.1.text
+        n: 10
+    - max_chars:
+        field: materials.1.text
+        n: 30
+    - min_chars:
+        field: materials.2.text
+        n: 10
+    - max_chars:
+        field: materials.2.text
+        n: 30
+    - min_chars:
+        field: materials.3.text
+        n: 10
+    - max_chars:
+        field: materials.3.text
+        n: 30
+    - min_chars:
+        field: materials.4.text
+        n: 10
+    - max_chars:
+        field: materials.4.text
+        n: 30
     - sources_exist
     - count:
         field: materials

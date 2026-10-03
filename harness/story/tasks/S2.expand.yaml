@@ -1,5 +1,5 @@
 id: S2.expand
-version: 1
+version: 2
 kind: llm
 inputs:
   material:
@@ -29,6 +29,42 @@ card:
 validate:
   schema: schemas/tasks/S2.expand.schema.json
   checks:
+    - min_chars:
+        field: items.0
+        n: 10
+    - max_chars:
+        field: items.0
+        n: 40
+    - min_chars:
+        field: items.1
+        n: 10
+    - max_chars:
+        field: items.1
+        n: 40
+    - min_chars:
+        field: items.2
+        n: 10
+    - max_chars:
+        field: items.2
+        n: 40
+    - min_chars:
+        field: items.3
+        n: 10
+    - max_chars:
+        field: items.3
+        n: 40
+    - min_chars:
+        field: items.4
+        n: 10
+    - max_chars:
+        field: items.4
+        n: 40
+    - min_chars:
+        field: counterpart
+        n: 10
+    - max_chars:
+        field: counterpart
+        n: 40
     - sources_exist
     - count:
         field: items

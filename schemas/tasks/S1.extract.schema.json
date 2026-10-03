@@ -35,9 +35,7 @@
           "pattern": "^m[0-9]{3}$"
         },
         "text": {
-          "type": "string",
-          "minLength": 10,
-          "maxLength": 30
+          "type": "string"
         },
         "kind": {
           "type": "string",

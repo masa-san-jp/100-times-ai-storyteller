@@ -52,7 +52,7 @@ def test_s5_new_items_enforce_the_volume_table_char_range() -> None:
         definition = load_task(name)
         checks = definition["validate"]["checks"]
         assert {"min_chars": {"field": name, "n": minimum}} in checks
-        assert {"max_chars": {"field": name, "n": maximum}} in checks
+        assert {"max_chars": {"field": name, "n": maximum, "fix": "trim"}} in checks
         assert "sources_exist" in checks
         assert definition["default_sources"] == ["{slot}"]
 

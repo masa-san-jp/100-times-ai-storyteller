@@ -170,6 +170,7 @@ def validate_output(
             _apply_default_sources(value, slot_values, task_definition, index, warnings)
             sources_checked = True
     value = _apply_ends_complete_fixes(value, checks, warnings)
+    value = _apply_max_chars_fixes(value, checks, warnings)
     for check in checks:
         try:
             name, arguments = _normalise_check(check)
@@ -477,9 +478,15 @@ def _read_field(value: Any, field: str | None) -> tuple[Any, bool]:
         return value, False
     current = value
     for part in field.split("."):
-        if not isinstance(current, Mapping) or part not in current:
+        if isinstance(current, list) and part.isdecimal():
+            position = int(part)
+            if position >= len(current):
+                return None, True
+            current = current[position]
+        elif isinstance(current, Mapping) and part in current:
+            current = current[part]
+        else:
             return None, True
-        current = current[part]
     return current, False
 
 
@@ -598,9 +605,9 @@ def _apply_ends_complete_fixes(
 ) -> Any:
     """Append a closing mark for ``ends_complete`` checks with ``fix: append``.
 
-    This runs before the main checks loop because, unlike every other check,
-    it can rewrite the submitted value instead of only accepting or
-    rejecting it (task-model.md §6.2).  Malformed check arguments are left
+    This runs before trimming and the main checks loop so the completed
+    value is checked against the length limits (task-model.md §6.2).
+    Malformed check arguments are left
     for the main loop to report as usual.
     """
 
@@ -625,12 +632,51 @@ def _apply_ends_complete_fixes(
     return value
 
 
+def _apply_max_chars_fixes(
+    value: Any,
+    checks: list[Any],
+    warnings: list[str],
+) -> Any:
+    """Trim at a complete ending before checking the repaired output."""
+    for check in checks:
+        name, arguments = _normalise_check(check)
+        if name != "max_chars" or arguments.get("fix") != "trim":
+            continue
+        field, field_error = _field_argument(arguments)
+        if field_error:
+            continue
+        field_value, missing = _read_field(value, field)
+        limit = arguments.get("n")
+        if missing or not isinstance(field_value, str) or not _is_nonnegative_integer(limit):
+            continue
+        if _char_length(field_value) <= limit:
+            continue
+        normalized = _normalise(field_value)
+        length = 0
+        last_ending = 0
+        for position, character in enumerate(normalized, start=1):
+            length += not character.isspace()
+            if length > limit:
+                break
+            if character in _COMPLETE_ENDINGS:
+                last_ending = position
+        if not last_ending:
+            continue  # The ordinary max_chars check reports the failure.
+        fixed = normalized[:last_ending]
+        if field is None:
+            value = fixed
+        else:
+            _set_field(value, field, fixed)
+        warnings.append("字数の上限で切り詰め")
+    return value
+
+
 def _set_field(container: Any, field: str, new_value: Any) -> None:
     parts = field.split(".")
     current = container
     for part in parts[:-1]:
-        current = current[part]
-    current[parts[-1]] = new_value
+        current = current[int(part) if isinstance(current, list) else part]
+    current[int(parts[-1]) if isinstance(current, list) else parts[-1]] = new_value
 
 
 def _item_id(value: Any) -> Any:

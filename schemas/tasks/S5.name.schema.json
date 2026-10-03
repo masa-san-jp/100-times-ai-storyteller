@@ -6,8 +6,8 @@
   "additionalProperties": false,
   "required": ["name", "reading", "sources"],
   "properties": {
-    "name": {"type": "string", "minLength": 1},
-    "reading": {"type": "string", "minLength": 1, "pattern": "^[ァ-ヶー・]+$"},
+    "name": {"type": "string"},
+    "reading": {"type": "string", "pattern": "^[ァ-ヶー・]+$"},
     "sources": {
       "type": "array",
       "minItems": 1,
