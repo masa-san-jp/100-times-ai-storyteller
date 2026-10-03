@@ -12,8 +12,8 @@
     },
     "body": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 400
+      "minLength": 600,
+      "maxLength": 1200
     },
     "sources": {
       "type": "array",

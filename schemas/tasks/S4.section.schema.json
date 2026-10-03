@@ -8,8 +8,8 @@
   "properties": {
     "body": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 400
+      "minLength": 800,
+      "maxLength": 1500
     },
     "sources": {
       "type": "array",

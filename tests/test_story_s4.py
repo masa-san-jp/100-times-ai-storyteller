@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from storyteller.cards import generate_task_card
+from storyteller.cards import generate_task_card, input_char_count
 from storyteller.orchestrator import _source_outputs
 from storyteller.selectors import resolve_inputs
-from storyteller.validation import load_and_validate_yaml, validate_document
+from storyteller.validation import load_and_validate_yaml, validate_document, validate_output
 
 
 ROOT = Path(__file__).parents[1]
@@ -58,6 +59,39 @@ def _assignment() -> dict[str, object]:
                 "prerequisites": ["people"],
             },
         ],
+        "world_tasks": [
+            {
+                "id": "place-1-f1",
+                "section_id": "place",
+                "kind": "single",
+                "section": {
+                    "id": "place",
+                    "name": "場の描写",
+                    "definition": "人物が行動する場所を描く。",
+                },
+                "viewpoint": "水路の流れ",
+                "facet_number": 1,
+                "element_axis": "place",
+                "element": {"id": "place:t1", "text": "水路の町"},
+            },
+            {
+                "id": "future-001",
+                "section_id": "future",
+                "kind": "list",
+                "section": {
+                    "id": "future",
+                    "name": "未来のシナリオ",
+                    "definition": "未来を描く。",
+                },
+                "element_axis": "era",
+                "element": {"id": "era:t1", "text": "長い停電の後"},
+                "name_sound": {
+                    "set_id": "sound-01",
+                    "description": "短い響き",
+                    "sounds": ["カ", "ナ", "リ", "オ", "セ", "ト"],
+                },
+            },
+        ],
     }
 
 
@@ -68,18 +102,18 @@ def test_s4_task_definitions_and_output_schemas_are_valid() -> None:
     assert section["validate"]["schema"] == "schemas/tasks/S4.section.schema.json"
     assert item["validate"]["schema"] == "schemas/tasks/S4.item.schema.json"
     assert section["card"]["output_example"] == (
-        '{"body": "...", "sources": ["place:t1"]}'
+        '{"body": "...", "sources": ["<切り口のID>"]}'
     )
     assert item["card"]["output_example"] == (
-        '{"name": "...", "body": "...", "sources": ["place:t1"]}'
+        '{"name": "...", "body": "...", "sources": ["<切り口のID>"]}'
     )
 
     validate_document(
-        {"body": "水路と境界の規則。", "sources": ["place:t1"]},
+        {"body": "水" * 800, "sources": ["place:t1"]},
         ROOT / "schemas" / "tasks" / "S4.section.schema.json",
     )
     validate_document(
-        {"name": "水門守", "body": "水門を見張る集団。", "sources": ["place:t1"]},
+        {"name": "カナ", "body": "水" * 600, "sources": ["place:t1"]},
         ROOT / "schemas" / "tasks" / "S4.item.schema.json",
     )
 
@@ -90,11 +124,11 @@ def test_s4_card_contains_only_the_current_section_viewpoints() -> None:
         definition,
         "ticket",
         outputs={"S3.assign": _assignment()},
-        index=("place",),
+        index=("place-1-f1",),
     )
 
     assert "水路の流れ" in card
-    assert "境界の規則" in card
+    assert "境界の規則" not in card
     assert "固有の別観点" not in card
 
 
@@ -109,7 +143,7 @@ def test_s4_list_prerequisites_are_name_and_one_line_summaries() -> None:
     }
     task = {
         "deps": ["S3.assign", "S4.item-people-001"],
-        "index": ["future", "001"],
+        "index": ["future-001"],
     }
     dependency_outputs = {
         "S3.assign": assignment,
@@ -124,6 +158,42 @@ def test_s4_list_prerequisites_are_name_and_one_line_summaries() -> None:
     card = generate_task_card(definition, "ticket", inputs=inputs)
 
     assert inputs["prerequisite_items"] == [{"name": "記録係", "summary": "最初の行。 二行目は渡さない。"}]
+    assert input_char_count(definition, inputs) <= definition["max_input_chars"]
     assert "記録係" in card
     assert "二行目は渡さない。" in card
     assert "sources" not in card.split("### 前提一覧項目", 1)[1].split("## 手順", 1)[0]
+
+
+def test_s4_item_name_validation_requires_two_given_sounds() -> None:
+    definition = _load_definition("S4.item")
+    assignment = _assignment()
+    inputs = resolve_inputs(
+        definition,
+        {"S3.assign": assignment},
+        index=("future-001",),
+    )
+
+    valid = validate_output(
+        definition,
+        json.dumps(
+            {"name": "カナ", "body": "水" * 600, "sources": ["era:t1"]},
+            ensure_ascii=False,
+        ),
+        inputs,
+        harness_root=ROOT,
+        index=("future-001",),
+    )
+    invalid = validate_output(
+        definition,
+        json.dumps(
+            {"name": "カ", "body": "水" * 600, "sources": ["era:t1"]},
+            ensure_ascii=False,
+        ),
+        inputs,
+        harness_root=ROOT,
+        index=("future-001",),
+    )
+
+    assert valid.passed
+    assert not invalid.passed
+    assert any("uses_given" in error for error in invalid.errors)

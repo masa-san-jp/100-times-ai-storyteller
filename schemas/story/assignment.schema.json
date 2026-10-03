@@ -4,7 +4,7 @@
   "title": "Story pipeline S3 assignment",
   "type": "object",
   "additionalProperties": false,
-  "required": ["r", "threads", "cast", "absent_roles", "world", "world_sections"],
+  "required": ["r", "threads", "cast", "absent_roles", "world", "world_sections", "world_tasks"],
   "properties": {
     "r": {
       "type": "number"
@@ -32,6 +32,11 @@
       "type": "array",
       "minItems": 1,
       "items": {"$ref": "#/$defs/world-section"}
+    },
+    "world_tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/world-task"}
     }
   },
   "$defs": {
@@ -188,6 +193,47 @@
           "uniqueItems": true
         }
       }
+    },
+    "world-task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "section_id", "kind", "section", "element_axis", "element"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*-[0-9]+(?:-f[0-9]+)?$"},
+        "section_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+        "kind": {"type": "string", "enum": ["single", "list"]},
+        "section": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "name", "definition"],
+          "properties": {
+            "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+            "name": {"type": "string", "minLength": 1},
+            "definition": {"type": "string", "minLength": 1}
+          }
+        },
+        "viewpoint": {"type": "string", "minLength": 1},
+        "facet_number": {"type": "integer", "minimum": 1},
+        "element_axis": {"type": "string", "enum": ["place", "era", "object"]},
+        "element": {"$ref": "#/$defs/element"},
+        "name_sound": {"$ref": "#/$defs/name-sound"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "single"}}},
+          "then": {
+            "required": ["viewpoint", "facet_number"],
+            "not": {"required": ["name_sound"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "list"}}},
+          "then": {
+            "required": ["name_sound"],
+            "not": {"anyOf": [{"required": ["viewpoint"]}, {"required": ["facet_number"]}]}
+          }
+        }
+      ]
     }
   }
 }

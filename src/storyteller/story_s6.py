@@ -36,7 +36,7 @@ def story_s6_expand(context: CodeTaskContext) -> CodeTaskResult:
     cast = _require_list(assignment, "cast")
     absent_roles = _require_string_list(assignment, "absent_roles")
     world = _require_mapping(assignment, "world")
-    generated_world = _world_outputs(context.dependency_outputs)
+    generated_world = _world_outputs(context.dependency_outputs, assignment)
     character_outputs = _character_outputs(context.dependency_outputs, cast)
 
     per_thread: list[list[dict[str, Any]]] = []
@@ -343,19 +343,48 @@ def _assign_characters(
 
 def _world_outputs(
     dependency_outputs: Mapping[str, Any],
+    assignment: Mapping[str, Any] | None = None,
 ) -> dict[str, list[Mapping[str, Any]]]:
-    result: dict[str, list[Mapping[str, Any]]] = {}
+    task_contexts: dict[str, tuple[int, str]] = {}
+    world_tasks = assignment.get("world_tasks") if isinstance(assignment, Mapping) else None
+    if isinstance(world_tasks, list):
+        for order, world_task in enumerate(world_tasks):
+            if not isinstance(world_task, Mapping):
+                continue
+            task_key = world_task.get("id")
+            section_id = world_task.get("section_id")
+            kind = world_task.get("kind")
+            if isinstance(task_key, str) and isinstance(section_id, str) and kind in {"single", "list"}:
+                task_contexts[f"S4.{kind == 'single' and 'section' or 'item'}-{task_key}"] = (
+                    order,
+                    section_id,
+                )
+    captured: list[tuple[int, str, Mapping[str, Any]]] = []
     for task_id, output in dependency_outputs.items():
         if not isinstance(task_id, str) or not task_id.startswith("S4."):
             continue
-        if task_id.startswith("S4.section-"):
-            section_id = task_id.removeprefix("S4.section-")
+        context = task_contexts.get(task_id)
+        if context is not None:
+            order, section_id = context
+        elif task_id.startswith("S4.section-"):
+            order, section_id = 0, task_id.removeprefix("S4.section-")
         elif task_id.startswith("S4.item-"):
-            section_id = task_id.removeprefix("S4.item-").rsplit("-", 1)[0]
+            order, section_id = 0, task_id.removeprefix("S4.item-").rsplit("-", 1)[0]
         else:
             continue
         if not isinstance(output, Mapping):
             raise ValueError(f"S4 の出力が不正です: {task_id}")
+        captured.append((order, task_id, output))
+    result: dict[str, list[Mapping[str, Any]]] = {}
+    for _order, _task_id, output in sorted(captured, key=lambda item: (item[0], item[1])):
+        task_id = _task_id
+        context = task_contexts.get(task_id)
+        if context is not None:
+            section_id = context[1]
+        elif task_id.startswith("S4.section-"):
+            section_id = task_id.removeprefix("S4.section-")
+        else:
+            section_id = task_id.removeprefix("S4.item-").rsplit("-", 1)[0]
         result.setdefault(section_id, []).append(output)
     return result
 
@@ -423,11 +452,15 @@ def _select_world_sections(
             bodies.append(f"{name}：{body}" if isinstance(name, str) and name else body)
         if not bodies:
             raise ValueError(f"S4 の出力が空です: {section_id}")
+        # S4 facets are concatenated in task order before becoming an event
+        # excerpt.  Keep the excerpt local enough for the S7 card budget while
+        # preserving the beginning of that deterministic concatenation.
+        joined = "\n".join(bodies)
         result.append(
             {
                 "id": section_id,
                 "name": world_by_id[section_id]["name"],
-                "body": "\n".join(bodies),
+                "body": joined[:1200],
             }
         )
     return result
