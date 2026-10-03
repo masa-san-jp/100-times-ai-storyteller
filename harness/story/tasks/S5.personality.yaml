@@ -1,0 +1,54 @@
+id: S5.personality
+version: 1
+kind: llm
+inputs:
+  character:
+    label: 割り当てられた人物
+    from: S3.assign
+    select: cast[{slot}]
+    required: true
+  profile:
+    label: プロフィール
+    from: S5.profile
+    select: "[{slot}].profile"
+    required: true
+  role_definition:
+    label: 役の定義
+    from: S3.assign
+    select: cast[{slot}].role_definition
+    required: true
+  plot_requirements:
+    label: プロット型の人物要件
+    from: S3.assign
+    select: cast[{slot}].plot_context
+    required: true
+  protagonist_name:
+    label: 主人公の名前
+    from: S5.name
+    select: "[c1].name"
+    required: false
+  protagonist_role:
+    label: 主人公の役
+    from: S3.assign
+    select: cast[c1].role
+    required: false
+output: json
+card:
+  role: 割り当てられた属性とプロフィールから、人物の性格を書く。
+  steps:
+    - 願望・能力・役割・課題から読み取れる気質や物事への向き合い方を、具体的な場面での振る舞いが想像できるように書く。
+    - 長所だけでなく、短所や癖も1つ以上含める。
+    - 500〜1000字を目安にし、入力にない出来事や関係を付け加えない。sources には使った入力のIDを記録する。
+  output_example: '{"personality": "...", "sources": ["c1"]}'
+validate:
+  schema: schemas/tasks/S5.personality.schema.json
+  checks:
+    - sources_exist
+    - min_chars:
+        field: personality
+        n: 500
+    - max_chars:
+        field: personality
+        n: 1000
+max_input_chars: 3000
+default_sources: ["{slot}"]

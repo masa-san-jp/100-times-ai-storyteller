@@ -144,7 +144,7 @@
     "cast": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "role", "name", "reading", "intro", "profile", "motive", "appearance", "catchphrase", "elements", "name_sound", "sources"],
+      "required": ["id", "role", "name", "reading", "intro", "profile", "motive", "appearance", "personality", "values", "voice", "inner_conflict", "backstory", "relationship", "catchphrase", "elements", "name_sound", "sources"],
       "allOf": [{
         "if": {"properties": {"role": {"const": "protagonist"}}},
         "then": {"properties": {"elements": {"required": ["taboo"]}}}
@@ -158,6 +158,12 @@
         "profile": {"type": "string", "minLength": 1},
         "motive": {"type": "string", "minLength": 1},
         "appearance": {"type": "string", "minLength": 1},
+        "personality": {"type": "string", "minLength": 1},
+        "values": {"type": "string", "minLength": 1},
+        "voice": {"type": "string", "minLength": 1},
+        "inner_conflict": {"type": "string", "minLength": 1},
+        "backstory": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "relationship": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "catchphrase": {"type": "string", "minLength": 1},
         "elements": {"type": "object", "required": ["want", "ability", "duty", "age", "gender", "species"], "properties": {"want": {"$ref": "#/$defs/element"}, "ability": {"$ref": "#/$defs/element"}, "duty": {"$ref": "#/$defs/element"}, "age": {"$ref": "#/$defs/element"}, "gender": {"$ref": "#/$defs/element"}, "species": {"$ref": "#/$defs/element"}, "taboo": {"$ref": "#/$defs/element"}}, "additionalProperties": false},
         "suppressed_self_image": {"anyOf": [{"$ref": "#/$defs/material"}, {"type": "null"}]},

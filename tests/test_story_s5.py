@@ -10,6 +10,15 @@ from storyteller.validation import load_and_validate_yaml, validate_output
 ROOT = Path(__file__).parents[1]
 TASK_SCHEMA = ROOT / "schemas" / "task-definition.schema.json"
 S5_TYPES = ("name", "profile", "intro", "appearance", "motive", "catchphrase")
+S5_NEW_SINGLE_TYPES = ("personality", "values", "voice", "inner_conflict", "backstory")
+_VOLUME_RANGES = {
+    "personality": (500, 1000),
+    "values": (400, 800),
+    "voice": (400, 800),
+    "inner_conflict": (500, 1000),
+    "backstory": (1000, 2000),
+    "relationship": (300, 600),
+}
 
 
 def load_task(name: str) -> dict[str, object]:
@@ -22,11 +31,70 @@ def load_task(name: str) -> dict[str, object]:
 
 
 def test_all_s5_task_definitions_and_schemas_are_valid() -> None:
-    for name in S5_TYPES:
+    for name in (*S5_TYPES, *S5_NEW_SINGLE_TYPES, "relationship"):
         definition = load_task(name)
         assert definition["id"] == f"S5.{name}"
         schema_ref = definition["validate"]["schema"]
         assert (ROOT / schema_ref).is_file()
+
+
+def test_relationship_context_is_a_code_task_keyed_by_the_counterpart() -> None:
+    definition = load_task("relationship_context")
+    assert definition["kind"] == "code"
+    assert definition["handler"] == "story_s5_relationship_context"
+    assert set(definition["inputs"]) == {"name", "role", "intro"}
+    for slot in definition["inputs"].values():
+        assert slot["select"].endswith("[{slot}]") or "[{slot}]" in slot["select"]
+
+
+def test_s5_new_items_enforce_the_volume_table_char_range() -> None:
+    for name, (minimum, maximum) in _VOLUME_RANGES.items():
+        definition = load_task(name)
+        checks = definition["validate"]["checks"]
+        assert {"min_chars": {"field": name, "n": minimum}} in checks
+        assert {"max_chars": {"field": name, "n": maximum}} in checks
+        assert "sources_exist" in checks
+        assert definition["default_sources"] == ["{slot}"]
+
+
+def test_s5_new_single_item_cards_carry_the_same_context_as_appearance() -> None:
+    protagonist = _character("protagonist", "c1", "主人公固有")
+    other = _character("adversary", "c2", "他者固有")
+    for name in S5_NEW_SINGLE_TYPES:
+        definition = load_task(name)
+        protagonist_card = generate_task_card(
+            definition, "a" * 32, inputs=_s5_inputs("本人名", protagonist)
+        )
+        other_card = generate_task_card(
+            definition, "b" * 32, inputs=_s5_inputs("他者名", other)
+        )
+        assert "### 主人公の名前" not in protagonist_card
+        assert "主人公固有の願望" in protagonist_card
+        assert "### 主人公の名前\n主人公名" in other_card
+        assert "### 主人公の役\nprotagonist" in other_card
+        assert "主人公の紹介文" not in other_card
+
+
+def test_s5_relationship_card_only_shows_the_counterpart_s_name_role_and_intro() -> None:
+    definition = load_task("relationship")
+    subject = _character("protagonist", "c1", "主人公固有")
+    inputs = _s5_inputs("本人名", subject)
+    inputs["other_person"] = {
+        "c2": {"id": "c2", "name": "相手名", "role": "adversary", "intro": "相手の短い紹介。"}
+    }
+    card = generate_task_card(definition, "c" * 32, inputs=inputs)
+
+    assert "相手名" in card
+    assert "相手の短い紹介。" in card
+    assert "adversary" in card
+    # The counterpart's own elements/taboo must never reach this card
+    # (story-pipeline.md S5: "相手の人物の名前・役・紹介だけを渡す"). The
+    # subject's own elements legitimately appear elsewhere on the card (the
+    # same "character" slot every other S5 item carries), so only the
+    # "相手の人物" section itself is checked here.
+    counterpart_section = card.split("### 相手の人物", 1)[1].split("###", 1)[0]
+    for forbidden in ("want:", "ability:", "taboo:", "elements"):
+        assert forbidden not in counterpart_section
 
 
 def test_s5_default_sources_recovers_from_the_protagonist_s_id_instead_of_the_character_s_own_id() -> None:

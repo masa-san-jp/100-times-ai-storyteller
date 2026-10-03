@@ -59,10 +59,22 @@ def _base_outputs(events: dict[str, dict[str, object]]) -> dict[str, object]:
         "intro": "道を探す旅人。",
         "appearance": "短い髪と外套。",
         "motive": "道を確かめたい。",
+        "personality": "物静かで、観察してから動く気質。",
+        "values": "交わした約束を何より重んじる。",
+        "voice": "ゆっくりと言葉を選んで話す。「急がなくていい」。",
+        "inner_conflict": "先へ進みたい気持ちと、何かを置き去りにする不安がせめぎ合う。",
         "catchphrase": "私は進む。",
     }.items():
         outputs[f"S5.{field}-c1"] = {field: value, "sources": ["c1"]}
     outputs["S5.name-c1"] = {"name": "カナ", "reading": "カナ", "sources": ["sound-01"]}
+    outputs["S5.backstory-c1-p1"] = {
+        "backstory": "幼い頃、水路の近くの町で育った。",
+        "sources": ["c1"],
+    }
+    outputs["S5.backstory-c1-p2"] = {
+        "backstory": "大人になってから、町を出て旅をする決意をした。",
+        "sources": ["c1"],
+    }
     return outputs
 
 
@@ -127,8 +139,15 @@ def test_s9_includes_present_s5_items_in_characters_markdown(tmp_path: Path) -> 
     assert "紹介：道を探す旅人。" in characters_md
     assert "外見：短い髪と外套。" in characters_md
     assert "決め台詞：私は進む。" in characters_md
-    # S5 の新項目（personality など）はまだ存在しないので、見出しごと出ない。
-    assert "性格" not in characters_md
+    assert "性格：物静かで、観察してから動く気質。" in characters_md
+    assert "価値観：交わした約束を何より重んじる。" in characters_md
+    assert "口調：ゆっくりと言葉を選んで話す。「急がなくていい」。" in characters_md
+    assert "内的葛藤：先へ進みたい気持ちと、何かを置き去りにする不安がせめぎ合う。" in characters_md
+    assert "来歴：" in characters_md
+    assert "幼い頃、水路の近くの町で育った。" in characters_md
+    assert "大人になってから、町を出て旅をする決意をした。" in characters_md
+    # 人物が1人しかいないので人物関係は0件であり、見出しごと出ない。
+    assert "人物関係" not in characters_md
 
 
 def test_s9_sentence_template_avoids_duplicated_endings(tmp_path: Path) -> None:

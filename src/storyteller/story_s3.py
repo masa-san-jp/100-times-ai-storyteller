@@ -13,6 +13,7 @@ from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 from .tables import element_rows, load_table
 from .validation import validate_document
+from .volume import apply_volume_update, compute_character_volume
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -77,11 +78,32 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         "world_sections": _selected_world_sections(manifest, repository_root),
     }
     validate_document(assignment, repository_root / "schemas" / "story" / "assignment.schema.json")
-    additions = _build_downstream_tasks(context.task_id, manifest, assignment, scales, repository_root)
+
+    # story-pipeline.md §8 / ADR-0007: decide each character's item counts
+    # (including how many backstory periods and relationship entries to
+    # write) now that S3 knows the cast, and record the allocation in the
+    # manifest alongside any volume already computed at S0.
+    volume_result = compute_character_volume(
+        manifest["scale"],
+        [{"id": person["id"], "role": person["role"]} for person in cast],
+        repository_root=repository_root,
+    )
+    character_counts = {
+        entry["id"]: entry["item_counts"] for entry in volume_result["characters"]
+    }
+    updated_scale = apply_volume_update(manifest, volume_result)["scale"]
+
+    additions = _build_downstream_tasks(
+        context.task_id, manifest, assignment, scales, repository_root, character_counts
+    )
     return CodeTaskResult(
         output=assignment,
         add_tasks=additions,
-        manifest_updates={"input_ratio": r, "table_snapshot": snapshot},
+        manifest_updates={
+            "input_ratio": r,
+            "table_snapshot": snapshot,
+            "scale": updated_scale,
+        },
     )
 
 
@@ -508,6 +530,7 @@ def _build_downstream_tasks(
     assignment: Mapping[str, Any],
     scales: Mapping[str, Any],
     repository_root: Path,
+    character_counts: Mapping[str, Mapping[str, int]],
 ) -> list[TaskSpec]:
     world_sections = load_table("world_sections", repository_root=repository_root)["sections"]
     section_by_id = {section["id"]: section for section in world_sections}
@@ -585,10 +608,37 @@ def _build_downstream_tasks(
     name_task_ids = [f"S5.name-{person_id}" for person_id in person_ids]
     protagonist_name_id = "S5.name-c1"
     protagonist_intro_id = "S5.intro-c1"
+
+    # story-pipeline.md S5: every character's relationship item is given only
+    # the counterpart's name, role, and intro.  A single relationship task
+    # definition cannot address two different characters by index at once
+    # (the selector language's ``{slot}`` is always this task's own first
+    # index; task-model.md §2.4), so one small code task per potential
+    # counterpart resolves that counterpart's context once, shared by every
+    # other character's relationship task toward them.
+    relationship_context_ids: dict[str, str] = {}
+    if len(person_ids) > 1:
+        for target_id in person_ids:
+            context_id = f"S5.relationship_context-{target_id}"
+            relationship_context_ids[target_id] = context_id
+            additions.append(
+                TaskSpec(
+                    context_id,
+                    "S5.relationship_context",
+                    deps=_unique_dependencies(
+                        (parent_task_id, f"S5.name-{target_id}", f"S5.intro-{target_id}")
+                    ),
+                    index=(target_id,),
+                )
+            )
+
     for person in cast:
         person_id = person.get("id") if isinstance(person, Mapping) else None
         if not isinstance(person_id, str):
             raise ValueError("assignment の人物IDが不正です")
+        counts = character_counts.get(person_id)
+        if not isinstance(counts, Mapping):
+            raise ValueError(f"人物の分量配分がありません: {person_id}")
         name_id = f"S5.name-{person_id}"
         profile_id = f"S5.profile-{person_id}"
         intro_id = f"S5.intro-{person_id}"
@@ -598,6 +648,25 @@ def _build_downstream_tasks(
         is_protagonist = person.get("role") == "protagonist"
         protagonist_name_deps = () if is_protagonist else (protagonist_name_id,)
         protagonist_intro_deps = () if is_protagonist else (protagonist_intro_id,)
+        # profile の後に並行して書く項目（story-pipeline.md S5）。
+        parallel_deps = _unique_dependencies((parent_task_id, profile_id, *protagonist_name_deps))
+
+        personality_id = f"S5.personality-{person_id}"
+        values_id = f"S5.values-{person_id}"
+        voice_id = f"S5.voice-{person_id}"
+        inner_conflict_id = f"S5.inner_conflict-{person_id}"
+        backstory_count = _item_count(counts, "backstory", minimum=1)
+        backstory_ids = [
+            f"S5.backstory-{person_id}-p{ordinal}" for ordinal in range(1, backstory_count + 1)
+        ]
+        relationship_targets = [other_id for other_id in person_ids if other_id != person_id]
+        relationship_ids = [
+            f"S5.relationship-{person_id}-{other_id}" for other_id in relationship_targets
+        ]
+        expected_relationships = _item_count(counts, "relationship", minimum=0)
+        if expected_relationships != len(relationship_targets):
+            raise ValueError(f"人物の relationship の配分件数が不正です: {person_id}")
+
         additions.extend(
             [
                 TaskSpec(name_id, "S5.name", deps=(parent_task_id,), index=(person_id,)),
@@ -607,17 +676,13 @@ def _build_downstream_tasks(
                     deps=_unique_dependencies((parent_task_id, *protagonist_name_deps, name_id)),
                     index=(person_id,),
                 ),
+                TaskSpec(intro_id, "S5.intro", deps=parallel_deps, index=(person_id,)),
+                TaskSpec(appearance_id, "S5.appearance", deps=parallel_deps, index=(person_id,)),
+                TaskSpec(personality_id, "S5.personality", deps=parallel_deps, index=(person_id,)),
+                TaskSpec(values_id, "S5.values", deps=parallel_deps, index=(person_id,)),
+                TaskSpec(voice_id, "S5.voice", deps=parallel_deps, index=(person_id,)),
                 TaskSpec(
-                    intro_id,
-                    "S5.intro",
-                    deps=_unique_dependencies((parent_task_id, profile_id, *protagonist_name_deps)),
-                    index=(person_id,),
-                ),
-                TaskSpec(
-                    appearance_id,
-                    "S5.appearance",
-                    deps=_unique_dependencies((parent_task_id, profile_id, *protagonist_name_deps)),
-                    index=(person_id,),
+                    inner_conflict_id, "S5.inner_conflict", deps=parallel_deps, index=(person_id,)
                 ),
                 TaskSpec(
                     motive_id,
@@ -627,15 +692,43 @@ def _build_downstream_tasks(
                     ),
                     index=(person_id,),
                 ),
-                TaskSpec(
-                    catchphrase_id,
-                    "S5.catchphrase",
-                    deps=_unique_dependencies(
-                        (parent_task_id, motive_id, *protagonist_name_deps, *protagonist_intro_deps)
-                    ),
-                    index=(person_id,),
-                ),
             ]
+        )
+        additions.extend(
+            TaskSpec(backstory_id, "S5.backstory", deps=parallel_deps, index=(person_id, f"p{ordinal}"))
+            for ordinal, backstory_id in enumerate(backstory_ids, start=1)
+        )
+        additions.extend(
+            TaskSpec(
+                relationship_id,
+                "S5.relationship",
+                deps=_unique_dependencies(
+                    (*parallel_deps, relationship_context_ids[other_id])
+                ),
+                index=(person_id, other_id),
+            )
+            for relationship_id, other_id in zip(relationship_ids, relationship_targets)
+        )
+        additions.append(
+            TaskSpec(
+                catchphrase_id,
+                "S5.catchphrase",
+                deps=_unique_dependencies(
+                    (
+                        parent_task_id,
+                        motive_id,
+                        personality_id,
+                        values_id,
+                        voice_id,
+                        inner_conflict_id,
+                        *backstory_ids,
+                        *relationship_ids,
+                        *protagonist_name_deps,
+                        *protagonist_intro_deps,
+                    )
+                ),
+                index=(person_id,),
+            )
         )
     s4_ids = tuple(
         addition.task_id for addition in additions if addition.type in {"S4.section", "S4.item"}
@@ -693,6 +786,13 @@ def _world_count(scales: Mapping[str, Any], section_id: str, level: int) -> int:
     if isinstance(count, bool) or not isinstance(count, int) or count < 1:
         raise ValueError(f"世界セクションの件数が不正です: {section_id}")
     return count
+
+
+def _item_count(counts: Mapping[str, Any], key: str, *, minimum: int) -> int:
+    value = counts.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ValueError(f"人物の項目数が不正です: {key}")
+    return value
 
 
 def _unique_dependencies(values: Sequence[str]) -> tuple[str, ...]:

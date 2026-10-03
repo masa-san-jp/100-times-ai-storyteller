@@ -13,6 +13,7 @@ from storyteller.orchestrator import (
 )
 from storyteller.story_s8 import story_s8_judge, story_s8_plan
 from storyteller.story_s3 import story_s3_assign
+from storyteller.story_s5 import story_s5_relationship_context
 from storyteller.story_s6 import story_s6_expand
 from storyteller.cards import generate_task_card
 from storyteller.selectors import resolve_inputs
@@ -375,6 +376,9 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
         "S8.compare": _llm_definition("S8.compare"),
         "S8.judge": _code_definition("S8.judge", "judge"),
         "S9.assemble": _code_definition("S9.assemble", "assemble"),
+        "S5.relationship_context": _code_definition(
+            "S5.relationship_context", "relationship_context"
+        ),
     }
     for task_type in (
         "S5.name",
@@ -382,6 +386,12 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
         "S5.intro",
         "S5.appearance",
         "S5.motive",
+        "S5.personality",
+        "S5.values",
+        "S5.voice",
+        "S5.inner_conflict",
+        "S5.backstory",
+        "S5.relationship",
         "S5.catchphrase",
     ):
         definitions[task_type] = _llm_definition(task_type)
@@ -428,6 +438,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
             "extract": lambda _context: {"materials": []},
             "merge": merge,
             "assign": story_s3_assign,
+            "relationship_context": story_s5_relationship_context,
             "expand": story_s6_expand,
             "plan": story_s8_plan,
             "judge": lambda _context: {"invalid": False},
