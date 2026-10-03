@@ -21,6 +21,13 @@ from storyteller.dev.dummy import create_dummy_orchestrator
 from storyteller.new_run import create_story_orchestrator
 from storyteller.orchestrator import TaskSpec
 from storyteller.validation import load_yaml, validate_document, validate_output
+from tests.support.dummy_clock import dummy_clock
+
+
+@pytest.fixture(autouse=True)
+def freeze_dummy_clock():
+    with dummy_clock():
+        yield
 
 
 class _OllamaHandler(BaseHTTPRequestHandler):

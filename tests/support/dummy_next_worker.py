@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
+
+from dummy_clock import st_command
 
 
 def main() -> int:
@@ -16,8 +18,7 @@ def main() -> int:
     run_id = sys.argv[4]
     while not start_signal.is_file():
         time.sleep(0.01)
-    executable = shutil.which("st")
-    command = [executable] if executable is not None else [sys.executable, "-m", "storyteller.cli"]
+    command = st_command(datetime.fromisoformat(sys.argv[5]))
     environment = os.environ.copy()
     environment["STORYTELLER_HOME"] = data_dir
     result = subprocess.run(
