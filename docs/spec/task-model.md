@@ -34,6 +34,7 @@
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
 | `default_sources` | llm | 任意 | ID の文字列の配列（`{slot}` はタスクの添字の最初の要素に置き換える） | なし | `sources_exist` で正しい ID が1つも残らない場合に、出典として補う ID（例：S5 では `["{slot}"]`、その人物自身）。補った場合は manifest の `warnings` に記録する |
 | `on_exhausted` | llm | 任意 | `fail` / `skip` | `fail` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
+| `extend_to_min` | llm | 任意 | 真偽値 | `false` | `output: text` のタスクで、字数の不足を継続で補う（§8） |
 | `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー |
 
 - 表にない項目はエラーにする（`additionalProperties: false`）。
@@ -279,6 +280,8 @@ card:
 - 末尾の長さ = `max_input_chars` − 「入力」節の文字数（上限 6000字）。この値が 1000字未満になる場合は、そのタスクを `failed` にし、理由を「継続の予算が足りない」とする。
 - 継続は、最初の提出の後に2回まで行う（`continuation_step` は最大2）。2回目の継続の提出がなお途中で切れている場合は、`partial.md` を破棄し、1回の不合格として §6.3 に従う。
 - 途中で切れていない提出を受け取ったら、`partial.md` と連結した全体を §6 で検証する。
+- **字数の不足による継続**：タスク定義の `extend_to_min: true` のタスクで、連結した全体が `min_chars` に満たない場合は、不合格にせずに継続のカードを作り、手順に「既出の文章を繰り返さず、同じ内容をさらに具体的に書き足す」を加える（継続の回数の上限は上と共通）。上限に達してもなお満たない場合、`min_chars` の半分以上あれば合格として manifest の `warnings` に記録し、半分に満たなければ不合格とする。小さいモデルが指示より短く書く傾向への対策である。
+- `output: text` のタスクの出典は、実行者に書かせず、カードの「入力」節に示した ID をコードが `sources` として記録する。
 - `continuation: false` のタスクで、`--truncated` が指定された提出は不合格とする。`st submit --truncated` を `output: json` のタスクに指定した場合は、終了コード 1 とする。
 
 ## 9. キャッシュキーと再利用
