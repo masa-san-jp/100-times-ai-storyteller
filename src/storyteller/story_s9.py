@@ -70,7 +70,7 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
     # Check referential integrity (who/sources exist) before rendering, so an
     # invalid story fails with that diagnosis instead of a KeyError while the
     # markdown templates look up a cast member that does not exist.
-    _validate_references(story, context.run_input, outputs)
+    _validate_references(story, context.run_input, outputs, assignment)
 
     details = _collect_event_details(outputs)
     story_markdown = render_story_markdown(story, details)
@@ -263,6 +263,18 @@ def _assemble_world(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -
     catalog = assignment.get("world_sections")
     if not isinstance(world, Mapping) or not isinstance(catalog, list):
         raise ValueError("assignment の world が不正です")
+    world_task_contexts = {
+        f"S4.{entry['kind'] == 'single' and 'section' or 'item'}-{entry['id']}": entry
+        for entry in assignment.get("world_tasks", [])
+        if isinstance(entry, Mapping)
+        and isinstance(entry.get("id"), str)
+        and entry.get("kind") in {"single", "list"}
+    }
+    section_ids = [
+        section.get("id")
+        for section in catalog
+        if isinstance(section, Mapping) and isinstance(section.get("id"), str)
+    ]
     sections: list[dict[str, Any]] = []
     for section in catalog:
         if not isinstance(section, Mapping):
@@ -274,20 +286,51 @@ def _assemble_world(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -
             (task_id, value)
             for task_id, value in outputs.items()
             if isinstance(task_id, str)
-            and _world_task_section_id(task_id) == section_id
+            and (
+                (
+                    task_id in world_task_contexts
+                    and world_task_contexts[task_id].get("section_id") == section_id
+                )
+                or _world_task_section_id(task_id, section_ids) == section_id
+            )
             and isinstance(value, Mapping)
         ]
-        raw_outputs.sort(key=lambda item: item[0])
+        raw_outputs.sort(
+            key=lambda item: (
+                0 if item[0] in world_task_contexts else 1,
+                next(
+                    (
+                        index
+                        for index, entry in enumerate(assignment.get("world_tasks", []))
+                        if isinstance(entry, Mapping)
+                        and f"S4.{entry.get('kind') == 'single' and 'section' or 'item'}-{entry.get('id')}" == item[0]
+                    ),
+                    0,
+                ),
+                item[0],
+            )
+        )
         source_ids: list[str] = []
         if section.get("kind") == "single":
-            if len(raw_outputs) != 1:
+            if not raw_outputs:
                 raise ValueError(f"S4 の単一セクション出力が不正です: {section_id}")
-            output = raw_outputs[0][1]
-            body = output.get("body")
-            if not isinstance(body, str) or not body:
-                raise ValueError(f"S4 の本文が不正です: {section_id}")
-            _extend_ids(source_ids, output.get("sources"))
-            sections.append({"id": section_id, "name": section["name"], "kind": "single", "body": body, "items": [], "sources": source_ids})
+            facet_bodies: list[str] = []
+            for task_id, output in raw_outputs:
+                body = output.get("body")
+                if not isinstance(body, str) or not body:
+                    raise ValueError(f"S4 の本文が不正です: {section_id}")
+                _extend_ids(source_ids, output.get("sources"))
+                task_context = world_task_contexts.get(task_id)
+                if isinstance(task_context, Mapping):
+                    viewpoint = task_context.get("viewpoint")
+                    facet_number = task_context.get("facet_number")
+                    if isinstance(viewpoint, str) and isinstance(facet_number, int):
+                        facet_bodies.append(
+                            f"### {viewpoint}\n#### 面 {facet_number}\n{body}"
+                        )
+                        continue
+                facet_bodies.append(body)
+            sections.append({"id": section_id, "name": section["name"], "kind": "single", "body": "\n\n".join(facet_bodies), "items": [], "sources": source_ids})
         else:
             items: list[dict[str, Any]] = []
             for _, output in raw_outputs:
@@ -306,11 +349,29 @@ def _assemble_world(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -
     return required_world
 
 
-def _world_task_section_id(task_id: str) -> str | None:
+def _world_task_section_id(task_id: str, section_ids: Sequence[Any] | None = None) -> str | None:
     if task_id.startswith("S4.section-"):
-        return task_id.removeprefix("S4.section-")
+        suffix = task_id.removeprefix("S4.section-")
+        if section_ids is None:
+            return suffix
+        for section_id in sorted(
+            (value for value in section_ids if isinstance(value, str)),
+            key=len,
+            reverse=True,
+        ):
+            if suffix == section_id or suffix.startswith(f"{section_id}-"):
+                return section_id
     if task_id.startswith("S4.item-"):
-        return task_id.removeprefix("S4.item-").rsplit("-", 1)[0]
+        suffix = task_id.removeprefix("S4.item-")
+        if section_ids is None:
+            return suffix.rsplit("-", 1)[0]
+        for section_id in sorted(
+            (value for value in section_ids if isinstance(value, str)),
+            key=len,
+            reverse=True,
+        ):
+            if suffix.startswith(f"{section_id}-"):
+                return section_id
     return None
 
 
@@ -382,7 +443,14 @@ def _extend_ids(target: list[str], value: Any) -> None:
             target.append(item)
 
 
-def _validate_references(story: Mapping[str, Any], run_input: Any, outputs: Mapping[str, Any]) -> None:
+def _validate_references(
+    story: Mapping[str, Any],
+    run_input: Any,
+    outputs: Mapping[str, Any],
+    assignment: Mapping[str, Any] | None = None,
+) -> None:
+    if assignment is None and isinstance(outputs.get("S3.assign"), Mapping):
+        assignment = outputs["S3.assign"]
     cast_ids = {person["id"] for person in story["cast"]}
     thread_ids = {thread["id"] for thread in story["threads"]}
     event_ids = {event["id"] for event in story["events"]}
@@ -398,6 +466,17 @@ def _validate_references(story: Mapping[str, Any], run_input: Any, outputs: Mapp
         known_ids.add(story["world"]["theme"]["id"])
     for section in story["world"]["sections"]:
         known_ids.add(section["id"])
+    world_tasks = assignment.get("world_tasks") if isinstance(assignment, Mapping) else None
+    if isinstance(world_tasks, list):
+        for world_task in world_tasks:
+            if not isinstance(world_task, Mapping):
+                continue
+            element = world_task.get("element")
+            if isinstance(element, Mapping) and isinstance(element.get("id"), str):
+                known_ids.add(element["id"])
+            name_sound = world_task.get("name_sound")
+            if isinstance(name_sound, Mapping) and isinstance(name_sound.get("set_id"), str):
+                known_ids.add(name_sound["set_id"])
     if isinstance(run_input, Mapping):
         for paragraph in run_input.get("paragraphs", []):
             if isinstance(paragraph, Mapping) and isinstance(paragraph.get("id"), str):
@@ -483,11 +562,7 @@ def render_characters_markdown(story: Mapping[str, Any]) -> str:
 
 
 def render_world_markdown(story: Mapping[str, Any]) -> str:
-    """Render world.md: every world section and item that already exists.
-
-    世界の面（facet）への分割は P1-18 で加わる。それまでは、セクションの本文
-    （single）または一覧の項目（list）を、存在するとおりに並べる。
-    """
+    """Render world.md in section, viewpoint, facet, and item order."""
 
     lines = ["# 世界", ""]
     for section in story["world"]["sections"]:

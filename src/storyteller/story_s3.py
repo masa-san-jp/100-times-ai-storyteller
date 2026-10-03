@@ -13,7 +13,7 @@ from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 from .tables import element_rows, load_table
 from .validation import validate_document
-from .volume import apply_volume_update, compute_character_volume
+from .volume import apply_volume_update, compute_character_volume, compute_initial_volume
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +69,9 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         materials,
     )
     _attach_s5_context(cast, plot_by_id, threads)
+    initial_volume = compute_initial_volume(
+        manifest["scale"], repository_root=repository_root
+    )
     assignment = {
         "r": r,
         "threads": threads,
@@ -77,6 +80,16 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         "world": world,
         "world_sections": _selected_world_sections(manifest, repository_root),
     }
+    assignment["world_tasks"] = _assign_world_tasks(
+        context,
+        assignment["world_sections"],
+        initial_volume["world"],
+        input_pools,
+        table_pools,
+        world,
+        r,
+        repository_root,
+    )
     validate_document(assignment, repository_root / "schemas" / "story" / "assignment.schema.json")
 
     # story-pipeline.md §8 / ADR-0007: decide each character's item counts
@@ -91,10 +104,19 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
     character_counts = {
         entry["id"]: entry["item_counts"] for entry in volume_result["characters"]
     }
-    updated_scale = apply_volume_update(manifest, volume_result)["scale"]
+    updated_scale = apply_volume_update(
+        manifest,
+        {**initial_volume, **volume_result},
+    )["scale"]
+    manifest_for_tasks = {**manifest, "scale": updated_scale}
 
     additions = _build_downstream_tasks(
-        context.task_id, manifest, assignment, scales, repository_root, character_counts
+        context.task_id,
+        manifest_for_tasks,
+        assignment,
+        scales,
+        repository_root,
+        character_counts,
     )
     return CodeTaskResult(
         output=assignment,
@@ -524,6 +546,133 @@ def _choose_element(
     return selected
 
 
+def _assign_world_tasks(
+    context: CodeTaskContext,
+    sections: Sequence[Mapping[str, Any]],
+    world_volume: Mapping[str, Any],
+    input_pools: Mapping[str, Sequence[Mapping[str, str]]],
+    table_pools: Mapping[str, Sequence[Mapping[str, str]]],
+    world: Mapping[str, Any],
+    ratio: float,
+    repository_root: Path,
+) -> list[dict[str, Any]]:
+    """Assign the per-task S4 context before any world LLM task runs.
+
+    The assignment is deliberately materialized in S3 rather than inferred by
+    an S4 card.  This keeps the choice of facet, cut, and name sounds in code
+    and makes the exact S4 task index sufficient to recover its context.
+    """
+
+    allocations = world_volume.get("sections")
+    if not isinstance(allocations, list):
+        raise ValueError("世界の分量配分がありません")
+    allocation_by_id = {
+        entry.get("id"): entry for entry in allocations if isinstance(entry, Mapping)
+    }
+    name_sets = load_table("name_sounds", repository_root=repository_root)["sets"]
+    used: dict[str, set[str]] = {axis: set() for axis in _WORLD_AXES}
+    for axis in _WORLD_AXES:
+        selected = world.get(axis)
+        if isinstance(selected, Mapping) and isinstance(selected.get("id"), str):
+            used[axis].add(selected["id"])
+
+    result: list[dict[str, Any]] = []
+    for section in sections:
+        section_id = section.get("id")
+        kind = section.get("kind")
+        if not isinstance(section_id, str) or kind not in {"single", "list"}:
+            raise ValueError("世界セクションの定義が不正です")
+        allocation = allocation_by_id.get(section_id)
+        if not isinstance(allocation, Mapping):
+            raise ValueError(f"世界の分量配分がありません: {section_id}")
+        section_context = {
+            "id": section_id,
+            "name": section["name"],
+            "definition": section["definition"],
+        }
+        if kind == "single":
+            viewpoints = section.get("viewpoints")
+            viewpoint_allocations = allocation.get("viewpoints")
+            if not isinstance(viewpoints, list) or not isinstance(viewpoint_allocations, list):
+                raise ValueError(f"世界セクションの観点配分が不正です: {section_id}")
+            if len(viewpoints) != len(viewpoint_allocations):
+                raise ValueError(f"世界セクションの観点数が一致しません: {section_id}")
+            for viewpoint_number, (viewpoint, viewpoint_allocation) in enumerate(
+                zip(viewpoints, viewpoint_allocations), start=1
+            ):
+                if not isinstance(viewpoint, str) or not isinstance(viewpoint_allocation, Mapping):
+                    raise ValueError(f"世界セクションの観点が不正です: {section_id}")
+                facet_count = viewpoint_allocation.get("facet_count")
+                if isinstance(facet_count, bool) or not isinstance(facet_count, int) or facet_count < 1:
+                    raise ValueError(f"世界セクションの面数が不正です: {section_id}")
+                for facet_number in range(1, facet_count + 1):
+                    task_key = f"{section_id}-{viewpoint_number}-f{facet_number}"
+                    element_axis, element = _choose_world_cut(
+                        context, input_pools, table_pools, used, ratio
+                    )
+                    result.append(
+                        {
+                            "id": task_key,
+                            "section_id": section_id,
+                            "kind": "single",
+                            "section": deepcopy(section_context),
+                            "viewpoint": viewpoint,
+                            "facet_number": facet_number,
+                            "element_axis": element_axis,
+                            "element": element,
+                        }
+                    )
+        else:
+            item_count = allocation.get("item_count")
+            if isinstance(item_count, bool) or not isinstance(item_count, int) or item_count < 1:
+                raise ValueError(f"世界セクションの項目数が不正です: {section_id}")
+            for ordinal in range(1, item_count + 1):
+                task_key = f"{section_id}-{ordinal:03d}"
+                element_axis, element = _choose_world_cut(
+                    context, input_pools, table_pools, used, ratio
+                )
+                sound_set = context.random.choice(name_sets)
+                result.append(
+                    {
+                        "id": task_key,
+                        "section_id": section_id,
+                        "kind": "list",
+                        "section": deepcopy(section_context),
+                        "element_axis": element_axis,
+                        "element": element,
+                        "name_sound": {
+                            "set_id": sound_set["id"],
+                            "description": sound_set["description"],
+                            "sounds": context.random.sample(sound_set["sounds"], 6),
+                        },
+                    }
+                )
+    return result
+
+
+def _choose_world_cut(
+    context: CodeTaskContext,
+    input_pools: Mapping[str, Sequence[Mapping[str, str]]],
+    table_pools: Mapping[str, Sequence[Mapping[str, str]]],
+    used: Mapping[str, set[str]],
+    ratio: float,
+) -> tuple[str, dict[str, str]]:
+    axes = list(_WORLD_AXES)
+    context.random.shuffle(axes)
+    for axis in axes:
+        input_candidates = [
+            item for item in input_pools.get(axis, ()) if item.get("id") not in used[axis]
+        ]
+        table_candidates = [
+            item for item in table_pools.get(axis, ()) if item.get("id") not in used[axis]
+        ]
+        if input_candidates or table_candidates:
+            return axis, _choose_element(
+                context, axis, ratio, input_pools, table_pools, used[axis]
+            )
+    raise ValueError("S4 の切り口に使える要素がありません")
+
+
 def _build_downstream_tasks(
     parent_task_id: str,
     manifest: Mapping[str, Any],
@@ -538,55 +687,65 @@ def _build_downstream_tasks(
     selected_ids = derived.get("world_sections", []) if isinstance(derived, Mapping) else []
     if not isinstance(selected_ids, list):
         raise ValueError("manifest の world_sections が不正です")
-    scale_level = _world_level(manifest, scales)
+    volume = derived.get("volume") if isinstance(derived, Mapping) else None
+    world_volume = volume.get("world") if isinstance(volume, Mapping) else None
+    if not isinstance(world_volume, Mapping):
+        raise ValueError("manifest の scale.derived.volume.world がありません")
+    world_tasks = assignment.get("world_tasks")
+    if not isinstance(world_tasks, list):
+        raise ValueError("assignment の world_tasks がありません")
+    tasks_by_section: dict[str, list[Mapping[str, Any]]] = {}
+    for world_task in world_tasks:
+        if not isinstance(world_task, Mapping):
+            raise ValueError("assignment の world_tasks が不正です")
+        task_key = world_task.get("id")
+        section_id = world_task.get("section_id")
+        kind = world_task.get("kind")
+        if (
+            not isinstance(task_key, str)
+            or not isinstance(section_id, str)
+            or kind not in {"single", "list"}
+        ):
+            raise ValueError("assignment の world task の ID または種別が不正です")
+        tasks_by_section.setdefault(section_id, []).append(world_task)
+
     world_task_ids: dict[str, list[str]] = {}
     additions: list[TaskSpec] = []
-    section_specs: list[tuple[str, Mapping[str, Any], int | None]] = []
+    section_specs: list[tuple[str, Mapping[str, Any], list[Mapping[str, Any]]]] = []
     for section_id in selected_ids:
         if section_id not in section_by_id:
             raise ValueError(f"未知の世界セクションです: {section_id}")
         section = section_by_id[section_id]
-        if section["kind"] == "single":
-            task_id = f"S4.section-{section_id}"
-            world_task_ids[section_id] = [task_id]
-            section_specs.append((section_id, section, None))
-            continue
-        count = _world_count(scales, section_id, scale_level)
-        task_ids: list[str] = []
-        for ordinal in range(1, count + 1):
-            task_id = f"S4.item-{section_id}-{ordinal:03d}"
-            task_ids.append(task_id)
+        section_tasks = tasks_by_section.get(section_id, [])
+        expected_kind = section["kind"]
+        if any(task.get("kind") != expected_kind for task in section_tasks):
+            raise ValueError(f"世界タスクの種別が不正です: {section_id}")
+        if not section_tasks:
+            raise ValueError(f"世界タスクがありません: {section_id}")
+        task_type = "S4.section" if expected_kind == "single" else "S4.item"
+        task_ids = [f"{task_type}-{task['id']}" for task in section_tasks]
         world_task_ids[section_id] = task_ids
-        section_specs.append((section_id, section, count))
+        section_specs.append((section_id, section, section_tasks))
 
     # Build dependencies only after every selected section has an ID.  The
     # catalog order is not guaranteed to be a topological order.
-    for section_id, section, count in section_specs:
+    for section_id, section, section_tasks in section_specs:
         prerequisite_ids = [
             task_id
             for prerequisite in section.get("prerequisites", [])
             for task_id in world_task_ids.get(prerequisite, [])
         ]
         deps = _unique_dependencies((parent_task_id, *prerequisite_ids))
-        if count is None:
-            additions.append(
-                TaskSpec(
-                    f"S4.section-{section_id}",
-                    "S4.section",
-                    deps=deps,
-                    index=(section_id,),
-                )
+        task_type = "S4.section" if section["kind"] == "single" else "S4.item"
+        additions.extend(
+            TaskSpec(
+                f"{task_type}-{world_task['id']}",
+                task_type,
+                deps=deps,
+                index=(world_task["id"],),
             )
-        else:
-            for ordinal in range(1, count + 1):
-                additions.append(
-                    TaskSpec(
-                        f"S4.item-{section_id}-{ordinal:03d}",
-                        "S4.item",
-                        deps=deps,
-                        index=(section_id, f"{ordinal:03d}"),
-                    )
-                )
+            for world_task in section_tasks
+        )
 
     cast = assignment.get("cast")
     if not isinstance(cast, list):

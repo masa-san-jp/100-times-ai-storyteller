@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import os
 import re
 import subprocess
@@ -10,6 +12,8 @@ from typing import Any
 
 from storyteller.story_s9 import _validate_references
 from storyteller.validation import validate_document
+from storyteller.cli import main as cli_main
+from storyteller.new_run import create_story_orchestrator
 
 
 ROOT = Path(__file__).parents[1]
@@ -17,18 +21,27 @@ RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 
 
 def _cli(data_dir: Path, *arguments: str, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
-    environment = os.environ.copy()
-    environment["STORYTELLER_HOME"] = str(data_dir)
-    return subprocess.run(
+    previous_home = os.environ.get("STORYTELLER_HOME")
+    os.environ["STORYTELLER_HOME"] = str(data_dir)
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    stdin = io.StringIO(input_text or "")
+    previous_stdin = sys.stdin
+    try:
+        sys.stdin = stdin
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            returncode = cli_main(arguments)
+    finally:
+        sys.stdin = previous_stdin
+        if previous_home is None:
+            os.environ.pop("STORYTELLER_HOME", None)
+        else:
+            os.environ["STORYTELLER_HOME"] = previous_home
+    return subprocess.CompletedProcess(
         [sys.executable, "-m", "storyteller.cli", *arguments],
-        cwd=ROOT,
-        env=environment,
-        input=input_text,
-        text=True,
-        encoding="utf-8",
-        capture_output=True,
-        check=False,
-        timeout=30,
+        returncode,
+        stdout=stdout.getvalue(),
+        stderr=stderr.getvalue(),
     )
 
 
@@ -123,10 +136,19 @@ def _fake_output(
         }
 
     if task_type in {"S4.section", "S4.item"}:
-        source = _first_id(inputs)
+        source = inputs.get("cut", {}).get("id") if isinstance(inputs.get("cut"), dict) else _first_id(inputs)
         if task_type == "S4.item":
-            return {"name": "一覧の項目", "body": "町の暮らしを支える小さな仕組み。", "sources": [source]}
-        return {"body": "町の暮らしと場所の変化が重なる。", "sources": [source]}
+            sound = inputs["name_sound"]["sounds"]
+            name = "".join(sound[:2])
+            return {
+                "name": name,
+                "body": _filler_text(task_id, "world_item", 900),
+                "sources": [source],
+            }
+        return {
+            "body": _filler_text(task_id, "world_facet", 1150),
+            "sources": [source],
+        }
 
     if task_type == "S5.name":
         sound = inputs["name_sound"]
@@ -217,17 +239,16 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     assert created.returncode == 0, created.stderr
     run_id = created.stdout.strip()
     assert RUN_ID.fullmatch(run_id)
+    harness = create_story_orchestrator(data_dir)
 
     sent_comparison_yes = False
     comparison_answers: list[str] = []
     invalidated_s7 = False
     for _ in range(500):
-        claimed = _cli(data_dir, "next", "--run", run_id, "--json")
-        if claimed.returncode == 2:
+        claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
+        if claimed is None:
             break
-        assert claimed.returncode == 0, claimed.stderr
-        claim = json.loads(claimed.stdout)
-        task_id, task = _claimed_task(data_dir, run_id, claim["ticket"])
+        task_id, task = _claimed_task(data_dir, run_id, claimed["ticket"])
         inputs = _task_input(data_dir, run_id, task_id)
         is_comparison = task["type"] == "S8.compare"
         output = _fake_output(
@@ -245,13 +266,8 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             if task["type"] == "S7.detail"
             else json.dumps(output, ensure_ascii=False)
         )
-        submitted = _cli(
-            data_dir,
-            "submit",
-            claim["ticket"],
-            input_text=submitted_output,
-        )
-        assert submitted.returncode == 0, (task_id, submitted.stderr, submitted.stdout)
+        submitted = harness.submit(claimed["ticket"], submitted_output)
+        assert submitted.accepted, (task_id, submitted.errors)
         current = _manifest(data_dir, run_id)
         invalidated_s7 = invalidated_s7 or any(
             task_name.startswith("S7.event-")
@@ -278,6 +294,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     story_markdown = markdown_path.read_text(encoding="utf-8")
     assert "人物は場面の状況を確認し、行動の結果を受け止めた。" in story_markdown
     assert story["meta"]["volume"]["story"]["chars"] >= 100_000
+    assert story["meta"]["volume"]["world"]["chars"] >= 100_000
 
     outputs: dict[str, Any] = {}
     for task_id, task in final_manifest["tasks"].items():

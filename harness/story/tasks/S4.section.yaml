@@ -3,9 +3,19 @@ version: 1
 kind: llm
 inputs:
   section:
-    label: 世界セクション
+    label: 世界セクションの定義
     from: S3.assign
-    select: world_sections[{slot}]
+    select: world_tasks[{slot}].section
+    required: true
+  viewpoint:
+    label: 今回の観点
+    from: S3.assign
+    select: world_tasks[{slot}].viewpoint
+    required: true
+  cut:
+    label: 切り口の要素
+    from: S3.assign
+    select: world_tasks[{slot}].element
     required: true
   place:
     label: 物語の場所
@@ -26,27 +36,32 @@ inputs:
     label: 前提セクション
     from: S4.section
     select: output
+    truncate: head
   prerequisite_items:
     label: 前提一覧項目
     from: S4.item
     select: output
+    truncate: head
 output: json
 card:
   role: 与えられた定義と観点だけを使って、世界セクションの本文を書く。
   steps:
-    - 入力された世界セクションの定義と観点をすべて確認し、場所と時代に合う本文を400字以内で書く。
-    - 入力されたプロット型の性質を背景として使い、観点にない設定や出来事を付け加えない。
+    - 入力された世界セクションの定義と今回の観点だけを確認し、切り口の要素を使って場所と時代に合う本文を800〜1500字で書く。
+    - 入力されたプロット型の性質を背景として使い、今回の観点にない設定や出来事を付け加えない。
     - 前提セクションがある場合は、その本文だけを踏まえて整合するように書く。前提一覧項目は名前と要約だけを使う。
+    - 前提セクションの文をそのまま写さず、切り口と今回の観点に合わせて再構成する。
     - 入力に含まれるIDを、本文の根拠としてsourcesに1件以上書く。本文は入力をそのまま引用せず、抽象的に解釈して再構成する。
-  output_example: '{"body": "...", "sources": ["place:t1"]}'
+  output_example: '{"body": "...", "sources": ["<切り口のID>"]}'
 validate:
   schema: schemas/tasks/S4.section.schema.json
   checks:
     - sources_exist
+    - min_chars:
+        field: body
+        n: 800
     - max_chars:
         field: body
-        n: 400
+        n: 1500
     - no_new_proper_nouns:
         mode: warn
 max_input_chars: 24000
-default_sources: ["{slot}"]

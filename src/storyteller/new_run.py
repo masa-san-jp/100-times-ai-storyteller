@@ -17,6 +17,7 @@ from .story_s8 import story_s8_judge, story_s8_plan
 from .story_s9 import story_s9_assemble
 from .tables import load_table
 from .validation import load_and_validate_yaml
+from .volume import apply_volume_update, compute_initial_volume
 
 
 _TASK_DEFINITION_SCHEMA = "schemas/task-definition.schema.json"
@@ -44,6 +45,10 @@ def create_free_run(
         parts=parts,
         repository_root=repository_root,
     )
+    scale_value = apply_volume_update(
+        {"scale": scale.value},
+        compute_initial_volume(scale.value, repository_root=repository_root),
+    )["scale"]
     if plot_type is not None:
         plot_ids = {plot["id"] for plot in load_table("plot_types", repository_root=repository_root)["types"]}
         if plot_type not in plot_ids:
@@ -78,7 +83,7 @@ def create_free_run(
         input_data=free_input.as_document(),
         input_type="free",
         plot_type=plot_type,
-        scale=scale.value,
+        scale=scale_value,
         table_snapshot={axis: 0 for axis in _element_axes(repository_root)},
         harness_kind="story",
     )

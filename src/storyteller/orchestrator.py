@@ -2962,6 +2962,8 @@ def _source_outputs(
             source_value = [dependency_outputs[task_id] for task_id in matching]
         if slot_name == "prerequisite_items" and slot == "S4.item":
             source_value = _summarize_world_items(source_value)
+        if slot_name == "prerequisite_sections" and slot == "S4.section":
+            source_value = _summarize_world_sections(source_value)
         result[slot] = source_value
     return result
 
@@ -3043,6 +3045,25 @@ def _summarize_world_items(value: Any) -> list[dict[str, str]]:
             continue
         summary = " ".join(body.split())[:120]
         summaries.append({"name": name, "summary": summary})
+    return summaries
+
+
+def _summarize_world_sections(value: Any) -> list[dict[str, str]]:
+    """Keep only prerequisite section bodies for the next S4 card."""
+
+    if isinstance(value, Mapping):
+        values = list(value.values())
+    elif isinstance(value, list):
+        values = value
+    else:
+        values = [value]
+    summaries: list[dict[str, str]] = []
+    for section in values:
+        if not isinstance(section, Mapping):
+            continue
+        body = section.get("body")
+        if isinstance(body, str) and body:
+            summaries.append({"body": body})
     return summaries
 
 

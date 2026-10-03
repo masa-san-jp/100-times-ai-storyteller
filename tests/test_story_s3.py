@@ -222,7 +222,11 @@ def test_s3_assignment_is_schema_valid_and_adds_the_phase1_dag(tmp_path: Path) -
     assert {"messenger", "supporter", "adversary"}.issubset(
         set(assignment["absent_roles"])
     )
-    assert manifest["tasks"]["S4.section-place"]["deps"] == ["S3.assign"]
+    place_tasks = [
+        task_id for task_id in manifest["tasks"] if task_id.startswith("S4.section-place-")
+    ]
+    assert place_tasks
+    assert all(manifest["tasks"][task_id]["deps"] == ["S3.assign"] for task_id in place_tasks)
     assert manifest["tasks"]["S6.expand"]["deps"][0] == "S3.assign"
     assert len(manifest["tasks"]["S6.expand"]["deps"]) > 1
 
@@ -320,6 +324,44 @@ def test_s3_multi_cast_and_threads_keep_ids_sources_and_event_counts_unique(
     )
 
 
+def test_s3_world_tasks_follow_volume_and_distinct_viewpoint_cuts(tmp_path: Path) -> None:
+    scale = _multi_thread_scale()
+    orchestrator, run_id = _run(
+        tmp_path / "data",
+        324,
+        run_number=1,
+        scale=scale,
+        pools=_rich_pools(),
+    )
+    manifest = orchestrator.load_run(run_id)
+    assignment = _assignment(orchestrator, run_id)
+    world_volume = manifest["scale"]["derived"]["volume"]["world"]
+    allocation = world_volume["sections"]
+    floor = load_table("volume")["floor_chars"]["world"] * multiplier_for_preset(
+        scale["preset"]
+    )
+    assert world_volume["total_chars"] >= floor
+
+    for section in allocation:
+        section_id = section["id"]
+        expected = (
+            sum(viewpoint["facet_count"] for viewpoint in section["viewpoints"])
+            if section["kind"] == "single"
+            else section["item_count"]
+        )
+        prefix = f"S4.{'section' if section['kind'] == 'single' else 'item'}-{section_id}-"
+        task_ids = [task_id for task_id in manifest["tasks"] if task_id.startswith(prefix)]
+        assert len(task_ids) == expected
+
+    cuts_by_viewpoint: dict[tuple[str, str], list[str]] = {}
+    for world_task in assignment["world_tasks"]:
+        if world_task["kind"] == "single":
+            key = (world_task["section_id"], world_task["viewpoint"])
+            cuts_by_viewpoint.setdefault(key, []).append(world_task["element"]["id"])
+    assert cuts_by_viewpoint
+    assert all(len(ids) == len(set(ids)) for ids in cuts_by_viewpoint.values())
+
+
 def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
     orchestrator, run_id = _run(
         tmp_path / "data",
@@ -330,24 +372,23 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
     )
     manifest = orchestrator.load_run(run_id)
     tasks = manifest["tasks"]
+    assignment = _assignment(orchestrator, run_id)
     world_sections = {
         section["id"]: section
         for section in load_table("world_sections")["sections"]
+    }
+    task_section = {
+        f"S4.{'section' if entry['kind'] == 'single' else 'item'}-{entry['id']}": entry["section_id"]
+        for entry in assignment["world_tasks"]
     }
 
     s4_ids = [task_id for task_id in tasks if task_id.startswith("S4.")]
     s4_by_section: dict[str, list[str]] = {}
     for task_id in s4_ids:
-        without_prefix = task_id.removeprefix("S4.")
-        section_id = without_prefix.removeprefix("section-")
-        if without_prefix.startswith("item-"):
-            section_id = without_prefix.removeprefix("item-").rsplit("-", 1)[0]
+        section_id = task_section[task_id]
         s4_by_section.setdefault(section_id, []).append(task_id)
     for task_id in s4_ids:
-        without_prefix = task_id.removeprefix("S4.")
-        section_id = without_prefix.removeprefix("section-")
-        if without_prefix.startswith("item-"):
-            section_id = without_prefix.removeprefix("item-").rsplit("-", 1)[0]
+        section_id = task_section[task_id]
         prerequisite_ids = [
             dependency
             for prerequisite in world_sections[section_id]["prerequisites"]
@@ -355,7 +396,6 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
         ]
         assert tasks[task_id]["deps"] == ["S3.assign", *prerequisite_ids]
 
-    assignment = _assignment(orchestrator, run_id)
     person_ids = [person["id"] for person in assignment["cast"]]
     counts_by_person = {
         entry["id"]: entry["item_counts"]

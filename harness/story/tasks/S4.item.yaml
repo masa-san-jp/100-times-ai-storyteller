@@ -3,9 +3,19 @@ version: 1
 kind: llm
 inputs:
   section:
-    label: 世界セクション
+    label: 世界セクションの定義
     from: S3.assign
-    select: world_sections[{slot}]
+    select: world_tasks[{slot}].section
+    required: true
+  cut:
+    label: 切り口の要素
+    from: S3.assign
+    select: world_tasks[{slot}].element
+    required: true
+  name_sound:
+    label: 項目名の響き
+    from: S3.assign
+    select: world_tasks[{slot}].name_sound
     required: true
   place:
     label: 物語の場所
@@ -26,27 +36,37 @@ inputs:
     label: 前提セクション
     from: S4.section
     select: output
+    truncate: head
   prerequisite_items:
     label: 前提一覧項目
     from: S4.item
     select: output
+    truncate: head
 output: json
 card:
   role: 与えられた定義と観点だけを使って、一覧型世界セクションの1項目を書く。
   steps:
-    - 入力された世界セクションの定義と観点をすべて確認し、一覧の1項目を名前と本文で書く。
-    - 本文は400字以内とし、場所・時代・プロット型に合う具体性を持たせる。
+    - 入力された世界セクションの定義を確認し、切り口の要素を使って一覧の1項目を名前と本文で書く。
+    - 項目の名前は、与えられた響きの音のうち2個以上をそのまま使って組み立てる。
+    - 本文は600〜1200字とし、場所・時代・プロット型に合う具体性を持たせる。
     - 前提セクションがある場合は、その本文だけを踏まえて整合するように書く。前提一覧項目は名前と要約だけを使う。
+    - 前提セクションの文をそのまま写さず、切り口に合わせて再構成する。
     - 入力に含まれるIDを、本文の根拠としてsourcesに1件以上書く。本文は入力をそのまま引用せず、抽象的に解釈して再構成する。
-  output_example: '{"name": "...", "body": "...", "sources": ["place:t1"]}'
+  output_example: '{"name": "...", "body": "...", "sources": ["<切り口のID>"]}'
 validate:
   schema: schemas/tasks/S4.item.schema.json
   checks:
     - sources_exist
+    - uses_given:
+        field: name
+        slot: name_sound
+        n: 2
+    - min_chars:
+        field: body
+        n: 600
     - max_chars:
         field: body
-        n: 400
+        n: 1200
     - no_new_proper_nouns:
         mode: warn
 max_input_chars: 24000
-default_sources: ["{slot}"]
