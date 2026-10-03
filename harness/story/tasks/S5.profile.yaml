@@ -1,5 +1,5 @@
 id: S5.profile
-version: 1
+version: 2
 kind: llm
 inputs:
   character:
@@ -44,6 +44,9 @@ card:
 validate:
   schema: schemas/tasks/S5.profile.schema.json
   checks:
+    - min_chars:
+        field: profile
+        n: 1
     - sources_exist
     - max_chars:
         field: profile

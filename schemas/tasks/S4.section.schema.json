@@ -7,17 +7,14 @@
   "required": ["body", "sources"],
   "properties": {
     "body": {
-      "type": "string",
-      "minLength": 800,
-      "maxLength": 1500
+      "type": "string"
     },
     "sources": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
-        "type": "string",
-        "minLength": 1
+        "type": "string"
       }
     }
   }

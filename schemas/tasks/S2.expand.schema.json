@@ -11,15 +11,11 @@
       "minItems": 5,
       "maxItems": 5,
       "items": {
-        "type": "string",
-        "minLength": 10,
-        "maxLength": 40
+        "type": "string"
       }
     },
     "counterpart": {
-      "type": "string",
-      "minLength": 10,
-      "maxLength": 40
+      "type": "string"
     },
     "sources": {
       "type": "array",

@@ -1,5 +1,5 @@
 id: S4.item
-version: 1
+version: 2
 kind: llm
 inputs:
   section:
@@ -56,6 +56,9 @@ card:
 validate:
   schema: schemas/tasks/S4.item.schema.json
   checks:
+    - min_chars:
+        field: name
+        n: 1
     - sources_exist
     - uses_given:
         field: name
@@ -67,6 +70,7 @@ validate:
     - max_chars:
         field: body
         n: 1200
+        fix: trim
     - no_new_proper_nouns:
         mode: warn
 max_input_chars: 24000

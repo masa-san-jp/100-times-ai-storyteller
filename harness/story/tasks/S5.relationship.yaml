@@ -1,5 +1,5 @@
 id: S5.relationship
-version: 1
+version: 2
 kind: llm
 inputs:
   character:
@@ -55,5 +55,6 @@ validate:
     - max_chars:
         field: relationship
         n: 600
+        fix: trim
 max_input_chars: 3000
 default_sources: ["{slot}"]

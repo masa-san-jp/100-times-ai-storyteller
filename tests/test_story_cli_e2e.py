@@ -244,6 +244,8 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     sent_comparison_yes = False
     comparison_answers: list[str] = []
     invalidated_s7 = False
+    trimmed_tasks: set[str] = set()
+    trim_counts: dict[str, int] = {}
     for _ in range(500):
         claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
         if claimed is None:
@@ -257,6 +259,25 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             inputs,
             send_comparison_yes=is_comparison and not sent_comparison_yes,
         )
+        # Mix normal outputs with overlong outputs for each long task type.
+        # Two section facets reproduce the observed f1/f2 failures.
+        if trim_counts.get(task["type"], 0) < (2 if task["type"] == "S4.section" else 1):
+            definition = harness.task_definitions[task["type"]]
+            for check in definition.get("validate", {}).get("checks", []):
+                arguments = check.get("max_chars", {}) if isinstance(check, dict) else {}
+                if arguments.get("fix") != "trim":
+                    continue
+                trim_arguments = arguments
+                maximum = arguments["n"]
+                original_text = output[arguments["field"]] if "field" in arguments else output
+                expected_fixed_text = original_text if original_text.endswith("。") else original_text + "。"
+                long_text = expected_fixed_text + "余" * (maximum + 10 - len(expected_fixed_text)) + "。"
+                if "field" in arguments:
+                    output[arguments["field"]] = long_text
+                else:
+                    output = long_text
+                trimmed_tasks.add(task_id)
+                trim_counts[task["type"]] = trim_counts.get(task["type"], 0) + 1
         if is_comparison:
             comparison_answers.append(output["answer"])
             if output["answer"] == "yes":
@@ -268,6 +289,17 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         )
         submitted = harness.submit(claimed["ticket"], submitted_output)
         assert submitted.accepted, (task_id, submitted.errors)
+        if task_id in trimmed_tasks:
+            assert f"{task_id}: 字数の上限で切り詰め" in submitted.warnings
+            task_dir = data_dir / "runs" / run_id / "tasks" / task_id
+            if task["type"] == "S7.detail":
+                stored = (task_dir / "output.md").read_text(encoding="utf-8")
+                fixed_text = submitted.value
+            else:
+                stored = json.loads((task_dir / "output.json").read_text(encoding="utf-8"))
+                fixed_text = submitted.value[trim_arguments["field"]]
+            assert stored == submitted.value
+            assert fixed_text == expected_fixed_text
         current = _manifest(data_dir, run_id)
         invalidated_s7 = invalidated_s7 or any(
             task_name.startswith("S7.event-")
@@ -283,6 +315,14 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     assert comparison_answers.count("yes") == 1
     assert comparison_answers and all(answer in {"yes", "no"} for answer in comparison_answers)
     assert invalidated_s7
+    assert set(trim_counts) == {
+        "S4.section", "S4.item", "S5.personality", "S5.values", "S5.backstory",
+        "S5.relationship", "S5.voice", "S5.inner_conflict", "S7.detail",
+    }
+    assert trim_counts["S4.section"] == 2
+    for task_id in trimmed_tasks:
+        assert final_manifest["tasks"][task_id]["tries"] == 0
+        assert f"{task_id}: 字数の上限で切り詰め" in final_manifest["warnings"]
 
     run_dir = data_dir / "runs" / run_id
     story_path = run_dir / "story" / "story.json"

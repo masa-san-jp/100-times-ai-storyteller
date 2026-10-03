@@ -1,5 +1,5 @@
 id: S5.name
-version: 1
+version: 2
 kind: llm
 inputs:
   name_sound:
@@ -18,6 +18,12 @@ card:
 validate:
   schema: schemas/tasks/S5.name.schema.json
   checks:
+    - min_chars:
+        field: name
+        n: 1
+    - min_chars:
+        field: reading
+        n: 1
     - sources_exist
     - uses_given:
         field: reading

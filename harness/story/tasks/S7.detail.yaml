@@ -1,5 +1,5 @@
 id: S7.detail
-version: 1
+version: 2
 kind: llm
 inputs:
   when:
@@ -81,4 +81,5 @@ validate:
         n: 1500
     - max_chars:
         n: 2500
+        fix: trim
 max_input_chars: 5000

@@ -1,5 +1,5 @@
 id: S5.intro
-version: 1
+version: 2
 kind: llm
 inputs:
   character:
@@ -43,6 +43,9 @@ card:
 validate:
   schema: schemas/tasks/S5.intro.schema.json
   checks:
+    - min_chars:
+        field: intro
+        n: 1
     - sources_exist
     - ends_complete:
         field: intro

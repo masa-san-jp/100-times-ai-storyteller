@@ -6,10 +6,10 @@
   "additionalProperties": false,
   "required": ["values", "sources"],
   "properties": {
-    "values": {"type": "string", "minLength": 1, "maxLength": 800},
+    "values": {"type": "string"},
     "sources": {"$ref": "#/$defs/sources"}
   },
   "$defs": {
-    "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+    "sources": {"type": "array", "minItems": 1, "items": {"type": "string"}}
   }
 }

@@ -1,5 +1,5 @@
 id: S5.appearance
-version: 1
+version: 2
 kind: llm
 inputs:
   character:
@@ -43,6 +43,9 @@ card:
 validate:
   schema: schemas/tasks/S5.appearance.schema.json
   checks:
+    - min_chars:
+        field: appearance
+        n: 1
     - sources_exist
     - max_chars:
         field: appearance

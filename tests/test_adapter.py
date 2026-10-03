@@ -20,7 +20,7 @@ from storyteller.adapter import (
 from storyteller.dev.dummy import create_dummy_orchestrator
 from storyteller.new_run import create_story_orchestrator
 from storyteller.orchestrator import TaskSpec
-from storyteller.validation import SchemaValidationError, validate_document
+from storyteller.validation import load_yaml, validate_document, validate_output
 
 
 class _OllamaHandler(BaseHTTPRequestHandler):
@@ -141,17 +141,20 @@ def test_ollama_payload_strips_length_constraints_including_nested(
     assert schema["$defs"]["sources"]["items"]["maxLength"] == 20
 
 
-def test_submission_validation_still_enforces_original_max_length() -> None:
-    schema_path = (
-        Path(__file__).resolve().parents[1] / "schemas" / "tasks" / "S5.intro.schema.json"
-    )
-    too_long = {"intro": "あ" * 51, "sources": ["S1"]}
+def test_submission_validation_enforces_max_length_with_task_checks() -> None:
+    root = Path(__file__).resolve().parents[1]
+    schema_path = root / "schemas/tasks/S5.intro.schema.json"
+    definition = load_yaml(root / "harness/story/tasks/S5.intro.yaml")
+    inputs = {"character": {"id": "c1"}}
+    too_long = {"intro": "あ" * 50 + "。", "sources": ["c1"]}
 
-    with pytest.raises(SchemaValidationError):
-        validate_document(too_long, schema_path)
+    assert validate_document(too_long, schema_path) == too_long
+    rejected = validate_output(definition, json.dumps(too_long), inputs=inputs)
+    assert not rejected.passed
+    assert any("max_chars" in error for error in rejected.errors)
 
-    ok = {"intro": "あ" * 50, "sources": ["S1"]}
-    assert validate_document(ok, schema_path) == ok
+    ok = {"intro": "あ" * 49 + "。", "sources": ["c1"]}
+    assert validate_output(definition, json.dumps(ok), inputs=inputs).passed
 
 
 def test_non_local_endpoint_is_rejected() -> None:
