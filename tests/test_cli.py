@@ -1,23 +1,23 @@
 import io
 import json
 import os
-import shutil
 import subprocess
-import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import jsonschema
+import pytest
 
 from storyteller.cli import build_parser, main
 from storyteller.new_run import create_story_orchestrator
 from storyteller.orchestrator import SubmissionResult, TaskSpec
+from tests.support.dummy_clock import FIXED_TIME, dummy_clock, st_command
 
 
-def _st_command() -> list[str]:
-    executable = shutil.which("st")
-    if executable is not None:
-        return [executable]
-    return [sys.executable, "-m", "storyteller.cli"]
+@pytest.fixture(autouse=True)
+def freeze_dummy_clock():
+    with dummy_clock():
+        yield
 
 
 def _run_st(
@@ -26,11 +26,12 @@ def _run_st(
     input: str | None = None,
     cwd: Path | None = None,
     timeout: float = 30,
+    now: datetime = FIXED_TIME,
 ) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment["STORYTELLER_HOME"] = str(data_dir)
     return subprocess.run(
-        [*_st_command(), *arguments],
+        [*st_command(now), *arguments],
         input=input,
         text=True,
         encoding="utf-8",
@@ -53,7 +54,7 @@ def _run_st_with_cp1252_stdio(
     environment["STORYTELLER_HOME"] = str(data_dir)
     environment["PYTHONIOENCODING"] = "cp1252"
     return subprocess.run(
-        [*_st_command(), *arguments],
+        [*st_command(), *arguments],
         input=input,
         capture_output=True,
         cwd=cwd,
@@ -73,7 +74,6 @@ def _claim(data_dir: Path, run_id: str) -> dict[str, str]:
     result = _run_st(data_dir, "next", "--run", run_id, "--json")
     assert result.returncode == 0, result.stderr
     claim = json.loads(result.stdout)
-    _extend_claim_lease(data_dir, run_id, claim["ticket"])
     return claim
 
 
@@ -98,22 +98,6 @@ def _task_id_for_ticket(data_dir: Path, run_id: str, ticket: str) -> str:
         if (task.get("claim") or {}).get("ticket") == ticket:
             return task_id
     raise AssertionError(f"ticket が見つかりません: {ticket}")
-
-
-def _extend_claim_lease(data_dir: Path, run_id: str, ticket: str) -> None:
-    """Keep subprocess fixtures independent of the dummy's three-second lease."""
-    task_id = _task_id_for_ticket(data_dir, run_id, ticket)
-    task_dir = data_dir / "runs" / run_id / "tasks" / task_id
-    claim_path = task_dir / "claim.json"
-    claim_payload = json.loads(claim_path.read_text(encoding="utf-8"))
-    claim_payload["lease_expires_at"] = "2099-01-01T00:00:00Z"
-    claim_path.write_text(json.dumps(claim_payload) + "\n", encoding="utf-8")
-
-    manifest = _load_manifest(data_dir, run_id)
-    manifest["tasks"][task_id]["claim"]["lease_expires_at"] = (
-        "2099-01-01T00:00:00Z"
-    )
-    _save_manifest(data_dir, run_id, manifest)
 
 
 def _drain_run(data_dir: Path, run_id: str) -> None:
@@ -180,6 +164,8 @@ def test_mixed_story_and_dummy_runs_use_manifest_harness_kind_for_next_and_submi
 ) -> None:
     data_dir = tmp_path / "data"
     story = create_story_orchestrator(data_dir)
+    # Keep creation order explicit when mixing a story run with the frozen dummy.
+    story._clock = lambda: FIXED_TIME - timedelta(seconds=1)
     story_run_id = story.create_run(
         task_specs=[TaskSpec("S1.extract-p001", "S1.extract", index=("p001",))],
         seed=0x100001,
@@ -394,12 +380,13 @@ def test_subprocess_exit_code_three_covers_missing_and_expired_tickets(tmp_path)
     expired_data = tmp_path / "expired"
     run_id = _new_dummy(expired_data, seed=11)
     claim = _claim(expired_data, run_id)
-    task_id = _task_id_for_ticket(expired_data, run_id, claim["ticket"])
-    claim_path = expired_data / "runs" / run_id / "tasks" / task_id / "claim.json"
-    claim_payload = json.loads(claim_path.read_text(encoding="utf-8"))
-    claim_payload["lease_expires_at"] = "2000-01-01T00:00:00Z"
-    claim_path.write_text(json.dumps(claim_payload) + "\n", encoding="utf-8")
-    expired = _run_st(expired_data, "submit", claim["ticket"], input="{}")
+    expired = _run_st(
+        expired_data,
+        "submit",
+        claim["ticket"],
+        input="{}",
+        now=FIXED_TIME + timedelta(seconds=3),
+    )
     assert expired.returncode == 3
 
 

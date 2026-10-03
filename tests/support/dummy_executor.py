@@ -3,24 +3,18 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
-import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
+
+from tests.support.dummy_clock import FIXED_TIME, st_command
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 WORKER_SCRIPT = Path(__file__).with_name("dummy_next_worker.py")
-
-
-def _st_command() -> list[str]:
-    executable = shutil.which("st")
-    if executable is not None:
-        return [executable]
-    return [sys.executable, "-m", "storyteller.cli"]
 
 
 @dataclass(frozen=True)
@@ -39,9 +33,12 @@ class Claim:
 class DummyExecutor:
     """Drive the dummy harness using only ``st next`` and ``st submit``."""
 
-    def __init__(self, data_dir: Path, run_id: str | None = None) -> None:
+    def __init__(
+        self, data_dir: Path, run_id: str | None = None, *, now: datetime = FIXED_TIME
+    ) -> None:
         self.data_dir = data_dir
         self.run_id = run_id
+        self.now = now
 
     @property
     def environment(self) -> dict[str, str]:
@@ -118,6 +115,7 @@ class DummyExecutor:
                         str(result_path),
                         str(self.data_dir),
                         self.run_id or "",
+                        self.now.isoformat(),
                     ],
                     cwd=REPOSITORY_ROOT,
                     env=self.environment,
@@ -136,7 +134,7 @@ class DummyExecutor:
         input: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [*_st_command(), *arguments],
+            [*st_command(self.now), *arguments],
             input=input,
             text=True,
             encoding="utf-8",
@@ -153,8 +151,3 @@ def item_id_from_card(card: str) -> str | None:
     if match is None:
         return None
     return next(group for group in match.groups() if group is not None)
-
-
-def sleep_for_dummy_lease() -> None:
-    """Wait only the configured three-second dummy lease."""
-    time.sleep(3.0)

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from pathlib import Path
 
 from tests.support.dummy_executor import (
     DummyExecutor,
     Response,
     item_id_from_card,
-    sleep_for_dummy_lease,
 )
 
 
@@ -133,11 +133,23 @@ def test_expired_dummy_lease_can_be_reclaimed_by_another_executor(tmp_path: Path
     first = first_executor.next()
     assert first is not None
 
-    sleep_for_dummy_lease()
+    # The lease remains valid before its boundary, regardless of process speed.
+    second_executor = DummyExecutor(
+        data_dir, run_id, now=first_executor.now + timedelta(seconds=2)
+    )
+    before_expiry = second_executor.next()
+    assert before_expiry is not None
+    assert before_expiry.ticket != first.ticket
+    task_dir = data_dir / "runs" / run_id / "tasks" / "D2.echo-d1"
+    assert json.loads((task_dir / "claim.json").read_text(encoding="utf-8"))[
+        "ticket"
+    ] == first.ticket
+    assert not (task_dir / "claim.expired.1.json").exists()
 
-    second_executor = DummyExecutor(data_dir, run_id)
+    second_executor.now += timedelta(seconds=1)
     second = second_executor.next()
     assert second is not None
     assert second.ticket != first.ticket
-    task_dir = data_dir / "runs" / run_id / "tasks" / "D2.echo-d1"
-    assert (task_dir / "claim.expired.1.json").is_file()
+    expired_path = task_dir / "claim.expired.1.json"
+    assert json.loads(expired_path.read_text(encoding="utf-8"))["ticket"] == first.ticket
+    assert second_executor.submit(first, Response({"text": "old"})).returncode == 3
