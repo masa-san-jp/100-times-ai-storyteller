@@ -1,5 +1,5 @@
 id: S6.expand
-version: 2
+version: 3
 kind: code
 handler: story_s6_expand
 inputs:

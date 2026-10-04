@@ -6,6 +6,8 @@ from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from storyteller.story_s6 import allocate_stage_counts, story_s6_expand
 from storyteller.scale import derive_scale
 from storyteller.tables import load_table
@@ -218,21 +220,25 @@ def test_s6_adds_chronological_s7_s8_s9_dependencies() -> None:
             assert f"S7.detail-{event_id}-b{int(beat_id) - 1}" in detail.deps
 
 
-def test_s6_creates_the_volume_allocated_number_of_detail_tasks() -> None:
+@pytest.mark.parametrize("with_scale", [False, True])
+def test_s6_creates_the_volume_allocated_number_of_detail_tasks(with_scale: bool) -> None:
     assignment = _assignment()
     context = _context(assignment)
     scale = derive_scale("short", seed=7, repository_root=ROOT).value
     scale["derived"]["events"] = sum(
         thread["events"] for thread in assignment["threads"]
     )
-    context.scale = scale
+    if with_scale:
+        context.scale = scale
 
     result = story_s6_expand(context)
     allocation = compute_initial_volume(scale, repository_root=ROOT)["story"]
     detail_tasks = [task for task in result.add_tasks if task.type == "S7.detail"]
 
     assert len(detail_tasks) == sum(allocation["scene_counts"])
+    assert len(detail_tasks) == 67
     assert sum(allocation["scene_counts"]) * allocation["scene_chars"] >= 100_000
+    assert len(detail_tasks) * 1500 >= 100_000
     assert all(len(slot["beats"]) >= 1 for slot in result.output["slots"])
     assert result.output["slots"][0]["beats"][0]["id"] == "opening"
 

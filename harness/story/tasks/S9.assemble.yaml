@@ -1,5 +1,5 @@
 id: S9.assemble
-version: 1
+version: 2
 kind: code
 handler: story_s9_assemble
 inputs:
