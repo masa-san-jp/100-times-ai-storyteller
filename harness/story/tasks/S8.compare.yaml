@@ -1,5 +1,5 @@
 id: S8.compare
-version: 2
+version: 3
 kind: llm
 inputs:
   event_a:
@@ -32,4 +32,6 @@ validate:
     - count:
         field: sources
         n: 2
-max_input_chars: 3000
+# Both descriptions contain validated event fields of at most 120 characters.
+# Their complete bounded objects fit; head/tail only shorten strings or arrays.
+max_input_chars: 2800

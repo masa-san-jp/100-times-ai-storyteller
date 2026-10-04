@@ -1,5 +1,5 @@
 id: S2.expand
-version: 2
+version: 3
 kind: llm
 inputs:
   material:
@@ -17,6 +17,7 @@ inputs:
     from: S2.plan
     select: cliches.phrases
     required: true
+    truncate: head
 output: json
 card:
   role: 与えられた一つの素材と一つの要素の軸だけを手がかりに、具体的で意外性のある要素を作る。

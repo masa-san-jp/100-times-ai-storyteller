@@ -1,5 +1,5 @@
 id: S5.catchphrase
-version: 2
+version: 3
 kind: llm
 inputs:
   character:
@@ -12,6 +12,7 @@ inputs:
     from: S5.motive
     select: "[{slot}].motive"
     required: true
+    truncate: head
   role_definition:
     label: 役の定義
     from: S3.assign
@@ -27,6 +28,7 @@ inputs:
     from: S5.name
     select: "[c1].name"
     required: false
+    truncate: head
   protagonist_role:
     label: 主人公の役
     from: S3.assign
@@ -37,6 +39,7 @@ inputs:
     from: S5.intro
     select: "[c1].intro"
     required: false
+    truncate: head
 output: json
 card:
   role: 人物の動機と役割にふさわしい決め台詞を書く。

@@ -1,5 +1,5 @@
 id: S5.motive
-version: 2
+version: 3
 kind: llm
 inputs:
   character:
@@ -12,11 +12,13 @@ inputs:
     from: S5.name
     select: "[{slot}].name"
     required: true
+    truncate: head
   profile:
     label: プロフィール
     from: S5.profile
     select: "[{slot}].profile"
     required: true
+    truncate: head
   other_characters:
     label: 他の人物の役
     from: S3.assign
@@ -28,6 +30,7 @@ inputs:
     from: S5.name
     select: output
     required: true
+    truncate: head
   role_definition:
     label: 役の定義
     from: S3.assign
@@ -43,6 +46,7 @@ inputs:
     from: S5.name
     select: "[c1].name"
     required: false
+    truncate: head
   protagonist_role:
     label: 主人公の役
     from: S3.assign
@@ -53,6 +57,7 @@ inputs:
     from: S5.intro
     select: "[c1].intro"
     required: false
+    truncate: head
 output: json
 card:
   role: 人物のプロフィールと周囲の人物から、その人物の動機を書く。

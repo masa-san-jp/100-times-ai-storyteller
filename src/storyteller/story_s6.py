@@ -460,10 +460,26 @@ def _select_world_sections(
             {
                 "id": section_id,
                 "name": world_by_id[section_id]["name"],
-                "body": joined[:1200],
+                "body": _world_excerpt(joined, 1200),
             }
         )
     return result
+
+
+def _world_excerpt(body: str, budget: int) -> str:
+    """Keep a leading sequence of complete paragraphs whenever it fits."""
+    if len(body) <= budget:
+        return body
+    prefix = body[:budget]
+    # Facets are joined by newlines, and paragraphs inside a facet retain
+    # their newlines. Do not start a later paragraph without room to finish.
+    boundary = body.rfind("\n", 0, budget + 1)
+    if boundary > 0:
+        return body[:boundary].rstrip()
+    # A single paragraph can exceed the whole excerpt budget. In that case,
+    # prefer its last complete sentence over a mid-sentence cut.
+    sentence_end = max(prefix.rfind(mark) for mark in "。！？!?.")
+    return prefix[:sentence_end + 1] if sentence_end >= 0 else prefix
 
 
 def _interleave_threads(

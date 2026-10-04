@@ -1,5 +1,5 @@
 id: S4.section
-version: 4
+version: 5
 kind: llm
 inputs:
   section:
@@ -12,6 +12,7 @@ inputs:
     from: S3.assign
     select: world_tasks[{slot}].viewpoint
     required: true
+    truncate: head
   cut:
     label: 切り口の要素
     from: S3.assign
@@ -62,4 +63,4 @@ validate:
         fix: trim
     - no_new_proper_nouns:
         mode: warn
-max_input_chars: 24000
+max_input_chars: 2800

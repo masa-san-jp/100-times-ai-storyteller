@@ -1,5 +1,5 @@
 id: S4.item
-version: 4
+version: 5
 kind: llm
 inputs:
   section:
@@ -17,6 +17,7 @@ inputs:
     from: S4.item_name
     select: "[{slot}].name"
     required: true
+    truncate: head
   place:
     label: 物語の場所
     from: S3.assign
@@ -62,4 +63,4 @@ validate:
         fix: trim
     - no_new_proper_nouns:
         mode: warn
-max_input_chars: 24000
+max_input_chars: 2800

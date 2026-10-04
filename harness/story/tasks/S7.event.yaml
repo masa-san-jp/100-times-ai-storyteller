@@ -1,5 +1,5 @@
 id: S7.event
-version: 2
+version: 3
 kind: llm
 inputs:
   stage_definition:
@@ -17,6 +17,7 @@ inputs:
     from: S6.expand
     select: slots[{slot}].required_events
     required: true
+    truncate: head
   absent_role_note:
     label: 不在の役の注記
     from: S6.expand
@@ -32,11 +33,13 @@ inputs:
     from: S6.expand
     select: slots[{slot}].characters
     required: true
+    truncate: head
   world_sections:
     label: 選択された世界セクション
     from: S6.expand
     select: slots[{slot}].world_sections
     required: true
+    truncate: head
   previous_result:
     label: 同じ筋の直前の出来事の結果
     from: S8.judge
@@ -123,5 +126,5 @@ validate:
         n: 120
     - no_new_proper_nouns:
         mode: warn
-max_input_chars: 5000
+max_input_chars: 2800
 max_invalidations: 2

@@ -2222,6 +2222,18 @@ def _prepare_card_inputs(
     continuation actually becomes necessary.
     """
     budget = int(definition.get("max_input_chars", 3000))
+    collection_slot = {
+        "S5.motive": "names", "S5.relationship": "other_person",
+    }.get(definition.get("id"))
+    if collection_slot is not None and isinstance(inputs.get(collection_slot), Mapping):
+        # Indexed name outputs are a collection, not a single object. Expose
+        # its entries as an array so the defined head rule can shorten it by
+        # person while keeping each retained person's source ID explicit.
+        inputs = dict(inputs)
+        inputs[collection_slot] = [
+            {"id": person_id, **value}
+            for person_id, value in inputs[collection_slot].items()
+        ]
     if definition.get("output") == "text" and definition.get("extend_to_min") and budget > 1000:
         reserved = dict(definition, max_input_chars=budget - 1000)
         try:
