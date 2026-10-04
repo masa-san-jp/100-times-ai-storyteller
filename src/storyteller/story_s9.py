@@ -18,6 +18,7 @@ from .validation import validate_document
 from .task_outputs import read_task_output
 from .volume import multiplier_for_preset
 from .glossary import build_glossary, render_glossary_markdown
+from .world_facts import render_world_facts_markdown
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -48,10 +49,11 @@ _VOLUME_LABELS: dict[str, str] = {"characters": "人物", "world": "世界", "st
 
 
 def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
-    """Assemble, validate, and persist the canonical story's four files.
+    """Assemble, validate, and persist the canonical story and its references.
 
     Writes ``story/story.json``, ``story.md`` (events), ``characters.md``
-    (cast) and ``world.md`` (world sections), and records any volume
+    (cast), ``world.md`` (world sections), ``world_facts.md`` and ``glossary.md``,
+    and records any volume
     shortfall against story-pipeline.md §8 as manifest warnings.
     """
 
@@ -74,12 +76,13 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
     characters_markdown = render_characters_markdown(story)
     world_markdown = render_world_markdown(story)
     glossary_markdown = render_glossary_markdown(build_glossary(outputs))
+    world_facts_markdown = render_world_facts_markdown(assignment, outputs)
 
     volume, warnings = _compute_volume(
         manifest,
         {
             "characters": characters_markdown,
-            "world": world_markdown,
+            "world": world_markdown + world_facts_markdown,
             "story": story_markdown,
         },
     )
@@ -93,6 +96,7 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
     atomic_write_text(story_dir / "characters.md", characters_markdown, encoding="utf-8")
     atomic_write_text(story_dir / "world.md", world_markdown, encoding="utf-8")
     atomic_write_text(story_dir / "glossary.md", glossary_markdown, encoding="utf-8")
+    atomic_write_text(story_dir / "world_facts.md", world_facts_markdown, encoding="utf-8")
     return CodeTaskResult(
         output=story,
         manifest_updates={"warnings": warnings} if warnings else {},
@@ -459,7 +463,10 @@ def _validate_references(
         known_ids.add(story["world"]["theme"]["id"])
     for section in story["world"]["sections"]:
         known_ids.add(section["id"])
-    world_tasks = assignment.get("world_tasks") if isinstance(assignment, Mapping) else None
+    world_tasks = (
+        [*assignment.get("world_tasks", []), *assignment.get("world_fact_tasks", [])]
+        if isinstance(assignment, Mapping) else None
+    )
     if isinstance(world_tasks, list):
         for world_task in world_tasks:
             if not isinstance(world_task, Mapping):

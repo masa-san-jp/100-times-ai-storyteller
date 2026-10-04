@@ -1,7 +1,12 @@
 id: S4.section
-version: 7
+version: 8
 kind: llm
 inputs:
+  facts:
+    label: 今回の観点の事実
+    from: S4.facts
+    select: output
+    required: true
   section:
     label: 世界セクションの定義
     from: S3.assign
@@ -54,6 +59,7 @@ extend_to_min: true
 card:
   role: 与えられた定義と観点だけを使って、世界セクションの本文を書く。
   steps:
+    - 事実と矛盾させない。事実にない数値・固有名詞を加えない。
     - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 物語の place・era の要素や前提セクションの文を言い換えて書き始めない。観点と切り口から書き始める。
     - 入力された世界セクションの定義と今回の観点だけを確認し、切り口の要素を使って場所と時代に合う本文を800〜1500字で書く。

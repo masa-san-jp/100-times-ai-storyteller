@@ -75,6 +75,7 @@ def _definitions(material_kind: str = "suppression") -> dict[str, dict[str, obje
         "S4.section": _llm_definition("S4.section"),
         "S4.item": _llm_definition("S4.item"),
         "S4.item_name": _llm_definition("S4.item_name"),
+        "S4.facts": _llm_definition("S4.facts"),
         "S4.diversity": _code_definition("S4.diversity", "diversity"),
         "S5.relationship_context": _code_definition(
             "S5.relationship_context", "relationship_context"
@@ -229,7 +230,9 @@ def test_s3_assignment_is_schema_valid_and_adds_the_phase1_dag(tmp_path: Path) -
         task_id for task_id in manifest["tasks"] if task_id.startswith("S4.section-place-")
     ]
     assert place_tasks
-    assert all(manifest["tasks"][task_id]["deps"] == ["S3.assign"] for task_id in place_tasks)
+    assert all(manifest["tasks"][task_id]["deps"] == [
+        "S3.assign", "S4.facts-" + task_id.removeprefix("S4.section-").rsplit("-f", 1)[0]
+    ] for task_id in place_tasks)
     assert manifest["tasks"]["S6.expand"]["deps"][0] == "S3.assign"
     assert len(manifest["tasks"]["S6.expand"]["deps"]) > 1
 
@@ -398,6 +401,10 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
             for dependency in s4_by_section.get(prerequisite, [])
         ]
         expected_deps = ["S3.assign", *prerequisite_ids]
+        key = task_id.removeprefix("S4.section-").removeprefix("S4.item-")
+        if task_id.startswith("S4.section-"):
+            key = key.rsplit("-f", 1)[0]
+        expected_deps.append(f"S4.facts-{key}")
         if task_id.startswith("S4.item-"):
             name_id = task_id.replace("S4.item-", "S4.item_name-", 1)
             expected_deps.append(name_id)

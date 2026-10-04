@@ -24,8 +24,9 @@ def _context(tmp_path: Path, bodies: list[str], counts: list[int] | None = None)
         task_specs=[
             TaskSpec("S2.merge", "S2.merge"),
             TaskSpec("S3.assign", "S3.assign", deps=("S2.merge",)),
+            TaskSpec("S4.facts-place-1", "S4.facts", deps=("S3.assign",), index=("place-1",)),
         ] + [
-            TaskSpec(task_id, "S4.section", deps=("S3.assign",), index=(task_id.removeprefix("S4.section-"),))
+            TaskSpec(task_id, "S4.section", deps=("S3.assign", "S4.facts-place-1"), index=(task_id.removeprefix("S4.section-"),))
             for task_id in facet_ids
         ] + [TaskSpec("S4.diversity-place", "S4.diversity", deps=tuple(facet_ids), index=("place",))],
     )
@@ -163,6 +164,7 @@ def test_real_harness_adopts_similar_output_at_limit_after_restarts(tmp_path: Pa
         ],
     }
     harness._complete_task(context.run_id, "S3.assign", assignment)
+    harness._complete_task(context.run_id, "S4.facts-place-1", {"facts": [], "glossary": []})
     submitted_ids: list[str] = []
     for _ in range(5):
         harness = create_story_orchestrator(tmp_path / "data")

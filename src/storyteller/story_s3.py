@@ -14,6 +14,7 @@ from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 from .tables import element_rows, load_table
 from .validation import validate_document
 from .volume import apply_volume_update, compute_character_volume, compute_initial_volume
+from .world_facts import assign_world_fact_tasks, fact_key
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -89,6 +90,10 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         world,
         r,
         repository_root,
+    )
+    assignment["world_fact_tasks"] = assign_world_fact_tasks(
+        assignment["world_sections"], assignment["world_tasks"],
+        load_table("name_sounds", repository_root=repository_root)["sets"], context.random,
     )
     validate_document(assignment, repository_root / "schemas" / "story" / "assignment.schema.json")
 
@@ -729,6 +734,22 @@ def _build_downstream_tasks(
 
     # Build dependencies only after every selected section has an ID.  The
     # catalog order is not guaranteed to be a topological order.
+    fact_ids_by_section = {
+        section_id: [f"S4.facts-{entry['id']}" for entry in assignment["world_fact_tasks"]
+                     if entry["section_id"] == section_id]
+        for section_id in selected_ids
+    }
+    for entry in assignment["world_fact_tasks"]:
+        section = section_by_id[entry["section_id"]]
+        name_deps = (f"S4.item_name-{entry['id']}",) if section["kind"] == "list" else ()
+        additions.append(TaskSpec(
+            f"S4.facts-{entry['id']}", "S4.facts",
+            deps=_unique_dependencies((parent_task_id, *name_deps, *(
+                task_id for prerequisite in section["prerequisites"]
+                for task_id in fact_ids_by_section.get(prerequisite, [])
+            ))),
+            index=(entry["id"],),
+        ))
     for section_id, section, section_tasks in section_specs:
         prerequisite_ids = [
             task_id
@@ -738,7 +759,7 @@ def _build_downstream_tasks(
         deps = _unique_dependencies((parent_task_id, *prerequisite_ids))
         task_type = "S4.section" if section["kind"] == "single" else "S4.item"
         for world_task in section_tasks:
-            item_deps = deps
+            item_deps = (*deps, f"S4.facts-{fact_key(world_task)}")
             if task_type == "S4.item":
                 name_id = f"S4.item_name-{world_task['id']}"
                 additions.append(
@@ -747,7 +768,7 @@ def _build_downstream_tasks(
                         index=(world_task["id"],),
                     )
                 )
-                item_deps = (*deps, name_id)
+                item_deps = (*item_deps, name_id)
             additions.append(
                 TaskSpec(
                     f"{task_type}-{world_task['id']}",

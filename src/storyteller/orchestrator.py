@@ -3095,6 +3095,20 @@ def _source_outputs(
             source_value = _summarize_world_items(source_value)
         if slot_name == "prerequisite_sections" and slot == "S4.section":
             source_value = _summarize_world_sections(source_value)
+        if slot_name == "prerequisite_facts" and slot == "S4.facts":
+            # Whole sheets can be removed by the existing list truncation;
+            # the surviving sheets keep their numeric values and units intact.
+            source_value = [
+                {"id": key.rsplit("-", 1)[0], "facts": value["facts"]}
+                for key, value in source_value.items()
+            ]
+        if slot_name == "facts" and slot == "S4.facts":
+            from .world_facts import facts_for_card
+            source_value = {
+                _dependency_index_key(dependency, manifest["tasks"][dependency]):
+                    facts_for_card(dependency, dependency_outputs[dependency])
+                for dependency in matching
+            }
         result[slot] = source_value
     return result
 

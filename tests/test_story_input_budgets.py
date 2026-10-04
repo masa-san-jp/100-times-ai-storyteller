@@ -45,6 +45,8 @@ def _assert_fits(task_type, inputs):
 def test_world_prerequisites_with_twenty_long_facets_fit(task_type):
     facets = [{"body": "面" * 1199 + "。"} for _ in range(20)]
     fitted = _assert_fits(task_type, {
+        "facts": {"customs-1": {"facts": [{"name": "水路", "value": 200, "unit": "m",
+                                            "year": 12, "calendar": "開拓暦", "count": 1}]}},
         "section": {"id": "customs", "name": "風習", "definition": "暮らしの風習。"},
         "viewpoint": "日々の暮らし。", "cut": {"id": "place:t1", "text": "水路"},
         "name": "カナ", "place": {"id": "place:t1", "text": "水路"},

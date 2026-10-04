@@ -425,7 +425,12 @@ class AutoRunner:
                 definition = orchestrator.task_definitions[
                     orchestrator.load_run(claim_info["run_id"])["tasks"][claim_info["task_id"]]["type"]
                 ]
-                schema = self._load_schema(definition, orchestrator)
+                fact_inputs = (
+                    json.loads((orchestrator.task_dir(claim_info["run_id"], claim_info["task_id"])
+                                / "input.json").read_text(encoding="utf-8"))
+                    if definition.get("id") == "S4.facts" else None
+                )
+                schema = self._load_schema(definition, orchestrator, inputs=fact_inputs)
                 mode = self.state.current(self.model)["json_mode"]
                 response = adapter.complete(claim["card"], schema=schema, json_mode=mode)
                 empty_response = not response.content.strip()
@@ -521,9 +526,13 @@ class AutoRunner:
         self,
         definition: Mapping[str, Any],
         orchestrator: Orchestrator,
+        *,
+        inputs: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any] | None:
         if definition.get("output") != "json" or self.state.current(self.model)["json_mode"] != "schema":
             return None
+        if definition.get("id") == "S4.facts" and inputs is not None:
+            return inputs["fact_schema"]
         schema_ref = (definition.get("validate") or {}).get("schema")
         if not isinstance(schema_ref, str):
             return None
