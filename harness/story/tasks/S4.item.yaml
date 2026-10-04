@@ -1,5 +1,5 @@
 id: S4.item
-version: 6
+version: 7
 kind: llm
 inputs:
   section:
@@ -43,11 +43,18 @@ inputs:
     from: S4.item
     select: output
     truncate: head
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: text
 extend_to_min: true
 card:
   role: 与えられた定義と観点だけを使って、一覧型世界セクションの1項目を書く。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 物語の place・era の要素や前提セクションの文を言い換えて書き始めない。観点と切り口から書き始める。
     - 入力された世界セクションの定義を確認し、切り口の要素を使って与えられた名前の項目の本文だけを書く。
     - 本文は600〜1200字とし、場所・時代・プロット型に合う具体性を持たせる。
@@ -65,5 +72,5 @@ validate:
         n: 1200
         fix: trim
     - no_new_proper_nouns:
-        mode: warn
+        mode: fail
 max_input_chars: 2800

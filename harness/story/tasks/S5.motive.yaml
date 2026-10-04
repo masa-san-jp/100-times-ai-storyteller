@@ -1,5 +1,5 @@
 id: S5.motive
-version: 4
+version: 5
 kind: llm
 inputs:
   character:
@@ -58,10 +58,17 @@ inputs:
     select: "[c1].intro"
     required: false
     truncate: head
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: json
 card:
   role: 人物のプロフィールと周囲の人物から、その人物の動機を書く。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 名前、役、プロフィール、他の人物の名前と役の関係から、動機を1つ書く。
     - 主人公には抑圧されている自己像が入力されていれば、それを動機の緊張として反映する。
     - プロット型の人物要件と、非主人公の場合に与えられた主人公の名前・役・紹介に沿い、120字以内で書く。
@@ -70,6 +77,8 @@ card:
 validate:
   schema: schemas/tasks/S5.motive.schema.json
   checks:
+    - no_new_proper_nouns:
+        mode: fail
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml

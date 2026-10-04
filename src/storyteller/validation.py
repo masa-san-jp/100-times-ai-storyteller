@@ -122,6 +122,7 @@ def validate_output(
     harness_root: str | Path | None = None,
     common_words_path: str | Path | None = None,
     index: Sequence[str] | str | None = None,
+    registered_names: Sequence[str] = (),
 ) -> ValidationResult:
     """Validate one LLM output according to ``task_definition``.
 
@@ -184,6 +185,7 @@ def validate_output(
                 inputs=slot_values,
                 harness_root=harness_root,
                 common_words_path=common_words_path,
+                registered_names=registered_names,
             )
         except ValidationConfigurationError:
             raise
@@ -291,6 +293,7 @@ def _run_check(
     inputs: Mapping[str, Any],
     harness_root: str | Path | None,
     common_words_path: str | Path | None,
+    registered_names: Sequence[str] = (),
 ) -> tuple[list[str], list[str]]:
     if name == "no_copy_from_inputs":
         root = Path(harness_root) if harness_root is not None else _DEFAULT_HARNESS_ROOT
@@ -456,6 +459,11 @@ def _run_check(
             harness_root=harness_root,
             common_words_path=common_words_path,
         )
+        allowed_words.update(registered_names)
+        allowed_words.update(
+            wrapped for name in registered_names
+            for wrapped in (f"「{name}」", f"『{name}』")
+        )
         candidates = sorted(
             {
                 candidate
@@ -466,7 +474,7 @@ def _run_check(
         )
         if not candidates:
             return [], []
-        message = f"no_new_proper_nouns: 新しい固有名詞候補: {', '.join(candidates)}"
+        message = f"no_new_proper_nouns: 未登録の固有名詞候補: {', '.join(candidates)}"
         if mode == "warn":
             return [], [message]
         return [message], []

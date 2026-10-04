@@ -1,5 +1,5 @@
 id: S5.appearance
-version: 5
+version: 6
 kind: llm
 inputs:
   character:
@@ -34,16 +34,25 @@ inputs:
     from: S3.assign
     select: cast[c1].role
     required: false
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: text
 extend_to_min: true
 card:
   role: 割り当てられた属性とプロフィールから、人物の外見と魅力を書く。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 年齢、性別、種族、体格、装いを具体的に含める。
     - 外見的な特徴だけでなく、その人物の魅力が伝わるようにする。
     - 400〜800字を目安に書き、入力にない属性を付け加えない。
 validate:
   checks:
+    - no_new_proper_nouns:
+        mode: fail
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml

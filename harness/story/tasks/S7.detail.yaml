@@ -1,5 +1,5 @@
 id: S7.detail
-version: 5
+version: 6
 kind: llm
 inputs:
   when:
@@ -65,12 +65,19 @@ inputs:
     select: output
     required: false
     truncate: tail
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: text
 extend_to_min: true
 continuation: true
 card:
   role: 出来事の一つの場面を、正本として説明的に詳述する。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 出来事の when・where・who・why・intent・what・result・emotion を、入力された内容から正確に引き継ぐ。
     - 場面の働きの定義に従い、この場面で起きたことと人物の行動を三人称で具体的に説明する。
     - 登場人物の名前・役・紹介・口調と、選択された世界の抜粋だけを使う。入力にない人物、出来事、設定を加えない。
@@ -79,6 +86,8 @@ card:
     - 1500〜2500字を目安に、場面の説明だけを完結した文章で書く。
 validate:
   checks:
+    - no_new_proper_nouns:
+        mode: fail
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml

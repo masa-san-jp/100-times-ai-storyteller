@@ -30,6 +30,7 @@ from .cards import (
 from .cache import cache_key, lookup_cache, save_cache
 from .task_outputs import read_task_output
 from .story_quality import join_continuation
+from .glossary import build_glossary, registration_outputs, related_glossary, registered_names
 from .manifest import load_manifest, write_manifest
 from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
@@ -776,6 +777,9 @@ class Orchestrator:
                 harness_root=self.definition_root,
                 common_words_path=self.repository_root / "tables" / "common_words.yaml",
                 index=task["index"],
+                registered_names=registered_names(build_glossary(
+                    registration_outputs(run_dir, manifest)
+                )) if "glossary" in definition.get("inputs", {}) else (),
             )
             if continuation_warnings:
                 validation = ValidationResult(
@@ -1603,6 +1607,24 @@ class Orchestrator:
         )
         run_input = _read_run_input(self.run_dir(run_id))
         try:
+            if "glossary" in definition.get("inputs", {}):
+                # Supplement the assignment view with a derived glossary;
+                # the persisted assignment and registration outputs stay intact.
+                base_definition = {**definition, "inputs": {
+                    name: slot for name, slot in definition["inputs"].items()
+                    if name != "glossary"
+                }}
+                base_inputs = resolve_inputs(
+                    base_definition, source_outputs, run_input, index=task["index"]
+                )
+                registrations = registration_outputs(self.run_dir(run_id), manifest)
+                assignment = registrations.get("S3.assign", {})
+                source_outputs["S3.assign"] = {
+                    **source_outputs.get("S3.assign", {}),
+                    "glossary": related_glossary(
+                        build_glossary(registrations), assignment, base_inputs, task["index"]
+                    ),
+                }
             inputs = resolve_inputs(
                 definition,
                 source_outputs,

@@ -278,6 +278,15 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         assert 2 * len(claimed["card"]) + model["max_tokens"] <= model["context_length"], task_id
         assert "### 物語の素材" in claimed["card"] or "### 作り方の指示" in claimed["card"]
         assert "作り方の指示は本文に書かず" in claimed["card"]
+        if task["type"] == "S5.intro" and "noun" not in quality_rejections:
+            assert inputs["glossary"]
+            assert all("registered_task" not in entry for entry in inputs["glossary"])
+            rejected_output = {**output, "intro": "ゼラフィナを訪ねる人物。"}
+            rejected = harness.submit(claimed["ticket"], json.dumps(rejected_output, ensure_ascii=False))
+            assert not rejected.accepted and any("未登録の固有名詞" in error for error in rejected.errors)
+            quality_rejections.add("noun")
+            rejected_tasks.add(task_id)
+            continue
         if task["type"] == "S5.profile" and "meta" not in quality_rejections:
             rejected = harness.submit(claimed["ticket"], "名前の響き" + output)
             assert not rejected.accepted and any("avoid_listed" in error for error in rejected.errors)
@@ -380,7 +389,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
 
     final_manifest = _manifest(data_dir, run_id)
     assert final_manifest["status"] == "completed"
-    assert quality_rejections == {"meta", "copy"}
+    assert quality_rejections == {"meta", "copy", "noun"}
     if long_inputs:
         assert len([name for name in final_manifest["tasks"] if name.startswith("S4.section-place-")]) >= 10
     assert sent_comparison_yes
@@ -431,6 +440,9 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     markdown_path = run_dir / "story" / "story.md"
     assert story_path.is_file()
     assert markdown_path.is_file()
+    glossary_path = run_dir / "story" / "glossary.md"
+    glossary_markdown = glossary_path.read_text(encoding="utf-8")
+    assert "| ID | 名前 | 読み | 種類 | 定義 | 登録したタスク |" in glossary_markdown
     story = json.loads(story_path.read_text(encoding="utf-8"))
     assert story["cast"][0]["sources"]
     for section in story["world"]["sections"]:
