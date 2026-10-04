@@ -9,7 +9,7 @@
 |---|---|
 | 何を作るのかを知る | [VISION.md](VISION.md) → [GLOSSARY.md](GLOSSARY.md) |
 | 先行リポジトリとの関係を知る | [LINEAGE.md](LINEAGE.md) |
-| 実装・改修する | [spec/architecture.md](spec/architecture.md) → 担当箇所の spec → [plan/ROADMAP.md](plan/ROADMAP.md) → 担当フェーズの計画書 |
+| 実装・改修する | [spec/architecture.md](spec/architecture.md) → 担当箇所の spec → §2.2で管理場所を確認 → 作業Issue、または未移行の [plan/ROADMAP.md](plan/ROADMAP.md) と担当フェーズの計画書 |
 | なぜそう決めたのかを知る | [adr/](adr/) |
 | 文書・コードの変更手順を知る | [../CONTRIBUTING.md](../CONTRIBUTING.md)、[process/implementation.md](process/implementation.md) |
 
