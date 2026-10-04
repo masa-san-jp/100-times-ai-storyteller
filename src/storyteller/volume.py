@@ -269,17 +269,18 @@ def _allocate_story(
     event_count: int,
     volume_table: Mapping[str, Any],
 ) -> dict[str, Any]:
-    beat_median = _median(volume_table["task_chars"]["story_beat"])
+    # §10 uses the lower bound so even minimum-length scenes meet the floor.
+    beat_minimum = volume_table["task_chars"]["story_beat"][0]
     target_chars = volume_table["floor_chars"]["story"] * multiplier
-    total_beats = max(event_count, math.ceil(target_chars / beat_median))
+    total_beats = max(event_count, math.ceil(target_chars / beat_minimum))
     base, extra = divmod(total_beats, event_count)
     scene_counts = [base + (1 if index < extra else 0) for index in range(event_count)]
 
     return {
         "target_chars": target_chars,
-        "scene_chars": beat_median,
+        "scene_chars": beat_minimum,
         "scene_counts": scene_counts,
-        "total_chars": sum(scene_counts) * beat_median,
+        "total_chars": sum(scene_counts) * beat_minimum,
     }
 
 

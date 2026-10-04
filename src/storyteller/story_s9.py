@@ -23,11 +23,6 @@ from .glossary import build_glossary, render_glossary_markdown
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _STORY_SCHEMA = _REPOSITORY_ROOT / "schemas" / "story.schema.json"
 
-# 文型に差し込む値から末尾の句読点を取り除く（story-pipeline.md S9 手順2）。
-_TRAILING_PUNCTUATION = "。、"
-# why の末尾のこれらは、文型の「ために」と重複するので取り除く（長い語を先に試す）。
-_WHY_SUFFIXES = ("ために", "ため", "から")
-
 # S7.detail のタスクID（docs/plan/phase-1.md: S7.detail-e<3桁>-b<番号>）。
 _DETAIL_TASK_ID = re.compile(r"^S7\.detail-(e[0-9]+)-b([0-9]+)$")
 
@@ -506,7 +501,7 @@ def render_story_markdown(story: Mapping[str, Any], details: Mapping[str, str] |
     """Render story.md: event summaries, each followed by its scene detail.
 
     ``details`` maps an event ID to its S7.detail text (already joined across
-    beats). An empty mapping renders the summary sentences alone, which keeps
+    beats). An empty mapping renders the summary fields alone, which keeps
     the renderer useful for partial assembly contexts.
     """
 
@@ -517,16 +512,18 @@ def render_story_markdown(story: Mapping[str, Any], details: Mapping[str, str] |
 
     lines = [f"# {title_plot}：{protagonist['name']}", ""]
     for index, event in enumerate(story["events"], start=1):
-        names = "、".join(
-            _strip_trailing_punctuation(cast_names[person_id]) for person_id in event["who"]
-        )
-        when = _strip_trailing_punctuation(event["when"])
-        where = _strip_trailing_punctuation(event["where"])
-        why = _strip_why_suffix(event["why"])
-        what = _strip_trailing_punctuation(event["what"])
-        result = _strip_trailing_punctuation(event["result"])
-        lines.append(
-            f"{index}. {when}、{where}で、{names}が、{why}ために、{what}。その結果、{result}。"
+        names = "、".join(cast_names[person_id] for person_id in event["who"])
+        lines.extend(
+            [
+                f"## {index}. {event['stage']['name']}",
+                "",
+                f"- いつ：{event['when']}",
+                f"- どこで：{event['where']}",
+                f"- 誰が：{names}",
+                f"- 目的：{event['why']}",
+                f"- 行動：{event['what']}",
+                f"- 結果：{event['result']}",
+            ]
         )
         detail = details.get(event["id"])
         if detail:
@@ -580,22 +577,6 @@ def _role_names(*, repository_root: Path = _REPOSITORY_ROOT) -> dict[str, str]:
         role["id"]: role["name"]
         for role in load_table("roles", repository_root=repository_root)["roles"]
     }
-
-
-def _strip_trailing_punctuation(value: str) -> str:
-    """Drop trailing 。／、 so the sentence template does not double them up."""
-
-    return value.rstrip(_TRAILING_PUNCTUATION)
-
-
-def _strip_why_suffix(value: str) -> str:
-    """Drop a trailing ため／から／ために so ...ために does not repeat it."""
-
-    stripped = _strip_trailing_punctuation(value)
-    for suffix in _WHY_SUFFIXES:
-        if stripped.endswith(suffix):
-            return stripped[: -len(suffix)]
-    return stripped
 
 
 def _collect_event_details(outputs: Mapping[str, Any]) -> dict[str, str]:

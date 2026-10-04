@@ -201,10 +201,9 @@ def _fake_output(
         }
 
     if task_type == "S7.detail":
-        # Keep the harness fixture inside tables/volume.yaml's story_beat
-        # range so S9 can verify the short-scale floor using real text output.
+        # Minimum-length scenes must still reach the short-scale floor (§10).
         sentence = "人物は場面の状況を確認し、行動の結果を受け止めた。"
-        return (sentence + f"場面{task_id}の記述。") * 45
+        return sentence + _filler_text(task_id, "場面の記述", 1500 - len(sentence))
 
     if task_type == "S8.compare":
         event_a = inputs["event_a"]["id"]
@@ -352,7 +351,9 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
                 assert isinstance(output, str)
                 minimum = next(check["min_chars"]["n"] for check in definition["validate"]["checks"] if "min_chars" in check)
                 prefix = _filler_text(task_id, "書き足す前の説明", minimum // 2) + "\n\n"
-                continuation_outputs[task_id] = prefix + output[len(prefix):]
+                # Blank lines do not contribute to min_chars; retain exactly
+                # the original text length even for minimum-length scenes.
+                continuation_outputs[task_id] = prefix + output[len(prefix.rstrip()):]
                 output = prefix
                 extended_types.add(task["type"])
                 extended_tasks.add(task_id)
@@ -453,6 +454,15 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     story_markdown = markdown_path.read_text(encoding="utf-8")
     assert "人物は場面の状況を確認し、行動の結果を受け止めた。" in story_markdown
     assert story["meta"]["volume"]["story"]["chars"] >= 100_000
+    scene_counts = final_manifest["scale"]["derived"]["volume"]["story"]["scene_counts"]
+    detail_tasks = [task for task in final_manifest["tasks"].values() if task["type"] == "S7.detail"]
+    assert len(detail_tasks) == sum(scene_counts) == 67
+    cast_names = {person["id"]: person["name"] for person in story["cast"]}
+    for event in story["events"]:
+        for label, field in (("いつ", "when"), ("どこで", "where"), ("目的", "why"), ("行動", "what"), ("結果", "result")):
+            assert f"- {label}：{event[field]}\n" in story_markdown
+        names = "、".join(cast_names[person_id] for person_id in event["who"])
+        assert f"- 誰が：{names}\n" in story_markdown
     assert story["meta"]["volume"]["world"]["chars"] >= 100_000
 
     outputs: dict[str, Any] = {}

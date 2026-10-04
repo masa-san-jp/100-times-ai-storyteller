@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
 
 from storyteller.scale import derive_scale
+from storyteller.tables import load_table
 from storyteller.volume import (
     VolumeError,
     apply_volume_update,
     compute_character_volume,
     compute_initial_volume,
     multiplier_for_preset,
+    _allocate_story,
 )
 
 
@@ -44,6 +47,12 @@ def test_initial_volume_meets_the_world_and_story_floor_for_every_scale(preset: 
     assert volume["story"]["total_chars"] >= 100_000 * multiplier
     assert len(volume["story"]["scene_counts"]) == scale["derived"]["events"]
     assert all(count >= 1 for count in volume["story"]["scene_counts"])
+    beat_minimum = load_table("volume", repository_root=ROOT)["task_chars"]["story_beat"][0]
+    counts = volume["story"]["scene_counts"]
+    assert sum(counts) * beat_minimum >= 100_000 * multiplier
+    assert sum(counts) == max(scale["derived"]["events"], math.ceil(100_000 * multiplier / beat_minimum))
+    assert volume["story"]["scene_chars"] == beat_minimum
+    assert max(counts) - min(counts) <= 1
     for section in volume["world"]["sections"]:
         if section["kind"] == "single":
             assert all(viewpoint["facet_count"] >= 1 for viewpoint in section["viewpoints"])
@@ -59,6 +68,19 @@ def test_initial_volume_is_deterministic_given_the_same_scale(preset: str) -> No
     second = compute_initial_volume(scale, repository_root=ROOT)
 
     assert first == second
+
+
+@pytest.mark.parametrize(
+    "target, events, expected",
+    [(3000, 1, [2]), (3001, 1, [3]), (3001, 2, [2, 1]), (3001, 4, [1, 1, 1, 1])],
+)
+def test_story_allocation_rounds_up_and_keeps_one_scene_per_event(
+    target: int, events: int, expected: list[int],
+) -> None:
+    table = {"floor_chars": {"story": target}, "task_chars": {"story_beat": [1500, 2500]}}
+    allocation = _allocate_story(1, events, table)
+    assert allocation["scene_counts"] == expected
+    assert allocation["total_chars"] == sum(expected) * 1500
 
 
 def test_initial_volume_rejects_a_scale_with_no_single_world_section() -> None:

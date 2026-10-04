@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
@@ -604,7 +605,7 @@ def _finalise_slots(
 
 
 def _scene_counts(context: CodeTaskContext, event_count: int) -> list[int]:
-    """Read or calculate the §8 story allocation for chronological events."""
+    """Read or calculate the §8/§10 story allocation for chronological events."""
 
     scale = getattr(context, "scale", None)
     run_dir = getattr(context, "run_dir", None)
@@ -641,9 +642,16 @@ def _scene_counts(context: CodeTaskContext, event_count: int) -> list[int]:
         raise ValueError("分量配分の出来事数とS6のスロット数が一致しません")
 
     # Lightweight S6 unit contexts do not have a manifest.  Apply the same
-    # short-scale floor and median as volume.py so they still exercise the
+    # short-scale floor and lower bound as volume.py so they still exercise the
     # production-sized DAG rather than silently creating one scene per event.
-    total_beats = max(event_count, 50)  # ceil(100000 / median(1500, 2500))
+    volume_table = load_table("volume", repository_root=_REPOSITORY_ROOT)
+    total_beats = max(
+        event_count,
+        math.ceil(
+            volume_table["floor_chars"]["story"]
+            / volume_table["task_chars"]["story_beat"][0]
+        ),
+    )
     base, extra = divmod(total_beats, event_count)
     return [base + (1 if index < extra else 0) for index in range(event_count)]
 

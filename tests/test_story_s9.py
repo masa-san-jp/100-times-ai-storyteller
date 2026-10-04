@@ -150,7 +150,7 @@ def test_s9_includes_present_s5_items_in_characters_markdown(tmp_path: Path) -> 
     assert "人物関係" not in characters_md
 
 
-def test_s9_sentence_template_avoids_duplicated_endings(tmp_path: Path) -> None:
+def test_s9_summary_lists_fields_without_joining_sentences(tmp_path: Path) -> None:
     events = {
         "e001": _event(
             when="祭りの夜。",
@@ -159,21 +159,52 @@ def test_s9_sentence_template_avoids_duplicated_endings(tmp_path: Path) -> None:
             what="橋を渡った。",
             result="道が開けた、",
         ),
-        "e002": _event(why="事情を確かめたいから"),
+        # 実機で「受け入れたくてために」「頂上でで」が生じた語尾。
+        "e002": _event(where="丘の頂上で", why="自らの本質を受け入れたくて"),
         "e003": _event(why="約束を果たすために"),
+        "e004": _event(why="事情を確かめたいから"),
     }
     outputs = _base_outputs(events)
     context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
     story_s9_assemble(context)
     story_md = (context.run_dir / "story" / "story.md").read_text(encoding="utf-8")
-    assert "ためために" not in story_md
-    assert "からために" not in story_md
-    assert "。、" not in story_md
-    assert "、。" not in story_md
-    assert "、、" not in story_md
-    assert "大切な人を守るために" in story_md
-    assert "事情を確かめたいために" in story_md
-    assert "約束を果たすために" in story_md
+    for index, event in enumerate(events.values(), start=1):
+        assert (
+            f"## {index}. 始まり\n\n"
+            f"- いつ：{event['when']}\n"
+            f"- どこで：{event['where']}\n"
+            "- 誰が：カナ\n"
+            f"- 目的：{event['why']}\n"
+            f"- 行動：{event['what']}\n"
+            f"- 結果：{event['result']}\n"
+        ) in story_md
+    assert "頂上でで" not in story_md
+    assert "受け入れたくてために" not in story_md
+    assert "その結果、" not in story_md
+    story = json.loads((context.run_dir / "story" / "story.json").read_text(encoding="utf-8"))
+    for actual, expected in zip(story["events"], events.values()):
+        for field in ("when", "where", "who", "why", "what", "result"):
+            assert actual[field] == expected[field]
+
+
+def test_s9_summary_resolves_multiple_names_and_keeps_detail_in_event_order(tmp_path: Path) -> None:
+    outputs = _base_outputs({"e001": _event(who=["c1", "c2"]), "e002": _event()})
+    assignment = outputs["S3.assign"]
+    other = {**assignment["cast"][0], "id": "c2", "role": "supporter"}
+    assignment["cast"].append(other)
+    for task_id, value in list(outputs.items()):
+        if task_id.startswith("S5."):
+            outputs[task_id.replace("c1", "c2")] = {**value, "sources": ["c2"]}
+    outputs["S5.name-c2"] = {"name": "リオ", "reading": "リオ", "sources": ["sound-01"]}
+    outputs["S7.detail-e001-b2"] = "二番目の場面。"
+    outputs["S7.detail-e002-b1"] = "次の出来事の場面。"
+    outputs["S7.detail-e001-b1"] = "最初の場面。"
+    context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
+    story_s9_assemble(context)
+    story_md = (context.run_dir / "story" / "story.md").read_text(encoding="utf-8")
+    assert "- 誰が：カナ、リオ\n" in story_md
+    assert "- 結果：道が開いた\n\n最初の場面。\n\n二番目の場面。\n\n## 2. 始まり" in story_md
+    assert story_md.endswith("次の出来事の場面。\n")
 
 
 def test_s9_aggregates_volume_and_records_shortfall_warnings(tmp_path: Path) -> None:
