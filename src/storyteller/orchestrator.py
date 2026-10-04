@@ -29,6 +29,7 @@ from .cards import (
 )
 from .cache import cache_key, lookup_cache, save_cache
 from .task_outputs import read_task_output
+from .story_quality import join_continuation
 from .manifest import load_manifest, write_manifest
 from .seed import MAX_SEED, derive_task_seed, generated_seed, task_random
 from .selectors import SelectorError, resolve_inputs
@@ -702,6 +703,7 @@ class Orchestrator:
             definition.get("output") == "text" and definition.get("extend_to_min", False)
         )
         partial = _read_partial_output(self.task_dir(run_id, task_id))
+        continuation_warnings: tuple[str, ...] = ()
         if continuation and _is_truncated_submission(raw_output, truncated):
             if int(task.get("continuation_step", 0)) >= 2:
                 validation = ValidationResult(
@@ -746,7 +748,7 @@ class Orchestrator:
                 if not isinstance(raw_output, str):
                     submission_output = raw_output
                 else:
-                    submission_output = partial + raw_output
+                    submission_output, continuation_warnings = join_continuation(partial, raw_output)
             validation_definition = definition
             minimum = _minimum_text_chars(definition) if extend_to_min else 0
             short = (
@@ -775,6 +777,11 @@ class Orchestrator:
                 common_words_path=self.repository_root / "tables" / "common_words.yaml",
                 index=task["index"],
             )
+            if continuation_warnings:
+                validation = ValidationResult(
+                    validation.value, validation.errors,
+                    (*continuation_warnings, *validation.warnings),
+                )
             if short and validation.passed:
                 validation = ValidationResult(
                     validation.value,
@@ -1007,15 +1014,18 @@ class Orchestrator:
                 raise OrchestrationError("継続の上限に達しています")
             partial_path = self.task_dir(run_id, task_id) / "partial.md"
             previous = _read_partial_output(self.task_dir(run_id, task_id))
+            combined, warnings = join_continuation(previous, raw_output)
+            recorded_warnings = tuple(f"{task_id}: {warning}" for warning in warnings)
             atomic_write_text(
                 partial_path,
-                previous + raw_output,
+                combined,
                 encoding="utf-8",
             )
             at = self._now()
             task["continuation_step"] = continuation_step + 1
             task["cache_key"] = None
             task["error"] = None
+            manifest["warnings"].extend(recorded_warnings)
             _release_claim(run_dir, task_id, task)
             _set_task_state(
                 manifest,
@@ -1034,6 +1044,7 @@ class Orchestrator:
                 run_id,
                 task_id,
                 value=raw_output,
+                warnings=recorded_warnings,
             )
 
     def retry_failed(self, run_id: str, task_id: str) -> dict[str, Any]:

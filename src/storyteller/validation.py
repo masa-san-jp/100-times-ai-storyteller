@@ -20,6 +20,8 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 
+from .story_quality import body_texts, longest_common_substring
+
 
 class YamlValidationError(ValueError):
     """Base error for reading or validating a YAML document."""
@@ -290,6 +292,21 @@ def _run_check(
     harness_root: str | Path | None,
     common_words_path: str | Path | None,
 ) -> tuple[list[str], list[str]]:
+    if name == "no_copy_from_inputs":
+        root = Path(harness_root) if harness_root is not None else _DEFAULT_HARNESS_ROOT
+        settings = load_and_validate_yaml(
+            root / "tables/dedup.yaml", root / "schemas/tables/dedup.schema.json"
+        )
+        input_bodies = body_texts(inputs)
+        copied = max(
+            (longest_common_substring(text, input_bodies) for text in body_texts(output)),
+            key=_char_length, default="",
+        )
+        copied_chars = _char_length(copied)
+        if copied_chars >= settings["max_copy_chars"]:
+            return [f"no_copy_from_inputs: 入力の本文を丸写ししています（{copied_chars}字）: {copied}"], []
+        return [], []
+
     if name == "sources_exist":
         if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
             return ["sources_exist: sources が配列ではありません"], []

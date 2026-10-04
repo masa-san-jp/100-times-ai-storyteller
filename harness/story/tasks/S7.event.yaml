@@ -1,5 +1,5 @@
 id: S7.event
-version: 3
+version: 4
 kind: llm
 inputs:
   stage_definition:
@@ -75,6 +75,9 @@ card:
 validate:
   schema: schemas/tasks/S7.event.schema.json
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         field: when
         n: 1

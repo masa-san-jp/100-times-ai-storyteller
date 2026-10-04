@@ -1,5 +1,5 @@
 id: S4.item
-version: 5
+version: 6
 kind: llm
 inputs:
   section:
@@ -56,6 +56,9 @@ card:
     - 本文は入力をそのまま引用せず、抽象的に解釈して再構成する。
 validate:
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         n: 600
     - max_chars:

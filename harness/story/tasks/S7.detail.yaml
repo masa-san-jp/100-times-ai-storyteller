@@ -1,5 +1,5 @@
 id: S7.detail
-version: 4
+version: 5
 kind: llm
 inputs:
   when:
@@ -79,6 +79,9 @@ card:
     - 1500〜2500字を目安に、場面の説明だけを完結した文章で書く。
 validate:
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         n: 1500
     - max_chars:

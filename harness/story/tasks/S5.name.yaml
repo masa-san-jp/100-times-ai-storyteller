@@ -1,5 +1,5 @@
 id: S5.name
-version: 2
+version: 3
 kind: llm
 inputs:
   name_sound:
@@ -18,6 +18,9 @@ card:
 validate:
   schema: schemas/tasks/S5.name.schema.json
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         field: name
         n: 1

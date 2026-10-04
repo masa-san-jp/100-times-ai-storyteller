@@ -1,5 +1,5 @@
 id: S4.item_name
-version: 1
+version: 2
 kind: llm
 inputs:
   name_sound:
@@ -17,6 +17,9 @@ card:
 validate:
   schema: schemas/tasks/S4.item_name.schema.json
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         field: name
         n: 1

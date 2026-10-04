@@ -1,5 +1,5 @@
 id: S8.compare
-version: 3
+version: 4
 kind: llm
 inputs:
   event_a:
@@ -25,6 +25,9 @@ card:
 validate:
   schema: schemas/tasks/S8.compare.schema.json
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         field: reason
         n: 1

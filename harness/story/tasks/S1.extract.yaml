@@ -1,5 +1,5 @@
 id: S1.extract
-version: 2
+version: 3
 kind: llm
 inputs:
   paragraph:
@@ -19,6 +19,9 @@ card:
 validate:
   schema: schemas/tasks/S1.extract.schema.json
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         field: materials.0.text
         n: 10
