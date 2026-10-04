@@ -88,6 +88,7 @@ def test_s7_definition_and_schema_are_valid() -> None:
         "conflict",
         "climax",
         "theme",
+        "glossary",
     }
 
     result = validate_output(

@@ -1,5 +1,5 @@
 id: S5.personality
-version: 5
+version: 6
 kind: llm
 inputs:
   character:
@@ -34,16 +34,25 @@ inputs:
     from: S3.assign
     select: cast[c1].role
     required: false
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: text
 extend_to_min: true
 card:
   role: 割り当てられた属性とプロフィールから、人物の性格を書く。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 願望・能力・役割・課題から読み取れる気質や物事への向き合い方を、具体的な場面での振る舞いが想像できるように書く。
     - 長所だけでなく、短所や癖も1つ以上含める。
     - 500〜1000字を目安にし、入力にない出来事や関係を付け加えない。
 validate:
   checks:
+    - no_new_proper_nouns:
+        mode: fail
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml

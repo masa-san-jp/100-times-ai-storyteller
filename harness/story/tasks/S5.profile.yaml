@@ -1,5 +1,5 @@
 id: S5.profile
-version: 5
+version: 6
 kind: llm
 inputs:
   character:
@@ -34,16 +34,25 @@ inputs:
     from: S3.assign
     select: cast[c1].role
     required: false
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: text
 extend_to_min: true
 card:
   role: 与えられた人物の割り当てだけを統合し、プロフィールを書く。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 名前、役の定義、年齢、性別、種族、能力、願望、役割・課題を具体的に統合する。
     - 主人公には禁忌と抑圧されている自己像があれば反映し、他の人物には主人公の名前と役だけを文脈として反映する。
     - 入力にない出来事、場所、過去、人間関係、診断を付け加えず、800〜1500字を目安に書く。
 validate:
   checks:
+    - no_new_proper_nouns:
+        mode: fail
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml

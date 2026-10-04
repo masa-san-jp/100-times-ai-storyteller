@@ -1,5 +1,5 @@
 id: S5.values
-version: 5
+version: 6
 kind: llm
 inputs:
   character:
@@ -34,16 +34,25 @@ inputs:
     from: S3.assign
     select: cast[c1].role
     required: false
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: text
 extend_to_min: true
 card:
   role: 割り当てられた属性とプロフィールから、人物が重んじる価値観を書く。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - その人物が何を正しいと考え、何を許せないとするか、判断の基準になる価値観を具体的に書く。
     - 願望・役割・課題のどれかと結び付け、理由が分かるようにする。
     - 400〜800字を目安にし、入力にない出来事や関係を付け加えない。
 validate:
   checks:
+    - no_new_proper_nouns:
+        mode: fail
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml

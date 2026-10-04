@@ -1,5 +1,5 @@
 id: S8.compare
-version: 4
+version: 5
 kind: llm
 inputs:
   event_a:
@@ -12,6 +12,12 @@ inputs:
     from: S8.plan
     select: "[{slot}].current"
     required: true
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: json
 card:
   role: 与えられた2つの出来事の記述に矛盾があるかを確認する。

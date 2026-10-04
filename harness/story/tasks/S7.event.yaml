@@ -1,5 +1,5 @@
 id: S7.event
-version: 4
+version: 5
 kind: llm
 inputs:
   stage_definition:
@@ -60,11 +60,18 @@ inputs:
     from: S6.expand
     select: slots[{slot}].theme
     required: true
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: json
 candidates: 1
 card:
   role: 与えられた段階と局所的な文脈だけを使って、1つの出来事を書く。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 段階の定義と指針に従い、必須の出来事があればそれを満たす1つの出来事を組み立てる。
     - 割り当て人物のID・名前・役・動機、選択された世界セクション、直前の結果だけを使い、入力にない人物や出来事を加えない。
     - 不在の役の注記と象徴的な事物を反映する。クライマックスの条件が入力にある場合だけ、それと葛藤を反映し、解決すべき主題との関係を示す。
@@ -128,6 +135,6 @@ validate:
         field: foreshadowing
         n: 120
     - no_new_proper_nouns:
-        mode: warn
+        mode: fail
 max_input_chars: 2800
 max_invalidations: 2

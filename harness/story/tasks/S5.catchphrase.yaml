@@ -1,5 +1,5 @@
 id: S5.catchphrase
-version: 4
+version: 5
 kind: llm
 inputs:
   character:
@@ -40,16 +40,25 @@ inputs:
     select: "[c1].intro"
     required: false
     truncate: head
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
 output: json
 card:
   role: 人物の動機と役割にふさわしい決め台詞を書く。
   steps:
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 一人称で始まる1文を1つ書く。
     - 人物の口調、役割、動機が伝わる台詞にし、入力にない設定を付け加えず、文末まで完結させる。
   output_example: '{"catchphrase": "...", "sources": ["c1"]}'
 validate:
   schema: schemas/tasks/S5.catchphrase.schema.json
   checks:
+    - no_new_proper_nouns:
+        mode: fail
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml
