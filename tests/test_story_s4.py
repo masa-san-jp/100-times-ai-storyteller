@@ -116,7 +116,7 @@ def test_s4_card_contains_only_the_current_section_viewpoints() -> None:
     card = generate_task_card(
         definition,
         "ticket",
-        outputs={"S3.assign": _assignment()},
+        outputs={"S3.assign": _assignment(), "S4.facts": {"place-1": {"facts": []}}},
         index=("place-1-f1",),
     )
 
@@ -133,14 +133,16 @@ def test_s4_list_prerequisites_are_name_and_one_line_summaries() -> None:
             "S3.assign": {"type": "S3.assign", "state": "done"},
             "S4.item-people-001": {"type": "S4.item", "state": "done"},
             "S4.item_name-future-001": {"type": "S4.item_name", "state": "done"},
+            "S4.facts-future-001": {"type": "S4.facts", "state": "done"},
         }
     }
     task = {
-        "deps": ["S3.assign", "S4.item-people-001", "S4.item_name-future-001"],
+        "deps": ["S3.assign", "S4.item-people-001", "S4.item_name-future-001", "S4.facts-future-001"],
         "index": ["future-001"],
     }
     dependency_outputs = {
         "S3.assign": assignment,
+        "S4.facts-future-001": {"facts": []},
         "S4.item_name-future-001": {"name": "カナ", "reading": "カナ"},
         "S4.item-people-001": {
             "name": "記録係",

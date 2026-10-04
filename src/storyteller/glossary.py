@@ -101,7 +101,8 @@ def related_glossary(
 
     collect(inputs)
     world_tasks = {task["id"]: task for task in assignment.get("world_tasks", [])}
-    own_section = world_tasks.get(index[0], {}).get("section_id") if index else None
+    fact_tasks = {task["id"]: task for task in assignment.get("world_fact_tasks", [])}
+    own_section = {**world_tasks, **fact_tasks}.get(index[0], {}).get("section_id") if index else None
     sections = [section["id"] for section in assignment.get("world_sections", [])]
     result: list[dict[str, str]] = []
     for entry in glossary:

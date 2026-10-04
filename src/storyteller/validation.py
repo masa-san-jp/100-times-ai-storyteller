@@ -163,6 +163,9 @@ def validate_output(
             errors.append(f"schema: {error}")
 
     checks = validation.get("checks", [])
+    if task_definition.get("id") == "S4.facts":
+        from .world_facts import validate_world_facts
+        errors.extend(validate_world_facts(value, slot_values))
     if not isinstance(checks, list):
         raise ValidationConfigurationError("validate.checks must be a list")
     sources_checked = False

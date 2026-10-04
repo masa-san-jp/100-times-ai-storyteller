@@ -145,6 +145,16 @@ def _fake_output(
         reading = "".join(inputs["name_sound"]["sounds"][:2])
         return {"name": reading, "reading": reading}
 
+    if task_type == "S4.facts":
+        reading = "".join(inputs["name_sound"]["sounds"][:2])
+        row = {"name": reading, "value": 200, "unit": "m", "year": 12,
+               "calendar": "開拓暦", "count": 1}
+        properties = inputs["fact_schema"]["properties"]["facts"]["items"]["properties"]
+        row.update({field: "共同体の記録。" for field in properties if field not in row})
+        return {"facts": [row], "glossary": [{"name": reading, "reading": reading,
+                 "kind": "地名", "definition": "観測の基準となる地点。"}],
+                "sources": [inputs["place"]["id"]]}
+
     if task_type in {"S4.section", "S4.item"}:
         body = _filler_text(task_id, "世界の本文", 900 if task_type == "S4.item" else 1150)
         # Deterministic, distinct synthetic openings keep the shared fixture
@@ -390,6 +400,9 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
 
     final_manifest = _manifest(data_dir, run_id)
     assert final_manifest["status"] == "completed"
+    fact_tasks = {name: task for name, task in final_manifest["tasks"].items()
+                  if task["type"] == "S4.facts"}
+    assert fact_tasks and all(task["state"] == "done" for task in fact_tasks.values())
     assert quality_rejections == {"meta", "copy", "noun"}
     if long_inputs:
         assert len([name for name in final_manifest["tasks"] if name.startswith("S4.section-place-")]) >= 10
@@ -444,6 +457,19 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     glossary_path = run_dir / "story" / "glossary.md"
     glossary_markdown = glossary_path.read_text(encoding="utf-8")
     assert "| ID | 名前 | 読み | 種類 | 定義 | 登録したタスク |" in glossary_markdown
+    world_facts = (run_dir / "story" / "world_facts.md").read_text(encoding="utf-8")
+    assert "| 開拓暦 | 12 |" in world_facts
+    assert "200 | m | 12 | 開拓暦 | 1" in world_facts
+    for task_id, task in final_manifest["tasks"].items():
+        if task["type"] in {"S4.section", "S4.item"}:
+            card_input = _task_input(data_dir, run_id, task_id)
+            assert len(card_input["facts"]) == 1
+            sheet = next(iter(card_input["facts"].values()))
+            assert sheet["facts"][0]["value"] == 200
+            assert sheet["facts"][0]["unit"] == "m"
+            term = sheet["glossary"][0]
+            assert term["id"] in glossary_markdown
+            assert term["name"] in glossary_markdown
     story = json.loads(story_path.read_text(encoding="utf-8"))
     assert story["cast"][0]["sources"]
     for section in story["world"]["sections"]:
@@ -464,6 +490,10 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         names = "、".join(cast_names[person_id] for person_id in event["who"])
         assert f"- 誰が：{names}\n" in story_markdown
     assert story["meta"]["volume"]["world"]["chars"] >= 100_000
+    world_description = (run_dir / "story" / "world.md").read_text(encoding="utf-8")
+    assert story["meta"]["volume"]["world"]["chars"] > sum(
+        not char.isspace() for char in world_description
+    )
 
     outputs: dict[str, Any] = {}
     for task_id, task in final_manifest["tasks"].items():
