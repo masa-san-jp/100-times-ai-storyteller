@@ -11,6 +11,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+import yaml
+
+from storyteller.cards import input_char_count
 from storyteller.story_s9 import _validate_references
 from storyteller.validation import validate_document
 from storyteller.cli import main as cli_main
@@ -211,8 +215,10 @@ def _fake_output(
     raise AssertionError(f"未知の LLM タスクです: {task_type}")
 
 
+@pytest.mark.parametrize("long_inputs", [False, True], ids=["normal", "long-inputs"])
 def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     tmp_path: Path,
+    long_inputs: bool,
 ) -> None:
     data_dir = tmp_path / "data"
     free_input = tmp_path / "free.md"
@@ -237,6 +243,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     run_id = created.stdout.strip()
     assert RUN_ID.fullmatch(run_id)
     harness = create_story_orchestrator(data_dir)
+    model = yaml.safe_load((ROOT / "config/models.yaml").read_text(encoding="utf-8"))["models"]["gpt-oss:20b"]
 
     sent_comparison_yes = False
     comparison_answers: list[str] = []
@@ -261,6 +268,20 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             inputs,
             send_comparison_yes=is_comparison and not sent_comparison_yes,
         )
+        definition = harness.task_definitions[task["type"]]
+        assert input_char_count(definition, inputs) <= definition.get("max_input_chars", 3000)
+        # Conservative Japanese estimate: 2 tokens per card character, plus
+        # the model's full output allowance. Includes retries and scene tails.
+        assert 2 * len(claimed["card"]) + model["max_tokens"] <= model["context_length"], task_id
+        if long_inputs:
+            if task["type"] in {"S4.section", "S4.item"}:
+                output = output[:80] + _filler_text("世界", "本文", 1120)
+            elif task["type"] == "S5.profile":
+                output = _filler_text("人物", "項目", 1500)
+            elif task["type"] == "S5.voice":
+                output = _filler_text("人物", "口調", 800)
+            elif task["type"] == "S7.event":
+                output.update({field: "具体的な出来事の説明。" * 10 for field in output if isinstance(output[field], str)})
         if task["type"] == "S4.section":
             if not similar_facets:
                 similar_facets = sorted(
@@ -341,6 +362,8 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
 
     final_manifest = _manifest(data_dir, run_id)
     assert final_manifest["status"] == "completed"
+    if long_inputs:
+        assert len([name for name in final_manifest["tasks"] if name.startswith("S4.section-place-")]) >= 10
     assert sent_comparison_yes
     assert comparison_answers.count("yes") == 1
     assert comparison_answers and all(answer in {"yes", "no"} for answer in comparison_answers)

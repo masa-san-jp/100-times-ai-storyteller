@@ -218,31 +218,34 @@ def _truncate_value_until_fit(
     budget: int,
 ) -> Any:
     value = values[name]
-    candidates: list[Any]
     if isinstance(value, str):
         value = unicodedata.normalize("NFC", value)
         values[name] = value
-        candidates = (
-            [value[:size] for size in range(len(value) - 1, -1, -1)]
-            if mode == "head"
-            else [value[size:] for size in range(1, len(value) + 1)] + [""]
-        )
-    elif isinstance(value, list):
-        candidates = (
-            [value[:size] for size in range(len(value) - 1, -1, -1)]
-            if mode == "head"
-            else [value[size:] for size in range(1, len(value) + 1)] + [[]]
-        )
-    else:
+    elif not isinstance(value, list):
         return value
 
-    original = value
-    for candidate in candidates:
-        values[name] = candidate
+    # Keep reductions even when another slot still exceeds the budget. The
+    # next slot must see the shortened value, not the original long input.
+    # Rendering prefixes/suffixes grows monotonically, so find the longest
+    # fitting value without allocating every possible substring of long text.
+    def candidate(size: int) -> Any:
+        if mode == "head":
+            return value[:size]
+        return value[len(value) - size:] if size else value[:0]
+
+    values[name] = candidate(0)
+    if _input_char_count(definition, values) > budget:
+        return values[name]
+    low, high = 0, len(value) - 1
+    while low < high:
+        middle = (low + high + 1) // 2
+        values[name] = candidate(middle)
         if _input_char_count(definition, values) <= budget:
-            return candidate
-    values[name] = original
-    return original
+            low = middle
+        else:
+            high = middle - 1
+    values[name] = candidate(low)
+    return values[name]
 
 
 def _input_char_count(definition: Mapping[str, Any], values: Mapping[str, Any]) -> int:

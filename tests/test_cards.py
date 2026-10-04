@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from storyteller.cards import InputBudgetError, generate_task_card
+from storyteller.cards import InputBudgetError, generate_task_card, prepare_task_inputs
 from storyteller.selectors import SelectorError, resolve_inputs, resolve_selector
 
 
@@ -238,6 +238,20 @@ def test_required_input_that_cannot_be_truncated_is_an_error():
     })
     with pytest.raises(InputBudgetError, match="入力が予算を超える"):
         generate_task_card(task, "ticket", run_input={"items": "too long"})
+
+
+@pytest.mark.parametrize("mode", ["head", "tail"])
+@pytest.mark.parametrize("as_array", [False, True])
+def test_multiple_long_required_slots_keep_their_reductions(mode, as_array):
+    task = llm_task(max_input_chars=30, inputs={
+        name: {"label": name, "required": True, "truncate": mode}
+        for name in ("first", "second")
+    })
+    long_value = ["あ" * 1200] * 10 if as_array else "あ" * 12000
+    values = prepare_task_inputs(task, inputs={"first": long_value, "second": long_value})
+    assert values["second"] == ([] if as_array else "")
+    assert len(values["first"]) < len(long_value)
+    generate_task_card(task, "ticket", inputs=values)
 
 
 def test_retry_reason_and_continuation_tail_are_limited():

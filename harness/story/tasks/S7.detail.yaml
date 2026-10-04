@@ -1,5 +1,5 @@
 id: S7.detail
-version: 3
+version: 4
 kind: llm
 inputs:
   when:
@@ -52,11 +52,13 @@ inputs:
     from: S6.expand
     select: slots[{slot}].characters
     required: true
+    truncate: head
   world_sections:
     label: 選択された世界の抜粋
     from: S6.expand
     select: slots[{slot}].world_sections
     required: true
+    truncate: head
   previous_scene:
     label: 同じ出来事の直前の場面の末尾（最大600字）
     from: S7.detail
@@ -82,4 +84,4 @@ validate:
     - max_chars:
         n: 2500
         fix: trim
-max_input_chars: 6000
+max_input_chars: 2800

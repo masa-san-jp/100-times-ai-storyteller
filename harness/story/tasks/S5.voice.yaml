@@ -1,5 +1,5 @@
 id: S5.voice
-version: 3
+version: 4
 kind: llm
 inputs:
   character:
@@ -12,6 +12,7 @@ inputs:
     from: S5.profile
     select: "[{slot}].profile"
     required: true
+    truncate: head
   role_definition:
     label: 役の定義
     from: S3.assign
@@ -27,6 +28,7 @@ inputs:
     from: S5.name
     select: "[c1].name"
     required: false
+    truncate: head
   protagonist_role:
     label: 主人公の役
     from: S3.assign
@@ -47,4 +49,4 @@ validate:
     - max_chars:
         n: 800
         fix: trim
-max_input_chars: 5000
+max_input_chars: 2800
