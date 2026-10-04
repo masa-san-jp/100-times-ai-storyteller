@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from storyteller.selectors import resolve_inputs
+from storyteller.story_quality import split_card_inputs
 
 
 class TaskCardError(ValueError):
@@ -76,6 +77,7 @@ def generate_task_card(
         if not isinstance(step, str) or not step:
             raise TaskCardError("card.steps must contain non-empty strings")
         lines.append(f"{number}. {step}")
+    lines.append("作り方の指示は本文に書かず、指定された処理を行うためだけに使う。")
     if continuation_tail is not None:
         lines.append(
             "既出の文章を繰り返さず、同じ内容をさらに具体的に書き足す。"
@@ -266,18 +268,26 @@ def _render_input_body(
     slots = definition.get("inputs", {})
     if not isinstance(slots, Mapping):
         raise TaskCardError("task definition inputs must be a mapping")
+    material, instructions = split_card_inputs(values)
+    grouped = bool(instructions) or str(definition.get("id", "")).startswith("S")
+    last_heading = None
     for name, slot in slots.items():
-        if name not in values:
-            continue
-        if not isinstance(slot, Mapping) or not isinstance(slot.get("label"), str):
-            raise TaskCardError(f"input slot has no label: {name}")
-        lines.append(f"### {slot['label']}")
-        lines.append(
-            _render_value(
-                values[name],
-                context_only=name in {"role_definition", "plot_requirements"},
+        for heading, group in (("物語の素材", material), ("作り方の指示", instructions)):
+            if name not in group:
+                continue
+            if not isinstance(slot, Mapping) or not isinstance(slot.get("label"), str):
+                raise TaskCardError(f"input slot has no label: {name}")
+            if grouped and last_heading != heading:
+                lines.append(f"### {heading}")
+                last_heading = heading
+            level = "####" if grouped else "###"
+            lines.append(f"{level} {slot['label']}")
+            lines.append(
+                _render_value(
+                    group[name],
+                    context_only=name in {"role_definition", "plot_requirements"},
+                )
             )
-        )
     return "\n".join(lines)
 
 
@@ -318,10 +328,10 @@ def _prepare_mapping_for_card(
         elif key in {"id", "set_id"} and isinstance(item, str):
             prepared[key] = f"[{item}]"
         elif isinstance(item, Mapping):
-            prepared[key] = _prepare_mapping_for_card(item)
+            prepared[key] = _prepare_mapping_for_card(item, context_only=context_only)
         elif isinstance(item, list):
             prepared[key] = [
-                _prepare_mapping_for_card(entry) if isinstance(entry, Mapping) else entry
+                _prepare_mapping_for_card(entry, context_only=context_only) if isinstance(entry, Mapping) else entry
                 for entry in item
             ]
         else:

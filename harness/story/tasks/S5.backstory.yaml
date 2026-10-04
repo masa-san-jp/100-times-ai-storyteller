@@ -1,5 +1,5 @@
 id: S5.backstory
-version: 4
+version: 5
 kind: llm
 inputs:
   character:
@@ -44,6 +44,9 @@ card:
     - 1000〜2000字を目安にし、入力にない人物や出来事を付け加えない。
 validate:
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         n: 1000
     - max_chars:

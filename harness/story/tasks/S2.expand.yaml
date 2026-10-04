@@ -1,5 +1,5 @@
 id: S2.expand
-version: 3
+version: 4
 kind: llm
 inputs:
   material:
@@ -30,6 +30,9 @@ card:
 validate:
   schema: schemas/tasks/S2.expand.schema.json
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         field: items.0
         n: 10

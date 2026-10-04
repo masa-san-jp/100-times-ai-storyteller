@@ -1,5 +1,5 @@
 id: S5.profile
-version: 4
+version: 5
 kind: llm
 inputs:
   character:
@@ -44,6 +44,9 @@ card:
     - 入力にない出来事、場所、過去、人間関係、診断を付け加えず、800〜1500字を目安に書く。
 validate:
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         n: 800
     - max_chars:

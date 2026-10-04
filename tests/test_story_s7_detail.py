@@ -26,6 +26,8 @@ def test_s7_detail_is_text_with_the_volume_range_and_continuation() -> None:
     assert definition["output"] == "text"
     assert definition["continuation"] is True
     assert definition["validate"]["checks"] == [
+        "no_copy_from_inputs",
+        {"avoid_listed": {"table": "tables/meta_terms.yaml"}},
         {"min_chars": {"n": 1500}},
         {"max_chars": {"n": 2500, "fix": "trim"}},
     ]

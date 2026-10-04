@@ -227,6 +227,7 @@
         {
           "type": "string",
           "enum": [
+            "no_copy_from_inputs",
             "sources_exist",
             "max_chars",
             "min_chars",
@@ -244,6 +245,7 @@
           "maxProperties": 1,
           "additionalProperties": false,
           "properties": {
+            "no_copy_from_inputs": {"type": "object", "additionalProperties": false},
             "sources_exist": {},
             "max_chars": {"$ref": "#/$defs/max-char-check"},
             "min_chars": {"$ref": "#/$defs/char-check"},

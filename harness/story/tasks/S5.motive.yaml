@@ -1,5 +1,5 @@
 id: S5.motive
-version: 3
+version: 4
 kind: llm
 inputs:
   character:
@@ -70,6 +70,9 @@ card:
 validate:
   schema: schemas/tasks/S5.motive.schema.json
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         field: motive
         n: 1

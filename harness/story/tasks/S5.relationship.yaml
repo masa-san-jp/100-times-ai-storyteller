@@ -1,5 +1,5 @@
 id: S5.relationship
-version: 4
+version: 5
 kind: llm
 inputs:
   character:
@@ -50,6 +50,9 @@ card:
     - 300〜600字を目安に書く。
 validate:
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         n: 300
     - max_chars:

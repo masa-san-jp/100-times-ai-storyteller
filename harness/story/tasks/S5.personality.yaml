@@ -1,5 +1,5 @@
 id: S5.personality
-version: 4
+version: 5
 kind: llm
 inputs:
   character:
@@ -44,6 +44,9 @@ card:
     - 500〜1000字を目安にし、入力にない出来事や関係を付け加えない。
 validate:
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         n: 500
     - max_chars:

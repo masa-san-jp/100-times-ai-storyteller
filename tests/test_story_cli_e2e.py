@@ -19,6 +19,7 @@ from storyteller.story_s9 import _validate_references
 from storyteller.validation import validate_document
 from storyteller.cli import main as cli_main
 from storyteller.new_run import create_story_orchestrator
+from storyteller.story_quality import body_texts
 
 
 ROOT = Path(__file__).parents[1]
@@ -145,7 +146,7 @@ def _fake_output(
         return {"name": reading, "reading": reading}
 
     if task_type in {"S4.section", "S4.item"}:
-        body = _filler_text("世界", "本文", 900 if task_type == "S4.item" else 1150)
+        body = _filler_text(task_id, "世界の本文", 900 if task_type == "S4.item" else 1150)
         # Deterministic, distinct synthetic openings keep the shared fixture
         # from accidentally exercising the diversity retry limit everywhere.
         opening = "".join(chr(0x4E00 + byte) for byte in hashlib.shake_256(task_id.encode("utf-8")).digest(80))
@@ -181,7 +182,7 @@ def _fake_output(
         }
         minimum, maximum = volume_ranges[field]
         target_length = (minimum + maximum) // 2
-        return _filler_text("人物", "項目", target_length)
+        return _filler_text(task_id, field, target_length)
 
     if task_type == "S7.event":
         characters = inputs["characters"]
@@ -203,7 +204,7 @@ def _fake_output(
         # Keep the harness fixture inside tables/volume.yaml's story_beat
         # range so S9 can verify the short-scale floor using real text output.
         sentence = "人物は場面の状況を確認し、行動の結果を受け止めた。"
-        return sentence * 80
+        return (sentence + f"場面{task_id}の記述。") * 45
 
     if task_type == "S8.compare":
         event_a = inputs["event_a"]["id"]
@@ -255,6 +256,8 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     extended_tasks: set[str] = set()
     similar_facets: list[str] = []
     rewritten_s4 = False
+    quality_rejections: set[str] = set()
+    rejected_tasks: set[str] = set()
     for _ in range(500):
         claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
         if claimed is None:
@@ -273,15 +276,30 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         # Conservative Japanese estimate: 2 tokens per card character, plus
         # the model's full output allowance. Includes retries and scene tails.
         assert 2 * len(claimed["card"]) + model["max_tokens"] <= model["context_length"], task_id
+        assert "### 物語の素材" in claimed["card"] or "### 作り方の指示" in claimed["card"]
+        assert "作り方の指示は本文に書かず" in claimed["card"]
+        if task["type"] == "S5.profile" and "meta" not in quality_rejections:
+            rejected = harness.submit(claimed["ticket"], "名前の響き" + output)
+            assert not rejected.accepted and any("avoid_listed" in error for error in rejected.errors)
+            quality_rejections.add("meta")
+            rejected_tasks.add(task_id)
+            continue
+        input_body = next((text for text in body_texts(inputs) if len(text) >= 60), None)
+        if task["type"] == "S7.detail" and input_body and "copy" not in quality_rejections:
+            rejected = harness.submit(claimed["ticket"], input_body[:60] + output)
+            assert not rejected.accepted and any("no_copy_from_inputs" in error for error in rejected.errors)
+            quality_rejections.add("copy")
+            rejected_tasks.add(task_id)
+            continue
         if long_inputs:
             if task["type"] in {"S4.section", "S4.item"}:
-                output = output[:80] + _filler_text("世界", "本文", 1120)
+                output = output[:80] + _filler_text(task_id, "世界の本文", 1120)
             elif task["type"] == "S5.profile":
-                output = _filler_text("人物", "項目", 1500)
+                output = _filler_text(task_id, "profile", 1500)
             elif task["type"] == "S5.voice":
-                output = _filler_text("人物", "口調", 800)
+                output = _filler_text(task_id, "voice", 800)
             elif task["type"] == "S7.event":
-                output.update({field: "具体的な出来事の説明。" * 10 for field in output if isinstance(output[field], str)})
+                output.update({field: _filler_text(task_id, field, 120) for field in output if isinstance(output[field], str)})
         if task["type"] == "S4.section":
             if not similar_facets:
                 similar_facets = sorted(
@@ -324,8 +342,8 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             elif task["type"] not in extended_types and task_id not in trimmed_tasks:
                 assert isinstance(output, str)
                 minimum = next(check["min_chars"]["n"] for check in definition["validate"]["checks"] if "min_chars" in check)
-                prefix = "短い説明。" * (minimum // 12)
-                continuation_outputs[task_id] = output[len(prefix):]
+                prefix = _filler_text(task_id, "書き足す前の説明", minimum // 2) + "\n\n"
+                continuation_outputs[task_id] = prefix + output[len(prefix):]
                 output = prefix
                 extended_types.add(task["type"])
                 extended_tasks.add(task_id)
@@ -362,6 +380,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
 
     final_manifest = _manifest(data_dir, run_id)
     assert final_manifest["status"] == "completed"
+    assert quality_rejections == {"meta", "copy"}
     if long_inputs:
         assert len([name for name in final_manifest["tasks"] if name.startswith("S4.section-place-")]) >= 10
     assert sent_comparison_yes
@@ -399,11 +418,12 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     assert trim_counts["S4.section"] == 2
     assert extended_types == set(trim_counts)
     for task_id in extended_tasks:
-        assert final_manifest["tasks"][task_id]["tries"] == 0
+        assert final_manifest["tasks"][task_id]["tries"] == int(task_id in rejected_tasks)
         assert final_manifest["tasks"][task_id]["continuation_step"] == 1
+        assert any(warning.startswith(f"{task_id}: 継続の重複段落を除去") for warning in final_manifest["warnings"])
     assert not continuation_outputs
     for task_id in trimmed_tasks:
-        assert final_manifest["tasks"][task_id]["tries"] == 0
+        assert final_manifest["tasks"][task_id]["tries"] == int(task_id in rejected_tasks)
         assert f"{task_id}: 字数の上限で切り詰め" in final_manifest["warnings"]
 
     run_dir = data_dir / "runs" / run_id
