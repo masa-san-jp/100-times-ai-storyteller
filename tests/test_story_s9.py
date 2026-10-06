@@ -8,6 +8,7 @@ from storyteller.orchestrator import Orchestrator, TaskSpec
 from storyteller.manifest import write_manifest
 from storyteller.story_s9 import story_s9_assemble
 from storyteller.validation import validate_document
+from tests.test_character_facts import _output as _facts, _world_output
 
 
 ROOT = Path(__file__).parents[1]
@@ -48,6 +49,8 @@ def _base_outputs(events: dict[str, dict[str, object]]) -> dict[str, object]:
     }
     outputs: dict[str, object] = {
         "S3.assign": assignment,
+        "S5.facts-c1": _facts(),
+        "S4.facts-place-1": _world_output(),
         "S6.expand": slots,
         "S4.section-place": {"body": "水路の町の描写", "sources": ["place:t1"]},
     }
@@ -115,6 +118,9 @@ def test_s9_assembles_three_canonical_files_and_clears_last_foreshadowing(tmp_pa
     assert "## 世界" not in story_md
     assert "1. " in story_md
     assert "## カナ" in characters_md
+    assert characters_md.index("### 事実のシート") < characters_md.index("### 描写")
+    assert "| 身長（cm） | 170 |" in characters_md
+    assert story["meta"]["volume"]["characters"]["chars"] == sum(not char.isspace() for char in characters_md)
     assert "## 場の描写" in world_md
 
 

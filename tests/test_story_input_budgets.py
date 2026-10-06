@@ -6,6 +6,8 @@ import pytest
 import yaml
 
 from storyteller.cards import generate_task_card, input_char_count
+from storyteller.character_facts import sheet_for_card
+from tests.test_character_facts import _output as _facts, _glossary
 from storyteller.orchestrator import _prepare_card_inputs
 from storyteller.story_s6 import _select_world_sections, _world_excerpt
 from tests.test_story_s5 import _character, _s5_inputs
@@ -65,6 +67,7 @@ def test_world_prerequisites_with_twenty_long_facets_fit(task_type):
 ])
 def test_character_items_with_long_profile_fit(task_type):
     inputs = _s5_inputs("カナ", _character("adversary", "c2", "他者"))
+    inputs["facts"] = sheet_for_card(_facts(), _glossary())
     inputs["profile"] = "人" * 1499 + "。"
     inputs["other_person"] = {"c1": {"id": "c1", "name": "主人公名", "role": "protagonist", "intro": "紹介。"}}
     inputs["names"] = {f"c{i}": {"name": "名" * 1500} for i in range(1, 6)}

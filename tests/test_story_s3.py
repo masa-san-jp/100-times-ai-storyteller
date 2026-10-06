@@ -22,6 +22,7 @@ from storyteller.volume import multiplier_for_preset
 ROOT = Path(__file__).parents[1]
 ALL_S5_TYPES = (
     "S5.name",
+    "S5.facts",
     "S5.profile",
     "S5.intro",
     "S5.appearance",
@@ -438,18 +439,20 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
         motive_id = f"S5.motive-{person_id}"
         context_name_deps = [] if position == 0 else [protagonist_name_id]
         context_intro_deps = [] if position == 0 else [protagonist_intro_id]
-        parallel_deps = ["S3.assign", profile_id, *context_name_deps]
+        parallel_deps = ["S3.assign", profile_id, f"S5.facts-{person_id}", *context_name_deps]
         assert tasks[f"S5.name-{person_id}"]["deps"] == ["S3.assign"]
         assert tasks[profile_id]["deps"] == [
             "S3.assign",
             *context_name_deps,
             f"S5.name-{person_id}",
+            f"S5.facts-{person_id}",
         ]
         for field in ("intro", "appearance", "personality", "values", "voice", "inner_conflict"):
             assert tasks[f"S5.{field}-{person_id}"]["deps"] == parallel_deps
         assert tasks[motive_id]["deps"] == [
             "S3.assign",
             profile_id,
+            f"S5.facts-{person_id}",
             *name_ids,
             *context_intro_deps,
         ]
@@ -477,6 +480,7 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
         assert tasks[f"S5.catchphrase-{person_id}"]["deps"] == [
             "S3.assign",
             motive_id,
+            f"S5.facts-{person_id}",
             f"S5.personality-{person_id}",
             f"S5.values-{person_id}",
             f"S5.voice-{person_id}",

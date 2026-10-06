@@ -19,6 +19,7 @@ from .task_outputs import read_task_output
 from .volume import multiplier_for_preset
 from .glossary import build_glossary, render_glossary_markdown
 from .world_facts import render_world_facts_markdown
+from .character_facts import render_character_sheet
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -73,9 +74,10 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
 
     details = _collect_event_details(outputs)
     story_markdown = render_story_markdown(story, details)
-    characters_markdown = render_characters_markdown(story)
+    glossary = build_glossary(outputs)
+    characters_markdown = render_characters_markdown(story, outputs, glossary)
     world_markdown = render_world_markdown(story)
-    glossary_markdown = render_glossary_markdown(build_glossary(outputs))
+    glossary_markdown = render_glossary_markdown(glossary)
     world_facts_markdown = render_world_facts_markdown(assignment, outputs)
 
     volume, warnings = _compute_volume(
@@ -539,7 +541,10 @@ def render_story_markdown(story: Mapping[str, Any], details: Mapping[str, str] |
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def render_characters_markdown(story: Mapping[str, Any]) -> str:
+def render_characters_markdown(
+    story: Mapping[str, Any], outputs: Mapping[str, Any] | None = None,
+    glossary: Sequence[Mapping[str, str]] = (),
+) -> str:
     """Render characters.md: every present S5 item, per character."""
 
     roles = _role_names()
@@ -552,6 +557,9 @@ def render_characters_markdown(story: Mapping[str, Any]) -> str:
                 f"- よみ：{person['reading']}",
             ]
         )
+        if outputs is not None:
+            sheet = _mapping_output(outputs, f"S5.facts-{person['id']}")
+            lines.extend(["", render_character_sheet(sheet, glossary), "### 描写", ""])
         for field, label in _CHARACTER_FIELDS:
             value = person.get(field)
             if isinstance(value, str) and value:

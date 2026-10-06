@@ -107,7 +107,7 @@ def test_card_separates_nested_context_and_counts_both_groups():
                             "name_sound": {"set_id": "sound-01", "sounds": ["カ", "ナ"]},
                             "role_definition": {"id": "protagonist", "definition": "困難に挑む役"},
                             "plot_context": {"id": "quest", "name": "旅"}},
-              "name": "カナ"}
+              "name": "カナ", "facts": {"age": 30}}
     inputs["role_definition"] = inputs["character"]["role_definition"]
     inputs["plot_requirements"] = inputs["character"]["plot_context"]
     original = json.dumps(inputs, ensure_ascii=False)

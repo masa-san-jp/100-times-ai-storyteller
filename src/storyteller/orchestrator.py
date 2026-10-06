@@ -1610,6 +1610,14 @@ class Orchestrator:
             if "glossary" in definition.get("inputs", {}):
                 # Supplement the assignment view with a derived glossary;
                 # the persisted assignment and registration outputs stay intact.
+                registrations = registration_outputs(self.run_dir(run_id), manifest)
+                glossary = build_glossary(registrations)
+                if "S5.facts" in source_outputs:
+                    from .character_facts import sheet_for_card
+                    source_outputs["S5.facts"] = {
+                        key: sheet_for_card(sheet, glossary)
+                        for key, sheet in source_outputs["S5.facts"].items()
+                    }
                 base_definition = {**definition, "inputs": {
                     name: slot for name, slot in definition["inputs"].items()
                     if name != "glossary"
@@ -1617,12 +1625,11 @@ class Orchestrator:
                 base_inputs = resolve_inputs(
                     base_definition, source_outputs, run_input, index=task["index"]
                 )
-                registrations = registration_outputs(self.run_dir(run_id), manifest)
                 assignment = registrations.get("S3.assign", {})
                 source_outputs["S3.assign"] = {
                     **source_outputs.get("S3.assign", {}),
                     "glossary": related_glossary(
-                        build_glossary(registrations), assignment, base_inputs, task["index"]
+                        glossary, assignment, base_inputs, task["index"]
                     ),
                 }
             inputs = resolve_inputs(
@@ -3095,6 +3102,10 @@ def _source_outputs(
             source_value = _summarize_world_items(source_value)
         if slot_name == "prerequisite_sections" and slot == "S4.section":
             source_value = _summarize_world_sections(source_value)
+        if slot_name == "world_facts" and slot == "S4.facts":
+            from .character_facts import world_context
+            source_value = world_context({dependency: dependency_outputs[dependency]
+                                          for dependency in matching})
         if slot_name == "prerequisite_facts" and slot == "S4.facts":
             # Whole sheets can be removed by the existing list truncation;
             # the surviving sheets keep their numeric values and units intact.

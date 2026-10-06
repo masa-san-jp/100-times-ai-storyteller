@@ -384,6 +384,7 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
     }
     for task_type in (
         "S5.name",
+        "S5.facts",
         "S5.profile",
         "S5.intro",
         "S5.appearance",

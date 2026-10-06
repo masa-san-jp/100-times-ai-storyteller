@@ -1,0 +1,68 @@
+id: S5.facts
+version: 1
+kind: llm
+inputs:
+  character:
+    label: 割り当てられた人物
+    from: S3.assign
+    select: cast[{slot}]
+    required: true
+  name:
+    label: 名前
+    from: S5.name
+    select: "[{slot}].name"
+    required: true
+  role_definition:
+    label: 役の定義
+    from: S3.assign
+    select: cast[{slot}].role_definition
+    required: true
+  plot_requirements:
+    label: プロット型の人物要件
+    from: S3.assign
+    select: cast[{slot}].plot_context
+    required: true
+  protagonist_name:
+    label: 主人公の名前
+    from: S5.name
+    select: "[c1].name"
+    required: false
+    truncate: head
+  protagonist_role:
+    label: 主人公の役
+    from: S3.assign
+    select: cast[c1].role
+    required: false
+  world_facts:
+    label: 地名・所属・暦に関係する世界の事実
+    from: S4.facts
+    select: output
+    required: true
+    truncate: head
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
+output: json
+card:
+  role: 与えられた人物の属性と世界の事実から、客観的な事実のシートを定める。
+  steps:
+    - 年齢、生年、物語の暦、cm 単位の身長、体格、出身地、居住地、職業、所属、家族構成、年表、技能を定める。年齢・生年・身長・年表の年は数値で書く。
+    - 割り当てられた年齢・能力・役割・種族と矛盾させない。技能は能力の要素を具体化する。
+    - 世界の事実と用語集に従う。calendar は世界の事実の暦を使う。birthplace・residence・affiliation は入力に示した用語集 ID を使い、地名・組織名を新しく作らない。所属がなければ affiliation は null にする。
+    - 家族は続柄と用語集に登録済みの名前を記す。該当する家族がなければ空の配列にする。年表には出生以後の年と出来事を記し、世界の年代と矛盾させない。
+    - 主人公以外には主人公の名前と役だけを文脈として使う。作り方の指示を事実に書かない。
+    - sources には使った入力素材の ID を記す。
+  output_example: '{"age": 30, "birth_year": 12, "calendar": "...", "height_cm": 170, "build": "...", "birthplace": "...", "residence": "...", "occupation": "...", "affiliation": null, "family": [{"relationship": "...", "name": "..."}], "timeline": [{"year": 12, "event": "..."}], "skills": ["..."], "sources": ["c1"]}'
+validate:
+  schema: schemas/tasks/S5.facts.schema.json
+  checks:
+    - no_new_proper_nouns:
+        mode: fail
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
+    - sources_exist
+max_input_chars: 2500

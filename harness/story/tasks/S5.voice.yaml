@@ -1,7 +1,12 @@
 id: S5.voice
-version: 6
+version: 7
 kind: llm
 inputs:
+  facts:
+    label: 人物の事実のシート
+    from: S5.facts
+    select: "[{slot}]"
+    required: true
   character:
     label: 割り当てられた人物
     from: S3.assign
@@ -45,6 +50,7 @@ extend_to_min: true
 card:
   role: 割り当てられた属性とプロフィールから、人物の口調を書く。
   steps:
+    - 事実のシートに従い、年齢・生年・身長・出身地・居住地・所属・家族・年表・技能と矛盾させない。用語集 ID は対応する名前で表記し、事実にない数値や固有名詞を加えない。
     - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 話す速さ・言葉選び・一人称や語尾の癖など、口調の特徴を具体的に書く。
     - その口調で話す短い台詞の例を1つ、鉤括弧（「」）で添える。

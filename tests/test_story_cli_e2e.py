@@ -167,6 +167,15 @@ def _fake_output(
         reading = "".join(sound["sounds"][:2])
         return {"name": reading, "reading": reading, "sources": [sound["set_id"]]}
 
+    if task_type == "S5.facts":
+        entry = inputs["world_facts"][0]["glossary"][0]
+        calendar = inputs["world_facts"][0]["facts"][0]["calendar"]
+        return {"age": 30, "birth_year": 12, "calendar": calendar, "height_cm": 170,
+                "build": "細身", "birthplace": entry["id"], "residence": entry["id"],
+                "occupation": "水路の点検係", "affiliation": None, "family": [],
+                "timeline": [{"year": 12, "event": "集落で生まれた。"}],
+                "skills": ["流水の音から漏れを探す。"], "sources": [inputs["character"]["id"]]}
+
     if task_type.startswith("S5."):
         field = task_type.removeprefix("S5.")
         person_id = inputs["character"]["id"]
@@ -288,8 +297,9 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         assert "### 物語の素材" in claimed["card"] or "### 作り方の指示" in claimed["card"]
         assert "作り方の指示は本文に書かず" in claimed["card"]
         if task["type"] == "S5.intro" and "noun" not in quality_rejections:
-            assert inputs["glossary"]
-            assert all("registered_task" not in entry for entry in inputs["glossary"])
+            terms = [*inputs["glossary"], *inputs["facts"]["glossary"]]
+            assert terms
+            assert all("registered_task" not in entry for entry in terms)
             rejected_output = {**output, "intro": "ゼラフィナを訪ねる人物。"}
             rejected = harness.submit(claimed["ticket"], json.dumps(rejected_output, ensure_ascii=False))
             assert not rejected.accepted and any("未登録の固有名詞" in error for error in rejected.errors)
@@ -470,7 +480,24 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             term = sheet["glossary"][0]
             assert term["id"] in glossary_markdown
             assert term["name"] in glossary_markdown
+    characters_markdown = (run_dir / "story" / "characters.md").read_text(encoding="utf-8")
+    character_facts = {task_id: task for task_id, task in final_manifest["tasks"].items()
+                       if task["type"] == "S5.facts"}
+    assert character_facts and all(task["state"] == "done" for task in character_facts.values())
+    assert characters_markdown.count("### 事実のシート") == len(character_facts)
+    assert characters_markdown.count("| 身長（cm） | 170 |") == len(character_facts)
+    for task_id, task in final_manifest["tasks"].items():
+        if task["type"].startswith("S5.") and task["type"] not in {"S5.name", "S5.facts", "S5.relationship_context"}:
+            card_input = _task_input(data_dir, run_id, task_id)
+            assert card_input["facts"]["age"] == 30
+            assert card_input["facts"]["height_cm"] == 170
+            assert card_input["facts"]["calendar"] == "開拓暦"
+            assert any(entry["id"] == card_input["facts"]["birthplace"]
+                       for entry in card_input["facts"]["glossary"])
     story = json.loads(story_path.read_text(encoding="utf-8"))
+    assert story["meta"]["volume"]["characters"]["chars"] == sum(
+        not char.isspace() for char in characters_markdown
+    )
     assert story["cast"][0]["sources"]
     for section in story["world"]["sections"]:
         assert section["sources"]
