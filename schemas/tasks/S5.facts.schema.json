@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "age",
+    "birth_year",
+    "calendar",
+    "height_cm",
+    "build",
+    "birthplace",
+    "residence",
+    "occupation",
+    "affiliation",
+    "family",
+    "timeline",
+    "skills",
+    "sources"
+  ],
+  "properties": {
+    "age": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "birth_year": {
+      "type": "integer"
+    },
+    "calendar": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "height_cm": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "build": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "birthplace": {
+      "type": "string",
+      "pattern": "^g[0-9a-f]{6}$"
+    },
+    "residence": {
+      "type": "string",
+      "pattern": "^g[0-9a-f]{6}$"
+    },
+    "occupation": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "affiliation": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^g[0-9a-f]{6}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "family": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "relationship",
+          "name"
+        ],
+        "properties": {
+          "relationship": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "year",
+          "event"
+        ],
+        "properties": {
+          "year": {
+            "type": "integer"
+          },
+          "event": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -15,6 +15,7 @@ from .tables import element_rows, load_table
 from .validation import validate_document
 from .volume import apply_volume_update, compute_character_volume, compute_initial_volume
 from .world_facts import assign_world_fact_tasks, fact_key
+from .character_facts import CHARACTER_WORLD_SECTIONS
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -839,6 +840,7 @@ def _build_downstream_tasks(
         if not isinstance(counts, Mapping):
             raise ValueError(f"人物の分量配分がありません: {person_id}")
         name_id = f"S5.name-{person_id}"
+        facts_id = f"S5.facts-{person_id}"
         profile_id = f"S5.profile-{person_id}"
         intro_id = f"S5.intro-{person_id}"
         appearance_id = f"S5.appearance-{person_id}"
@@ -848,7 +850,7 @@ def _build_downstream_tasks(
         protagonist_name_deps = () if is_protagonist else (protagonist_name_id,)
         protagonist_intro_deps = () if is_protagonist else (protagonist_intro_id,)
         # profile の後に並行して書く項目（story-pipeline.md S5）。
-        parallel_deps = _unique_dependencies((parent_task_id, profile_id, *protagonist_name_deps))
+        parallel_deps = _unique_dependencies((parent_task_id, profile_id, facts_id, *protagonist_name_deps))
 
         personality_id = f"S5.personality-{person_id}"
         values_id = f"S5.values-{person_id}"
@@ -870,9 +872,17 @@ def _build_downstream_tasks(
             [
                 TaskSpec(name_id, "S5.name", deps=(parent_task_id,), index=(person_id,)),
                 TaskSpec(
+                    facts_id, "S5.facts",
+                    deps=_unique_dependencies((parent_task_id, name_id, *protagonist_name_deps, *(
+                        task_id for section_id in CHARACTER_WORLD_SECTIONS
+                        for task_id in fact_ids_by_section.get(section_id, [])
+                    ))),
+                    index=(person_id,),
+                ),
+                TaskSpec(
                     profile_id,
                     "S5.profile",
-                    deps=_unique_dependencies((parent_task_id, *protagonist_name_deps, name_id)),
+                    deps=_unique_dependencies((parent_task_id, *protagonist_name_deps, name_id, facts_id)),
                     index=(person_id,),
                 ),
                 TaskSpec(intro_id, "S5.intro", deps=parallel_deps, index=(person_id,)),
@@ -887,7 +897,7 @@ def _build_downstream_tasks(
                     motive_id,
                     "S5.motive",
                     deps=_unique_dependencies(
-                        (parent_task_id, profile_id, *name_task_ids, *protagonist_intro_deps)
+                        (parent_task_id, profile_id, facts_id, *name_task_ids, *protagonist_intro_deps)
                     ),
                     index=(person_id,),
                 ),
@@ -916,6 +926,7 @@ def _build_downstream_tasks(
                     (
                         parent_task_id,
                         motive_id,
+                        facts_id,
                         personality_id,
                         values_id,
                         voice_id,

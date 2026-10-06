@@ -1,7 +1,12 @@
 id: S5.intro
-version: 5
+version: 6
 kind: llm
 inputs:
+  facts:
+    label: 人物の事実のシート
+    from: S5.facts
+    select: "[{slot}]"
+    required: true
   character:
     label: 割り当てられた人物
     from: S3.assign
@@ -44,6 +49,7 @@ output: json
 card:
   role: プロフィールと人物の文脈から、短い紹介を書く。
   steps:
+    - 事実のシートに従い、年齢・生年・身長・出身地・居住地・所属・家族・年表・技能と矛盾させない。用語集 ID は対応する名前で表記し、事実にない数値や固有名詞を加えない。
     - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 人物の役割、人物像、魅力が伝わる短い紹介を1つ書く。
     - world-building の short_introduction として、50字以内にする。

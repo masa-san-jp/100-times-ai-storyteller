@@ -234,6 +234,7 @@ def _s5_inputs(
 ) -> dict[str, object]:
     return {
         "character": character,
+        "facts": {},
         "name": name,
         "profile": "人物のプロフィール",
         "motive": "人物の動機",
@@ -346,6 +347,7 @@ def test_s5_profile_card_contains_assignment_and_protagonist_context() -> None:
         "a" * 32,
         inputs={
             "character": protagonist,
+            "facts": {},
             "name": "カナ",
             "role_definition": protagonist["role_definition"],
             "plot_requirements": protagonist["plot_context"],
