@@ -14,8 +14,7 @@
     "affiliation",
     "family",
     "timeline",
-    "skills",
-    "sources"
+    "skills"
   ],
   "properties": {
     "age": {
@@ -108,14 +107,6 @@
       "items": {
         "type": "string",
         "pattern": "\\S"
-      }
-    },
-    "sources": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "type": "string"
       }
     }
   }

@@ -94,7 +94,11 @@ def generate_task_card(
             ]
         )
     else:
-        lines.append("本文だけを出力すること。前後に説明・見出し・注釈を書かないこと。")
+        lines.append(
+            "値だけを書く。単位・説明を書かない。"
+            if task_definition.get("element") in {"number", "integer", "choice"}
+            else "本文だけを出力すること。前後に説明・見出し・注釈を書かないこと。"
+        )
         example = card.get("output_example")
         if example is not None:
             if not isinstance(example, str) or not example:
@@ -110,8 +114,6 @@ def generate_task_card(
             "- 日本語で書く（ID・列挙値を除く）。",
         ]
     )
-    if output == "json" and "sources" in str(card.get("output_example", "")):
-        lines.append("- sources には、入力に [ ] で示された ID だけを書く。")
     if retry_reason is not None:
         lines.extend(["", "## 前回の不合格理由", _limit_retry_reason(retry_reason)])
     if continuation_tail is not None:
@@ -146,7 +148,16 @@ def prepare_task_inputs(
         )
     else:
         slot_values = dict(inputs)
-    return _fit_inputs(task_definition, slot_values)
+    return _fit_inputs(task_definition, _without_sources(slot_values))
+
+
+def _without_sources(value: Any) -> Any:
+    """Keep code attribution out of the model's card and fitted input record."""
+    if isinstance(value, Mapping):
+        return {key: _without_sources(item) for key, item in value.items() if key != "sources"}
+    if isinstance(value, list):
+        return [_without_sources(item) for item in value]
+    return value
 
 
 def _fit_inputs(

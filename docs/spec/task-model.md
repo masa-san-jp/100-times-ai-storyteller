@@ -32,10 +32,12 @@
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
-| `default_sources` | llm | 任意 | ID の文字列の配列（`{slot}` はタスクの添字の最初の要素に置き換える） | なし | `sources_exist` で正しい ID が1つも残らない場合に、出典として補う ID（例：S5 では `["{slot}"]`、その人物自身）。補った場合は manifest の `warnings` に記録する |
 | `on_exhausted` | llm | 任意 | `fail` / `skip` | `fail` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
 | `extend_to_min` | llm | 任意 | 真偽値 | `false` | `output: text` のタスクで、字数の不足を継続で補う（§8） |
-| `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー |
+| `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー。`element` が `text` 以外のタスクでは `false` |
+| `element` | llm | 必須 | `text` / `number` / `integer` / `name` / `labeled` / `choice` / `judgement` | — | §2.5 |
+| `range` | llm | 任意 | `min`・`max`（数値。片方だけでもよい） | なし | `element` が `number`・`integer` のときの値の範囲。`{current_year}` のような run の値は、コードが置き換える |
+| `choice_max` | llm | 任意 | 1以上の整数 | 1 | `element: choice` で選べる数の上限 |
 
 - 表にない項目はエラーにする（`additionalProperties: false`）。
 - `kind: code` のタスク定義に llm の項目がある場合もエラーにする。
@@ -58,7 +60,7 @@ inputs:
 card:
   role: 与えられた属性だけを使って、人物のプロフィールを書く。   # 必須
   steps: [ ... ]                                                  # 必須。1件以上
-  output_example: '{"profile": "...", "sources": ["want:i007"]}'  # output: json では必須、text では任意
+  output_example: '{"name": "...", "reading": "..."}'  # output: json では必須、text では任意
 ```
 
 `card.output_example` には出力の形だけを示し、文字列の値は `...` とする（ID と列挙値は実際の形でよい）。具体的な文例を書くと、実行者の出力がその例に引き寄せられ、中庸に収斂するためである（P4）。
@@ -85,6 +87,25 @@ card:
 
 - 登録のない関数名、存在しない値の参照は、タスクを生成する時点でエラーにし、そのタスクを `failed` にする（理由を記録する）。
 - 任意のコードは評価しない。
+
+### 2.5 要素の単位
+
+LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/0008-one-element-per-inference.md)）。要素の形は、タスク定義の `element` で次のいずれかを指定する。
+
+| `element` | 作るもの | `output` | 出力の例 | コードの検査 |
+|---|---|---|---|---|
+| `text` | 本文1つ（1文〜長文） | `text` | 本文だけ | 字数・文末など §6.2 |
+| `number` | 数値1つ（単位はカードで示し、出力に書かせない） | `text` | `450` | 数値として解析できること（NFKC 正規化、桁区切りの `,` と前後の空白を除く）。タスク定義の `range`（`min`・`max`）に収まること |
+| `integer` | 整数1つ（年・人数・件数など） | `text` | `1248` | 整数として解析できること。`range` に収まること |
+| `name` | 固有名詞1つとその読み | `json` | `{"name": "…", "reading": "…"}` | 名前の響きの検査（`uses_given`）など |
+| `labeled` | 項目1つと、その分類（列挙値1つ） | `json` | `{"text": "…", "kind": "theme"}` | `kind` が列挙値に含まれること |
+| `choice` | カードに示した選択肢の ID から1つ（`choice_max` が2以上なら、その数までの集合） | `text` | `g3a91f2` | 選択肢に含まれること |
+| `judgement` | 判定（列挙値1つ）と、その理由1文 | `json` | `{"answer": "no", "reason": "…"}` | `answer` が列挙値に含まれること |
+
+- `number`・`integer`・`choice` の出力は、カードの「出力形式」に「値だけを書く。単位・説明を書かない」を示す。解析の前に、前後の空白・末尾の句点・カードに示した単位の文字列を取り除く。
+- 要素が複数からなる構造（表、出来事の 5W1H、人物の事実のシートなど）は、要素ごとのタスクに分け、コードが組み立てる。同じ構造の要素どうしの整合が必要な場合は、要素のタスクを順に実行し、先に決まった要素をカードの入力に示す。
+- 同じ値（同じ量・同じ名前）は1つのタスクで1回だけ作り、他のタスクは入力として参照する。
+- `element` と `validate.schema` の整合は、ハーネスの検査（`tools/check_harness.py`、テストから実行する）で確かめる。`output: json` のスキーマは、`element` の形の項目だけを持つ。
 
 ## 3. タスクカード
 
@@ -221,7 +242,6 @@ card:
 
 | チェック | 引数 | 合格の条件 |
 |---|---|---|
-| `sources_exist` | なし | 出力の `sources` のうち、カードの「入力」節に列挙したIDに含まれるものが1つ以上ある。含まれない ID は検証の前に取り除き、manifest の `warnings` に記録する（出典の書き誤りであり、素材の持ち込みではないため） |
 | `max_chars` | `field`（任意）, `n`, `fix`（任意、`trim`） | 文字数が n 以下。`fix: trim` の場合は、超えたとき n 以内の最後の文末記号の直後で切り詰めて合格とし、manifest の `warnings` に記録する（文末記号が n 以内にない場合は不合格） |
 | `min_chars` | `field`（任意）, `n` | 文字数が n 以上 |
 | `count` | `field`, `n` または `min`・`max` | 配列の件数が n、または min 以上 max 以下 |
@@ -229,7 +249,7 @@ card:
 | `uses_given` | `field`, `slot`, `n` | 文字列が、指定した入力スロットの要素のうち n 個以上を部分文字列として含む |
 | `ends_complete` | `field`（任意）, `fix`（任意、`append`） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか。`fix: append` の場合は、満たさないとき末尾に「。」を補って合格とし、manifest の `warnings` に記録する（1文で完結する短い項目に使う。途中で切れた長文には使わない） |
 | `avoid_listed` | `fields`（任意）, `table`（例：`tables/cliches.yaml`） | 指定したテーブルの表現を、正規化後の部分文字列として含まない |
-| `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` では `sources` を除くすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
+| `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` ではすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
 
 ### 6.3 不合格の扱い
 
@@ -263,6 +283,11 @@ card:
 
 `schema` または `json` で空の応答・解析不能な応答が2回続いた場合、アダプタはそのモデルについて1段階下の値に切り替え、データディレクトリの `adapters/state.json` に保存し、run の manifest の `warnings` に記録する（先行リポジトリで、一部のモデルが JSON モードで空応答を返した問題への対策）。
 
+### 6.6 出典の記録
+
+- 出典（`sources`）は、LLM の出力に含めない。コードが、カードの「入力」節に示した素材の ID（[story-pipeline.md](story-pipeline.md) §2.1）を、タスクの出力とともに記録する。
+- 出力スキーマに `sources` を持たせない。カードの出力形式・出力例にも書かない。
+
 ## 7. 候補生成
 
 - `candidates: k`（k ≥ 2）のタスクは、同じカードで k 個のタスクを作る。タスクIDの添字に候補番号 `c1`〜`c<k>` を付け、カードの入力は同一にする。seed だけが異なる。
@@ -281,7 +306,7 @@ card:
 - 継続は、最初の提出の後に2回まで行う（`continuation_step` は最大2）。2回目の継続の提出がなお途中で切れている場合は、`partial.md` を破棄し、1回の不合格として §6.3 に従う。
 - 途中で切れていない提出を受け取ったら、`partial.md` と連結した全体を §6 で検証する。
 - **字数の不足による継続**：タスク定義の `extend_to_min: true` のタスクで、連結した全体が `min_chars` に満たない場合は、不合格にせずに継続のカードを作り、手順に「既出の文章を繰り返さず、同じ内容をさらに具体的に書き足す」を加える（継続の回数の上限は上と共通）。上限に達してもなお満たない場合、`min_chars` の半分以上あれば合格として manifest の `warnings` に記録し、半分に満たなければ不合格とする。小さいモデルが指示より短く書く傾向への対策である。
-- `output: text` のタスクの出典は、実行者に書かせず、カードの「入力」節に示した ID をコードが `sources` として記録する。
+- すべての LLM タスクの出典は、実行者に書かせず、コードが記録する（§6.6）。
 - `continuation: false` のタスクで、`--truncated` が指定された提出は不合格とする。`st submit --truncated` を `output: json` のタスクに指定した場合は、終了コード 1 とする。
 
 ## 9. キャッシュキーと再利用

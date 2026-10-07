@@ -29,7 +29,7 @@ def llm_definition(task_id: str = "D1.echo", **extra: object) -> dict:
     definition = {
         "id": task_id,
         "version": 1,
-        "kind": "llm",
+        "kind": "llm", "element": "text",
         "output": "json",
         "inputs": {
             "given": {
@@ -43,9 +43,9 @@ def llm_definition(task_id: str = "D1.echo", **extra: object) -> dict:
         "card": {
             "role": "入力を確認する。",
             "steps": ["JSONを出力する。"],
-            "output_example": '{"text": "...", "sources": ["a"]}',
+            "output_example": '{"text": "..."}',
         },
-        "validate": {"checks": ["sources_exist", {"max_chars": {"field": "text", "n": 20}}]},
+        "validate": {"checks": [ {"max_chars": {"field": "text", "n": 20}}]},
         "max_input_chars": 14,
     }
     definition.update(extra)
@@ -56,7 +56,7 @@ def continuation_definition(**extra: object) -> dict:
     definition = {
         "id": "D1.story",
         "version": 1,
-        "kind": "llm",
+        "kind": "llm", "element": "text",
         "output": "text",
         "continuation": True,
         "card": {
@@ -191,53 +191,17 @@ def test_extend_to_min_reserves_tail_budget_for_large_optional_input(tmp_path: P
     assert harness.submit(second["ticket"], "さらに具体的に説明する文。" * 2).accepted
 
 
-def test_submit_removes_unknown_sources_before_storing_output(tmp_path: Path) -> None:
-    clock = Clock()
-    orchestrator = Orchestrator(
-        tmp_path, {"D1.echo": llm_definition(max_input_chars=100)}, clock=clock
-    )
-    run_id = orchestrator.create_run(
-        seed=1, input_data={"given": {"id": "a1", "text": "abcdefghijk"}}
-    )
-    claimed = orchestrator.claim_next(run_id, executor_id="worker")
-    assert claimed is not None
-    task_dir = tmp_path / "runs" / run_id / "tasks" / "D1.echo"
-    assert json.loads((task_dir / "input.json").read_text(encoding="utf-8")) == {
-        "given": {"id": "a1", "text": "abcdefghijk"}
-    }
-
-    rejected = orchestrator.submit(
-        claimed["ticket"],
-        json.dumps({"text": "ok", "sources": ["missing"]}),
-    )
-    assert not rejected.accepted
-    manifest = orchestrator.load_run(run_id)
-    task = manifest["tasks"]["D1.echo"]
-    assert task["state"] == "ready"
-    assert task["tries"] == 1
-    assert task["attempt"] == 1
-    assert "sources_exist" in task["error"]
-    assert json.loads(
-        (task_dir / "attempts" / "1.json").read_text(encoding="utf-8")
-    )["output"]
-
-    replacement = orchestrator.claim_next(run_id, executor_id="worker-2")
-    assert replacement is not None
-    accepted = orchestrator.submit(
-        replacement["ticket"],
-        json.dumps({"text": "ok", "sources": ["a1", "missing"]}),
-    )
-    assert accepted.accepted
-    assert accepted.value == {"text": "ok", "sources": ["a1"]}
-    assert json.loads((task_dir / "output.json").read_text(encoding="utf-8")) == {
-        "text": "ok",
-        "sources": ["a1"],
-    }
-    assert any(
-        warning.startswith("D1.echo: 未知の出典 ID を除去:")
-        for warning in orchestrator.load_run(run_id)["warnings"]
-    )
-    assert orchestrator.load_run(run_id)["status"] == "completed"
+def test_submit_records_sources_from_fitted_card_inputs(tmp_path: Path) -> None:
+    from storyteller.task_outputs import read_task_output
+    harness = Orchestrator(tmp_path, {"D1.echo": llm_definition(max_input_chars=100)})
+    run_id = harness.create_run(seed=1, input_data={"given": {"id": "a1", "text": "abcdefghijk"}})
+    claim = harness.claim_next(run_id, executor_id="worker")
+    result = harness.submit(claim["ticket"], '{"text": "ok"}')
+    assert result.accepted
+    directory = harness.task_dir(run_id, "D1.echo")
+    assert json.loads((directory / "output.json").read_text(encoding="utf-8")) == {"text": "ok"}
+    assert read_task_output(directory, "D1.echo") == {"text": "ok", "sources": ["a1"]}
+    assert not result.warnings
 
 
 def test_continuation_appends_chunks_and_caches_only_the_complete_output(
@@ -371,7 +335,7 @@ def test_submit_reaches_failed_at_max_attempts_and_retry_resets_counters(
     for _ in range(2):
         claimed = orchestrator.claim_next(run_id, executor_id="worker")
         assert claimed is not None
-        result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+        result = orchestrator.submit(claimed["ticket"], '不正な JSON')
         assert not result.accepted
     task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
     assert task["state"] == "failed"
@@ -395,14 +359,14 @@ def test_submit_defaults_max_attempts_to_five_when_omitted(tmp_path: Path) -> No
     for attempt in range(1, 5):
         claimed = orchestrator.claim_next(run_id, executor_id="worker")
         assert claimed is not None
-        result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+        result = orchestrator.submit(claimed["ticket"], '不正な JSON')
         assert not result.accepted
         task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
         assert task["state"] == "ready", f"attempt {attempt} should not exhaust yet"
 
     claimed = orchestrator.claim_next(run_id, executor_id="worker")
     assert claimed is not None
-    result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+    result = orchestrator.submit(claimed["ticket"], '不正な JSON')
     assert not result.accepted
     task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
     assert task["tries"] == 5
@@ -437,7 +401,7 @@ def test_submit_skips_at_max_attempts_when_on_exhausted_is_skip_and_unblocks_dep
     for _ in range(2):
         claimed = orchestrator.claim_next(run_id, executor_id="worker")
         assert claimed is not None
-        result = orchestrator.submit(claimed["ticket"], '{"text": "bad"}')
+        result = orchestrator.submit(claimed["ticket"], '不正な JSON')
         assert not result.accepted
 
     manifest = orchestrator.load_run(run_id)
@@ -498,7 +462,7 @@ def test_invalidation_rejects_non_done_and_resets_downstream(tmp_path: Path) -> 
     )
     first = orchestrator.claim_next(run_id, executor_id="worker")
     assert first is not None
-    orchestrator.submit(first["ticket"], '{"text":"ok","sources":["a"]}')
+    orchestrator.submit(first["ticket"], '{"text":"ok"}')
     second = orchestrator.claim_next(run_id, executor_id="worker-2")
     assert second is not None
     manifest = orchestrator.invalidate_task(

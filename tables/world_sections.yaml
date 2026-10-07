@@ -21,7 +21,6 @@ sections:
         required:
         - facts
         - glossary
-        - sources
         properties:
           facts:
             type: array
@@ -78,12 +77,6 @@ sections:
                 reading: *id001
                 kind: *id001
                 definition: *id001
-          sources:
-            type: array
-            minItems: 1
-            uniqueItems: true
-            items:
-              type: string
       人物の行動を可能にする境界、規則、資源、危険: *id002
       地形の種類・分布・標高: *id002
       気候パターン・気温・降水量: *id002
@@ -181,7 +174,6 @@ sections:
         required:
         - facts
         - glossary
-        - sources
         properties:
           facts:
             type: array
@@ -248,12 +240,6 @@ sections:
                 reading: *id003
                 kind: *id003
                 definition: *id003
-          sources:
-            type: array
-            minItems: 1
-            uniqueItems: true
-            items:
-              type: string
       人々が重要視する行動指針: *id004
       個人的な問題と他者との関係: *id004
       name（氏名）: *id004
@@ -557,7 +543,6 @@ sections:
         required:
         - facts
         - glossary
-        - sources
         properties:
           facts:
             type: array
@@ -634,12 +619,6 @@ sections:
                 reading: *id005
                 kind: *id005
                 definition: *id005
-          sources:
-            type: array
-            minItems: 1
-            uniqueItems: true
-            items:
-              type: string
       event_name（イベント名）: *id006
       approximate_date（おおよその時期）: *id006
       description（詳細な説明、200〜300文字）: *id006

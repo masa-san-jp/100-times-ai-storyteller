@@ -4,24 +4,20 @@
   "title": "S8 event comparison",
   "type": "object",
   "additionalProperties": false,
-  "required": ["answer", "reason", "sources"],
+  "required": [
+    "answer",
+    "reason"
+  ],
   "properties": {
     "answer": {
       "type": "string",
-      "enum": ["yes", "no"]
+      "enum": [
+        "yes",
+        "no"
+      ]
     },
     "reason": {
       "type": "string"
-    },
-    "sources": {
-      "type": "array",
-      "minItems": 2,
-      "maxItems": 2,
-      "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "pattern": "^e[0-9]{3}$"
-      }
     }
   }
 }

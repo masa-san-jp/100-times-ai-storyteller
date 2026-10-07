@@ -19,7 +19,6 @@ def _materials_output(paragraph_id: str) -> dict[str, object]:
             {"text": "記憶の隙間に浮かぶ光景の断片", "kind": "image"},
             {"text": "誰かと分かち合いたい小さな価値", "kind": "value"},
         ],
-        "sources": [paragraph_id],
     }
 
 

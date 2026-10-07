@@ -1,6 +1,7 @@
 id: S5.facts
-version: 1
+version: 2
 kind: llm
+element: labeled
 inputs:
   character:
     label: 割り当てられた人物
@@ -54,8 +55,7 @@ card:
     - 世界の事実と用語集に従う。calendar は世界の事実の暦を使う。birthplace・residence・affiliation は入力に示した用語集 ID を使い、地名・組織名を新しく作らない。所属がなければ affiliation は null にする。
     - 家族は続柄と用語集に登録済みの名前を記す。該当する家族がなければ空の配列にする。年表には出生以後の年と出来事を記し、世界の年代と矛盾させない。
     - 主人公以外には主人公の名前と役だけを文脈として使う。作り方の指示を事実に書かない。
-    - sources には使った入力素材の ID を記す。
-  output_example: '{"age": 30, "birth_year": 12, "calendar": "...", "height_cm": 170, "build": "...", "birthplace": "...", "residence": "...", "occupation": "...", "affiliation": null, "family": [{"relationship": "...", "name": "..."}], "timeline": [{"year": 12, "event": "..."}], "skills": ["..."], "sources": ["c1"]}'
+  output_example: '{"age": 30, "birth_year": 12, "calendar": "...", "height_cm": 170, "build": "...", "birthplace": "...", "residence": "...", "occupation": "...", "affiliation": null, "family": [{"relationship": "...", "name": "..."}], "timeline": [{"year": 12, "event": "..."}], "skills": ["..."]}'
 validate:
   schema: schemas/tasks/S5.facts.schema.json
   checks:
@@ -64,5 +64,4 @@ validate:
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml
-    - sources_exist
 max_input_chars: 2500

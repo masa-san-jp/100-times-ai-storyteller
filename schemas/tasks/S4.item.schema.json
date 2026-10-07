@@ -4,21 +4,16 @@
   "title": "Story pipeline S4 list world-section item",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "body", "sources"],
+  "required": [
+    "name",
+    "body"
+  ],
   "properties": {
     "name": {
       "type": "string"
     },
     "body": {
       "type": "string"
-    },
-    "sources": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "type": "string"
-      }
     }
   }
 }

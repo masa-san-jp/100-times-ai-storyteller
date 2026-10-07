@@ -1,6 +1,7 @@
 id: D4.story
-version: 1
+version: 2
 kind: llm
+element: text
 output: text
 inputs:
   responses:

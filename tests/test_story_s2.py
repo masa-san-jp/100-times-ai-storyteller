@@ -19,7 +19,6 @@ def _materials_output() -> dict[str, object]:
             {"text": "記憶の隙間に浮かぶ光景の断片", "kind": "image"},
             {"text": "誰かと分かち合いたい小さな価値", "kind": "value"},
         ],
-        "sources": ["p001"],
     }
 
 
@@ -33,7 +32,6 @@ def _expand_output(axis: str, source: str) -> dict[str, object]:
             f"{axis}を別の角度から見直す",
         ],
         "counterpart": f"{axis}を反対の条件から再構築する要素",
-        "sources": [source],
     }
 
 
@@ -169,7 +167,7 @@ def test_s2_merge_skips_exhausted_expand_task_and_s3_assign_still_runs(
         result = orchestrator.submit(
             claim["ticket"],
             json.dumps(
-                {"items": ["短すぎる"], "counterpart": "短すぎる対極の要素", "sources": ["m001"]},
+                {"items": ["短すぎる"], "counterpart": "短すぎる対極の要素"},
                 ensure_ascii=False,
             ),
         )

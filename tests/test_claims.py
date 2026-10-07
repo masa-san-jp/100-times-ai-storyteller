@@ -29,7 +29,7 @@ def llm_definition(task_id: str, *, lease_minutes: float = 30) -> dict:
     return {
         "id": task_id,
         "version": 1,
-        "kind": "llm",
+        "kind": "llm", "element": "text",
         "output": "json",
         "card": {
             "role": "与えられた入力を確認する。",

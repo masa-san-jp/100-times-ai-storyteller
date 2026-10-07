@@ -39,8 +39,7 @@ def _output():
     return {"facts": [{"name": "カナ", "value": 200, "unit": "m", "year": 12,
                        "calendar": "開拓暦", "count": 1}],
             "glossary": [{"name": "カナ", "reading": "カナ", "kind": "地名",
-                          "definition": "水路の端にある丘。"}],
-            "sources": ["place:t1"]}
+                          "definition": "水路の端にある丘。"}]}
 
 
 @pytest.mark.parametrize("field,value", [("value", "多い"), ("year", "古い"),

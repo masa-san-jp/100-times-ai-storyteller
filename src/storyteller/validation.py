@@ -20,7 +20,14 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 
-from .story_quality import body_texts, longest_common_substring
+from .elements import (
+    VALUE_ELEMENTS,
+    choice_ids,
+    clean_value,
+    parse_element_value,
+    resolve_range,
+)
+from .story_quality import body_texts, longest_common_substring, split_card_inputs
 
 
 class YamlValidationError(ValueError):
@@ -123,16 +130,14 @@ def validate_output(
     common_words_path: str | Path | None = None,
     index: Sequence[str] | str | None = None,
     registered_names: Sequence[str] = (),
+    run_values: Mapping[str, Any] | None = None,
 ) -> ValidationResult:
     """Validate one LLM output according to ``task_definition``.
 
     The input mapping contains the values rendered in the task card, keyed by
     input-slot name.  It is used by source and input-dependent checks.
-    ``index`` is the task's own index (for example ``["c2"]``); it is used to
-    resolve ``default_sources`` (task-model.md §2.1) and the ``{slot}``
-    placeholder within it.  The function only parses and validates data;
-    retry counters, attempts, and task state are deliberately outside its
-    scope.
+    Value ranges may refer to ``run_values`` (or fitted inputs). Parsing and
+    checks do not alter retry counters or task state.
     """
 
     output_kind = task_definition.get("output")
@@ -171,13 +176,29 @@ def validate_output(
         errors.extend(validate_character_facts(value, slot_values))
     if not isinstance(checks, list):
         raise ValidationConfigurationError("validate.checks must be a list")
-    sources_checked = False
-    for check in checks:
-        name, _ = _normalise_check(check)
-        if name == "sources_exist" and not sources_checked:
-            _remove_unknown_sources(value, slot_values, warnings)
-            _apply_default_sources(value, slot_values, task_definition, index, warnings)
-            sources_checked = True
+    if task_definition.get("element") in VALUE_ELEMENTS:
+        element = task_definition["element"]
+        try:
+            limits = resolve_range(task_definition.get("range", {}), run_values or slot_values)
+        except ValueError as error:
+            raise ValidationConfigurationError(str(error)) from error
+        unit = slot_values.get("unit", "")
+        if not isinstance(unit, str):
+            raise ValidationConfigurationError("カードの単位が文字列ではありません")
+        try:
+            parse_element_value(
+                value, element, unit=unit,
+                choices=(
+                    choice_ids(slot_values["choices"])
+                    if "choices" in slot_values else input_source_ids(slot_values)
+                ),
+                choice_max=task_definition.get("choice_max", 1), value_range=limits,
+            )
+            value = clean_value(value, unit)
+            if element != "choice":
+                value = value.replace(",", "")
+        except ValueError as error:
+            errors.append(str(error))
     value = _apply_ends_complete_fixes(value, checks, warnings)
     value = _apply_max_chars_fixes(value, checks, warnings)
     for check in checks:
@@ -314,14 +335,6 @@ def _run_check(
         copied_chars = _char_length(copied)
         if copied_chars >= settings["max_copy_chars"]:
             return [f"no_copy_from_inputs: 入力の本文を丸写ししています（{copied_chars}字）: {copied}"], []
-        return [], []
-
-    if name == "sources_exist":
-        if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
-            return ["sources_exist: sources が配列ではありません"], []
-        allowed = _ids_from_inputs(inputs)
-        if not any(source in allowed for source in output["sources"]):
-            return ["sources_exist: 有効な出典 ID がありません"], []
         return [], []
 
     if name in {"max_chars", "min_chars"}:
@@ -523,7 +536,8 @@ def _read_field(value: Any, field: str | None) -> tuple[Any, bool]:
 
 def input_source_ids(inputs: Mapping[str, Any]) -> list[str]:
     """Return the source IDs shown in the fitted card input, in stable order."""
-    return sorted(identifier for identifier in _ids_from_inputs(inputs) if isinstance(identifier, str))
+    material, _ = split_card_inputs(inputs)
+    return sorted(identifier for identifier in _ids_from_inputs(material) if isinstance(identifier, str))
 
 
 def output_char_count(value: str) -> int:
@@ -552,6 +566,12 @@ def _ids_from_value(value: Any, *, include_own_ids: bool = True) -> set[Any]:
     if isinstance(value, Mapping):
         ids: set[Any] = set()
         if include_own_ids:
+            ids.update(
+                key for key in value
+                if isinstance(key, str) and re.fullmatch(
+                    r"[dcwmp][0-9]+|e[0-9]{3}|g[0-9a-f]{6}|[a-z]+:[itx][0-9]+", key
+                )
+            )
             for key in ("id", "set_id"):
                 identifier = value.get(key)
                 if identifier is not None:
@@ -563,80 +583,6 @@ def _ids_from_value(value: Any, *, include_own_ids: bool = True) -> set[Any]:
                 ids.update(_ids_from_value(item, include_own_ids=include_own_ids))
         return ids
     return set()
-
-
-def _remove_unknown_sources(
-    output: Any,
-    inputs: Mapping[str, Any],
-    warnings: list[str],
-) -> None:
-    """Remove source IDs that are not present in the rendered card inputs."""
-
-    if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
-        return
-    allowed = _ids_from_inputs(inputs)
-    sources = output["sources"]
-    unknown = [source for source in sources if source not in allowed]
-    if not unknown:
-        return
-    output["sources"] = [source for source in sources if source in allowed]
-    warnings.append(f"未知の出典 ID を除去: {unknown!r}")
-
-
-def _apply_default_sources(
-    output: Any,
-    inputs: Mapping[str, Any],
-    task_definition: Mapping[str, Any],
-    index: Sequence[str] | str | None,
-    warnings: list[str],
-) -> None:
-    """Fill ``sources`` from ``default_sources`` when no valid ID survived.
-
-    Only runs after :func:`_remove_unknown_sources` has already stripped IDs
-    that do not appear in the card's inputs, and only when that leaves
-    ``sources`` empty.  A task without ``default_sources`` is left untouched,
-    so it fails ``sources_exist`` as before (task-model.md §2.1, §6.2).
-    """
-
-    if not isinstance(output, Mapping) or not isinstance(output.get("sources"), list):
-        return
-    if output["sources"]:
-        return
-    default_sources = task_definition.get("default_sources")
-    if not default_sources:
-        return
-    resolved = [
-        _resolve_default_source(expression, index) for expression in default_sources
-    ]
-    output["sources"] = resolved
-    warnings.append(f"出典を補完: {resolved!r}")
-
-
-def _resolve_default_source(expression: Any, index: Sequence[str] | str | None) -> str:
-    if not isinstance(expression, str) or not expression:
-        raise ValidationConfigurationError(
-            "default_sources の要素は空でない文字列にしてください"
-        )
-    if "{slot}" not in expression:
-        return expression
-    slot = _first_index_value(index)
-    if not slot:
-        raise ValidationConfigurationError(
-            "default_sources の{slot}を解決するタスクの添字がありません"
-        )
-    return expression.replace("{slot}", slot)
-
-
-def _first_index_value(index: Sequence[str] | str | None) -> str | None:
-    if index is None:
-        return None
-    if isinstance(index, str):
-        return index or None
-    try:
-        value = index[0]
-    except (IndexError, TypeError, KeyError):
-        return None
-    return value if isinstance(value, str) and value else None
 
 
 def _apply_ends_complete_fixes(
@@ -1015,7 +961,7 @@ def validate_task_definition_output_example(
     """Check that a JSON task-card example contains no concrete prose.
 
     The example may contain the ``...`` placeholder, enum values from its
-    output schema, and the literal IDs in its ``sources`` arrays.  Other
+    output schema, and schema-declared literal IDs.  Other
     string values would steer an executor toward the example and are rejected
     when the task definition is loaded.
     """
@@ -1056,9 +1002,10 @@ def validate_task_definition_output_example(
                 ) from error
             enum_values = _string_enum_values(output_schema)
 
-    source_ids = _source_example_ids(parsed)
     for path, value in _string_values(parsed):
-        if value == "..." or value in enum_values or value in source_ids:
+        if value == "..." or value in enum_values or re.fullmatch(
+            r"(?:[mcwp][0-9]+|e[0-9]{3}|g[0-9a-f]{6}|[a-z]+:[itx][0-9]+)", value
+        ):
             continue
         raise TaskDefinitionValidationError(
             _task_definition_error_prefix(source_path)
@@ -1082,22 +1029,6 @@ def _string_enum_values(schema: Any) -> set[str]:
         for value in schema:
             values.update(_string_enum_values(value))
     return values
-
-
-def _source_example_ids(value: Any, *, in_sources: bool = False) -> set[str]:
-    ids: set[str] = set()
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            ids.update(
-                _source_example_ids(child, in_sources=in_sources or key == "sources")
-            )
-    elif isinstance(value, list):
-        for child in value:
-            if in_sources and isinstance(child, str):
-                ids.add(child)
-            else:
-                ids.update(_source_example_ids(child, in_sources=in_sources))
-    return ids
 
 
 def _string_values(value: Any, path: str = "$") -> list[tuple[str, str]]:

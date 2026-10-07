@@ -45,7 +45,7 @@ def _llm_definition(task_id: str) -> dict[str, object]:
     return {
         "id": task_id,
         "version": 1,
-        "kind": "llm",
+        "kind": "llm", "element": "text",
         "output": "json",
         "card": {
             "role": "入力を確認する。",

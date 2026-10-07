@@ -34,12 +34,13 @@ def test_all_s5_task_definitions_and_schemas_are_valid() -> None:
     for name in (*S5_TYPES, *S5_NEW_SINGLE_TYPES, "relationship"):
         definition = load_task(name)
         assert definition["id"] == f"S5.{name}"
-        if name in {"name", "intro", "motive", "catchphrase"}:
+        if name == "name":
             assert definition["output"] == "json"
             assert (ROOT / definition["validate"]["schema"]).is_file()
         else:
             assert definition["output"] == "text"
-            assert definition["extend_to_min"] is True
+            if name not in {"intro", "motive", "catchphrase"}:
+                assert definition["extend_to_min"] is True
             assert "schema" not in definition["validate"]
             assert "output_example" not in definition["card"]
             assert "sources" not in str(definition["card"])
@@ -104,35 +105,16 @@ def test_s5_relationship_card_only_shows_the_counterpart_s_name_role_and_intro()
         assert forbidden not in counterpart_section
 
 
-def test_s5_default_sources_recovers_from_the_protagonist_s_id_instead_of_the_character_s_own_id() -> None:
-    # Observed with gpt-oss:20b on S5.intro-c2: the executor cites the
-    # protagonist's ID (c1) instead of its own subject (c2), which is never
-    # shown as an ID on the card, and the task would otherwise fail forever.
-    protagonist = _character("protagonist", "c1", "主人公固有")
-    other = _character("adversary", "c2", "他者固有")
-    for task_name, field in (
-        ("intro", "intro"),
-        ("motive", "motive"),
-        ("catchphrase", "catchphrase"),
-    ):
+def test_s5_short_items_use_plain_text_without_source_instructions() -> None:
+    for task_name in ("intro", "motive", "catchphrase"):
         definition = load_task(task_name)
-        assert definition["default_sources"] == ["{slot}"]
-        recovered = validate_output(
-            definition,
-            json.dumps(
-                {field: "他者の短い説明文。", "sources": ["c1"]}, ensure_ascii=False
-            ),
-            inputs=_s5_inputs(
-                "他者名",
-                other,
-                protagonist_name=protagonist["name_sound"]["description"],
-            ),
-            harness_root=ROOT,
-            index=["c2"],
-        )
-        assert recovered.passed, recovered.errors
-        assert recovered.value["sources"] == ["c2"]
-        assert "出典を補完: ['c2']" in recovered.warnings
+        assert definition["element"] == "text"
+        assert definition["continuation"] is False
+        assert "sources" not in str(definition["card"])
+        result = validate_output(definition, "他者の短い説明文。", inputs=_s5_inputs(
+            "他者名", _character("adversary", "c2", "他者固有")), harness_root=ROOT)
+        assert result.passed, result.errors
+        assert result.value == "他者の短い説明文。"
 
 
 def test_s5_name_has_no_default_sources_since_its_subject_is_a_name_sound_set() -> None:
@@ -150,13 +132,13 @@ def test_s5_name_rejects_a_reading_that_does_not_use_two_given_sounds() -> None:
 
     accepted = validate_output(
         definition,
-        '{"name":"カナ","reading":"カナ","sources":["sound-01"]}',
+        '{"name":"カナ","reading":"カナ"}',
         inputs={"name_sound": sound_set},
         harness_root=ROOT,
     )
     rejected = validate_output(
         definition,
-        '{"name":"ミナ","reading":"ミナ","sources":["sound-01"]}',
+        '{"name":"ミナ","reading":"ミナ"}',
         inputs={"name_sound": sound_set},
         harness_root=ROOT,
     )
@@ -171,17 +153,17 @@ def test_s5_one_sentence_items_complete_the_sentence_instead_of_failing() -> Non
     for task_name, field in (("intro", "intro"), ("catchphrase", "catchphrase")):
         definition = load_task(task_name)
         assert {
-            "ends_complete": {"field": field, "fix": "append"}
+            "ends_complete": {"fix": "append"}
         } in definition["validate"]["checks"]
         fixed = validate_output(
             definition,
-            json.dumps({field: "文の途中", "sources": ["c1"]}, ensure_ascii=False),
+            "文の途中",
             inputs=_s5_inputs("本人名", character),
             harness_root=ROOT,
             index=["c1"],
         )
         assert fixed.passed, fixed.errors
-        assert fixed.value[field] == "文の途中。"
+        assert fixed.value == "文の途中。"
         assert "文末を補完" in fixed.warnings
 
 
@@ -239,7 +221,7 @@ def _s5_inputs(
         "profile": "人物のプロフィール",
         "motive": "人物の動機",
         "other_characters": [character],
-        "names": [{"name": name, "reading": name, "sources": ["sound-01"]}],
+        "names": [{"name": name, "reading": name}],
         "role_definition": character["role_definition"],
         "plot_requirements": character["plot_context"],
         "protagonist_name": protagonist_name,

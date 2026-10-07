@@ -1,6 +1,7 @@
 id: S4.item_name
-version: 2
+version: 3
 kind: llm
+element: name
 inputs:
   name_sound:
     label: 項目名の響き

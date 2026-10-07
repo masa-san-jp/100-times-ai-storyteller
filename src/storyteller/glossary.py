@@ -19,7 +19,7 @@ def _role_names() -> dict[str, str]:
 
 
 def glossary_id(task_id: str, ordinal: int) -> str:
-    """Number entries from one within each registering output."""
+    """Derive stable IDs from the registration task and element ordinal."""
     return "g" + hashlib.sha256(f"{task_id}:{ordinal}".encode("utf-8")).hexdigest()[:6]
 
 
@@ -48,7 +48,8 @@ def build_glossary(outputs: Mapping[str, Any]) -> list[dict[str, str]]:
             entries = output.get("glossary", [])
             if not isinstance(entries, list):
                 raise ValueError(f"用語集の出力が不正です: {task_id}")
-        for ordinal, entry in enumerate(entries, start=1):
+        start = 1 if task_id.startswith("S4.facts-") else 0
+        for ordinal, entry in enumerate(entries, start=start):
             identifier = glossary_id(task_id, ordinal)
             if identifier in seen:
                 raise ValueError(f"用語集の ID が衝突しています: {identifier}")

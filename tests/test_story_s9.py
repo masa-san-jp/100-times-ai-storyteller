@@ -243,3 +243,13 @@ def test_s9_rejects_unknown_event_reference(tmp_path: Path) -> None:
         assert "who" in str(error)
     else:
         raise AssertionError("未知の who を受け入れました")
+
+
+def test_s9_aggregates_empty_name_sources_without_inventing_attribution(tmp_path: Path) -> None:
+    outputs = _base_outputs({"e001": _event()})
+    outputs["S5.name-c1"]["sources"] = []
+    context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
+    story_s9_assemble(context)
+    story = json.loads((context.run_dir / "story/story.json").read_text(encoding="utf-8"))
+    validate_document(story, ROOT / "schemas/story.schema.json")
+    assert story["cast"][0]["sources"] == ["c1"]

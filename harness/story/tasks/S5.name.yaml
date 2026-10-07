@@ -1,6 +1,7 @@
 id: S5.name
-version: 3
+version: 4
 kind: llm
+element: name
 inputs:
   name_sound:
     label: 名前の響き
@@ -14,7 +15,7 @@ card:
     - 与えられた6個の音のうち2個以上を、読みの中にそのまま使う。
     - 響きの説明に合う、特定の実在の言語・民族を指さない名前を1つ作る。
     - name は表記、reading はカタカナの読みとして、名前以外の説明は出力しない。
-  output_example: '{"name": "...", "reading": "...", "sources": ["sound-01"]}'
+  output_example: '{"name": "...", "reading": "..."}'
 validate:
   schema: schemas/tasks/S5.name.schema.json
   checks:
@@ -27,7 +28,6 @@ validate:
     - min_chars:
         field: reading
         n: 1
-    - sources_exist
     - uses_given:
         field: reading
         slot: name_sound

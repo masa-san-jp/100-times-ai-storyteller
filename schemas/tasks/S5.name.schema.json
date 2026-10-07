@@ -4,14 +4,17 @@
   "title": "S5 character name",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "reading", "sources"],
+  "required": [
+    "name",
+    "reading"
+  ],
   "properties": {
-    "name": {"type": "string"},
-    "reading": {"type": "string", "pattern": "^[ァ-ヶー・]+$"},
-    "sources": {
-      "type": "array",
-      "minItems": 1,
-      "items": {"type": "string", "pattern": "^sound-[0-9]{2}$"}
+    "name": {
+      "type": "string"
+    },
+    "reading": {
+      "type": "string",
+      "pattern": "^[ァ-ヶー・]+$"
     }
   }
 }

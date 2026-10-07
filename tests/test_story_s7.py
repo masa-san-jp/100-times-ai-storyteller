@@ -61,7 +61,6 @@ def _event() -> dict[str, object]:
         "result": "隠れていた通路が現れる。",
         "emotion": "ためらいの後に決意を感じる。",
         "foreshadowing": "通路の奥で別の音がする。",
-        "sources": ["c1", "place"],
     }
 
 

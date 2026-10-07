@@ -17,20 +17,15 @@ class E2EPlan:
         self.story_calls = 0
 
     def __call__(self, card: str) -> Response:
-        if "次のJSONだけを出力すること" in card:
+        if "### 項目\n" in card:
             item_id = item_id_from_card(card)
             assert item_id is not None
             self.calls[item_id] = self.calls.get(item_id, 0) + 1
             if item_id == "d1" and self.calls[item_id] == 1:
-                return Response({"text": "INVALID", "sources": [item_id]})
+                return Response("INVALID")
             if item_id == "d2" and self.calls[item_id] == 1:
-                return Response("これは JSON ではありません")
-            return Response(
-                {
-                    "text": {"d1": "alpha", "d2": "beta", "d3": "gamma"}[item_id],
-                    "sources": [item_id],
-                }
-            )
+                return Response("あ" * 51)
+            return Response({"d1": "alpha", "d2": "beta", "d3": "gamma"}[item_id])
 
         self.story_calls += 1
         if self.story_calls == 1:
@@ -87,7 +82,7 @@ def test_dummy_harness_failed_task_can_be_retried_from_cli(tmp_path: Path) -> No
     run_id = executor.run_new_dummy(seed=102)
     failed_task = "D2.echo-d1"
 
-    executor.run(lambda card: Response("not json"))
+    executor.run(lambda card: Response("あ" * 51))
 
     manifest = _manifest(data_dir, run_id)
     assert manifest["status"] == "stalled"
@@ -97,12 +92,9 @@ def test_dummy_harness_failed_task_can_be_retried_from_cli(tmp_path: Path) -> No
 
     executor.run(
         lambda card: Response(
-            {
-                "text": "alpha" if item_id_from_card(card) == "d1" else "beta",
-                "sources": [item_id_from_card(card)],
-            }
+            "alpha" if item_id_from_card(card) == "d1" else "beta"
         )
-        if "次のJSONだけを出力すること" in card
+        if "### 項目\n" in card
         else Response("alpha beta gamma。")
     )
     assert _manifest(data_dir, run_id)["status"] == "completed"
@@ -152,4 +144,4 @@ def test_expired_dummy_lease_can_be_reclaimed_by_another_executor(tmp_path: Path
     assert second.ticket != first.ticket
     expired_path = task_dir / "claim.expired.1.json"
     assert json.loads(expired_path.read_text(encoding="utf-8"))["ticket"] == first.ticket
-    assert second_executor.submit(first, Response({"text": "old"})).returncode == 3
+    assert second_executor.submit(first, Response("old")).returncode == 3

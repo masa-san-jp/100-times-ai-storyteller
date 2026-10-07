@@ -26,7 +26,7 @@ def _world_output():
     return {"facts": [{"name": "カナ", "value": 200, "unit": "m", "year": 12,
                        "calendar": "開拓暦", "count": 1}],
             "glossary": [{"name": "カナ", "reading": "カナ", "kind": "地名",
-                          "definition": "水路の端の集落。"}], "sources": ["place:t1"]}
+                          "definition": "水路の端の集落。"}]}
 
 
 def _glossary():
@@ -40,7 +40,7 @@ def _output():
             "occupation": "水路の点検係", "affiliation": None,
             "family": [], "timeline": [{"year": 12, "event": "集落で生まれた。"},
                                        {"year": 30, "event": "水路の点検を始めた。"}],
-            "skills": ["流水の音から漏れを探す。"], "sources": ["c1"]}
+            "skills": ["流水の音から漏れを探す。"]}
 
 
 def _inputs():
