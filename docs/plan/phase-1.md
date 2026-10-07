@@ -40,7 +40,11 @@
 | P1-27 | 品質の検査：`no_copy_from_inputs`、継続の重複の除去、作り方の語の検査（`tables/meta_terms.yaml`）、カードの入力の素材と指示の区別 | P1-23 | story-pipeline §10 | 入力の丸写し・重複・作り方の語が検出される |
 | P1-28 | S9 の要約の書式、物語の場面の数を字数の目安の下限から求める | P1-23 | story-pipeline §10 | 要約に文の継ぎ合わせがない。物語の分量の配分が下限基準になる |
 | P1-29 | 構造化出力に渡すスキーマから `pattern` を除く（キーワードとしての出現に限る） | P1-25 | task-model §6.5 | 事実のタスクが Ollama で HTTP 400 にならない。プロパティ名 `pattern` などは残る |
-| P1-30 | 世界の事実の一貫性：S4.calendar、同じセクションの観点の順次実行、S4.facts の既定の出典、響きに合わない用語の除外、年の範囲と年齢の統一 | P1-29 | story-pipeline §9.2, §9.3 | 実機の正本で暦が1つに揃い、同じセクションの事実が先行する観点の値を引き継ぎ、出典の誤りで失敗しない |
+| P1-30 | 1推論1要素の基盤（ADR-0008）：タスク定義の `element`・`range`・`choice_max`、値の解析と範囲の検査、出典をコードが記録（全タスクの出力・スキーマ・カードから `sources` を除き、`sources_exist`・`default_sources` を廃止）、`tools/check_harness.py`、S5.name・intro・motive・catchphrase・S4.item_name・S8.compare とダミーのハーネスの移行 | P1-29 | task-model §2.5, §6.6、story-pipeline §2.1, S5, S8 | すべての LLM タスク定義が `element` を持ち、出力に `sources` がない。check_harness がテストで通る |
+| P1-31 | S1・S2 の要素への分割：`S1.extract-p<3桁>-<n>`（labeled）、`S2.expand-m<3桁>-<axis>-<n>`・`S2.counter-m<3桁>-<axis>`（text）、組の中の順次実行 | P1-30 | story-pipeline S1, S2 | 素材と要素が1件1推論で作られ、1件の失敗が他を止めない |
+| P1-32 | 世界の暦と事実の再設計：`tables/world_facts.yaml`（キー・見出し・形・単位・範囲・`refers`・`item_facts`、`current_year_range`）、現在の年をコードで決定、S4.calendar_name・S4.calendar_epoch、S4.fact（値1つ）、セクション内の順次実行、S4.facts と `fact_schema` の廃止、`world_facts.md` の組み立て | P1-30 | story-pipeline §9.1〜§9.3, §9.5 | 実機で暦が1つに揃い、同じ量が1回だけ定まり、1項目の失敗で run が止まらない |
+| P1-33 | 人物の事実の再設計：`tables/character_facts.yaml`、S5.fact（年齢・身長・体格・職業・出身地・居住地・所属・家族・年表・技能）、生年をコードで計算、事実のシートの組み立て、S5.facts の廃止 | P1-32 | story-pipeline §9.4, §9.5 | 人物の事実が1項目1推論で作られ、シートに揃う |
+| P1-34 | S7.event の項目への分割：`S7.event-e<3桁>-<項目>`（8項目を順に）、`who` をコードが記録、出来事の組み立て、S8 の無効化の対象を `what` に | P1-30 | story-pipeline S7, S8 | 出来事が項目ごとに作られ、S8 の無効化で作り直される |
 | P1-15 | end-to-end：ローカルモデルとコーディングエージェントでの短編の完走（P1-16〜P1-19 の後、分量の最低ラインを満たすこと）。開発者が書いた自由入力による生成例を `examples/` に置く | P1-11, P1-12, P1-13 | ROADMAP Phase 1 | 完了条件 1〜4 |
 
 ## 順序
@@ -68,14 +72,14 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S2.expand-m<3桁>-<axis>` | L | S2.plan | 要素5件と対極要素 |
 | `S2.merge` | C | S2.expand すべて | 入力由来プール（ID つき） |
 | `S3.assign` | C | S2.merge | assignment。S4・S5・S6 を追加 |
-| `S4.calendar` | L | S3.assign | 世界の暦（名前・紀元・現在の年） |
-| `S4.facts-<section id>-<観点番号>`・`S4.facts-<item id>` | L | S3.assign、S4.calendar、前提セクションの S4.facts、同じセクションの直前の観点の S4.facts、一覧型は S4.item_name | 観点・項目ごとの事実 |
+| `S4.calendar_name`・`S4.calendar_epoch` | L | S3.assign（epoch は calendar_name） | 世界の暦の名前・紀元の出来事（現在の年はコードが S3 で決める） |
+| `S4.fact-<キー>`・`S4.fact-<item id>-<キー>` | L | S3.assign、S4.calendar_name、前提セクションの S4.fact、同じセクションの直前の事実の項目、一覧型は S4.item_name | 事実の値1つ |
 | `S4.section-<section id>-<観点番号>-f<面番号>` | L | S3.assign、前提セクションのタスク | 世界セクションの観点の1面（`single`） |
 | `S4.item-<section id>-<3桁>` | L | S3.assign、前提セクションのタスク | 一覧型セクションの項目（`list`） |
 | `S4.diversity-<section id>` | C | そのセクションの面すべて | 書き出しが似すぎた面を無効化 |
 | `S5.name-c<n>` | L | S3.assign | 名前 |
-| `S5.facts-c<n>` | L | S5.name-c<n>、S4.calendar、関係する S4.facts | 人物の事実のシート |
-| `S5.profile-c<n>` | L | S5.name-c<n>、S5.facts-c<n> | プロフィール |
+| `S5.fact-c<n>-<キー>` | L | S5.name-c<n>、S4.calendar_name、関係する S4.fact、同じ人物の直前の事実の項目 | 人物の事実の値1つ |
+| `S5.profile-c<n>` | L | S5.name-c<n>、S5.fact-c<n> すべて | プロフィール |
 | `S5.intro-c<n>`・`S5.appearance-c<n>` | L | S5.profile-c<n> | 短い紹介・外見 |
 | `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて、主人公の S5.intro（主人公以外の場合） | 動機 |
 | `S5.catchphrase-c<n>` | L | S5.motive-c<n> | 決め台詞 |

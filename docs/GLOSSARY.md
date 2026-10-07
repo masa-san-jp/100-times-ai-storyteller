@@ -36,7 +36,8 @@
 | スロット | slot | 構造テンプレートを展開して得られる、出来事1件分の枠 |
 | 出来事 | event | 正本を構成する1件の記述。when / where / who / why / what / result を持つ |
 | 役 | role | 人物の物語上の機能。protagonist（主人公）・messenger（使者）・supporter（支援者）・adversary（敵対者）・bystander（傍観者） |
-| sources | sources | LLMタスクの出力が使った素材のIDの一覧 |
+| sources | sources | LLMタスクのカードに示した素材のIDの一覧。コードが記録する |
+| 要素（推論の単位） | element | 1回の推論で作る1つのもの（本文・値・名前と読みなど）。task-model §2.5 |
 | 指紋 | fingerprint | 重複検出のための、正規化した内容のハッシュ |
 | 部 | part | 大河規模で、物語を分ける大きな区切り。部ごとに主筋と構造テンプレートを持つ |
 | 入力由来の比率 | input ratio (`r`) | S3 で、要素を入力由来プールから選ぶ確率。run ごとに seed で決める |
