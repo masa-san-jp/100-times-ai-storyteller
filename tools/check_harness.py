@@ -18,8 +18,6 @@ from storyteller.validation import load_and_validate_yaml
 
 # Only these existing multi-element tasks remain until their assigned migrations.
 MIGRATION_EXCEPTIONS = {
-    "S1.extract": "P1-31",
-    "S2.expand": "P1-31",
     "S4.facts": "P1-32",
     "S5.facts": "P1-33",
     "S7.event": "P1-34",

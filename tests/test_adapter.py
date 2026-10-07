@@ -456,7 +456,7 @@ def test_auto_uses_the_manifest_harness_for_mixed_runs(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     story_orchestrator = create_story_orchestrator(data_dir)
     story_run_id = story_orchestrator.create_run(
-        task_specs=[TaskSpec("S1.extract-p001", "S1.extract", index=("p001",))],
+        task_specs=[TaskSpec("S1.extract-p001-1", "S1.extract", index=("p001", "1"))],
         seed=0x100001,
         input_data={
             "kind": "free",
@@ -474,14 +474,11 @@ def test_auto_uses_the_manifest_harness_for_mixed_runs(tmp_path: Path) -> None:
             pass
 
         def complete(self, card: str, **kwargs: Any) -> AdapterResponse:
-            if "素材になる短い語句を5個" in card:
+            if "素材になる短い語句を1個" in card:
                 return AdapterResponse(
                     json.dumps(
                         {
-                            "materials": [
-                                {"text": f"水路に残る記憶と{index}番目の影", "kind": "image"}
-                                for index in range(5)
-                            ],
+                            "text": "水路に残る記憶と静かな影", "kind": "image",
                         },
                         ensure_ascii=False,
                     ),

@@ -297,19 +297,9 @@ def _load_materials(
                 output = json.load(stream)
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise ValueError(f"S1 の出力を読み込めません: {task_id}") from error
-        if not isinstance(output, Mapping) or not isinstance(output.get("materials"), list):
-            continue
-        for material in output["materials"]:
-            if not isinstance(material, Mapping):
-                continue
-            material_id, text, kind = material.get("id"), material.get("text"), material.get("kind")
-            if (
-                isinstance(material_id, str)
-                and isinstance(text, str)
-                and isinstance(kind, str)
-                and kind in _MATERIAL_KINDS
-            ):
-                materials.append({"id": material_id, "text": text, "kind": kind})
+        from .story_materials import materials_from_outputs
+        materials.extend(material for material in materials_from_outputs({task_id: output})
+                         if material["kind"] in _MATERIAL_KINDS)
     materials.sort(key=lambda item: item["id"])
     return materials
 

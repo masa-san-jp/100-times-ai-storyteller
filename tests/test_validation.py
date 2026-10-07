@@ -545,41 +545,20 @@ def test_short_s5_items_still_reject_excess_length(field, maximum):
     assert "字数の上限で切り詰め" not in result.warnings
 
 
-@pytest.mark.parametrize("length, passed", [(9, False), (10, True), (40, True), (41, False)])
-def test_s2_counterpart_keeps_its_former_schema_char_range(length, passed):
-    definition = load_yaml(ROOT / "harness/story/tasks/S2.expand.yaml", TASK_SCHEMA)
-    result = validate_output(
-        definition,
-        json.dumps({"items": ["素" * 10] * 5, "counterpart": "対" * length}, ensure_ascii=False),
-        inputs={"material": {"id": "m001"}},
-    )
-
-    assert result.passed is passed
-    assert not any("schema:" in error for error in result.errors)
-
-
-@pytest.mark.parametrize("task_id, field, minimum, maximum", [
-    ("S1.extract", "materials", 10, 30),
-    ("S2.expand", "items", 10, 40),
+@pytest.mark.parametrize("task_id, minimum, maximum", [
+    ("S1.extract", 10, 30), ("S2.expand", 10, 40), ("S2.counter", 10, 40),
 ])
-@pytest.mark.parametrize("position", range(5))
 @pytest.mark.parametrize("boundary", ["minimum", "maximum"])
-def test_array_item_char_ranges_are_enforced_by_checks(task_id, field, minimum, maximum, position, boundary):
+def test_element_char_ranges_are_enforced_by_checks(task_id, minimum, maximum, boundary):
     definition = load_yaml(ROOT / f"harness/story/tasks/{task_id}.yaml", TASK_SCHEMA)
-    texts = ["素" * minimum] * 5
-    source_id = "p001" if task_id == "S1.extract" else "m001"
 
-    def submit():
-        values = [{"text": text, "kind": "theme"} for text in texts] if field == "materials" else texts
-        output = {field: values}
-        if task_id == "S2.expand":
-            output["counterpart"] = "対" * minimum
-        return validate_output(definition, json.dumps(output, ensure_ascii=False), inputs={"source": {"id": source_id}})
+    def submit(length):
+        text = "素" * length
+        output = json.dumps({"text": text, "kind": "theme"}, ensure_ascii=False) if task_id == "S1.extract" else text
+        return validate_output(definition, output, inputs={"source": {"id": "m001"}})
 
-    texts[position] = "素" * (minimum if boundary == "minimum" else maximum)
-    assert submit().passed
-    texts[position] = "素" * (minimum - 1 if boundary == "minimum" else maximum + 1)
-    rejected = submit()
+    assert submit(minimum if boundary == "minimum" else maximum).passed
+    rejected = submit(minimum - 1 if boundary == "minimum" else maximum + 1)
     assert not rejected.passed
     assert any(("min_chars" if boundary == "minimum" else "max_chars") in error for error in rejected.errors)
     assert not any("schema:" in error for error in rejected.errors)

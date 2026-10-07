@@ -487,7 +487,8 @@ def _validate_references(
                 known_ids.add(paragraph["id"])
     for task_id, output in outputs.items():
         if isinstance(task_id, str) and task_id.startswith("S1.extract-") and isinstance(output, Mapping):
-            for material in output.get("materials", []):
+            from .story_materials import materials_from_outputs
+            for material in materials_from_outputs({task_id: output}):
                 if isinstance(material, Mapping) and isinstance(material.get("id"), str):
                     known_ids.add(material["id"])
     for event in story["events"]:

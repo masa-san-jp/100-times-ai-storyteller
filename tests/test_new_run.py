@@ -9,7 +9,7 @@ from storyteller.new_run import create_free_run
 ROOT = Path(__file__).parents[1]
 
 
-def test_create_free_run_writes_input_and_one_s1_task_per_paragraph(
+def test_create_free_run_writes_input_and_five_sequential_s1_tasks_per_paragraph(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "free.md"
@@ -41,11 +41,13 @@ def test_create_free_run_writes_input_and_one_s1_task_per_paragraph(
     }
     assert manifest["harness_kind"] == "story"
     assert "plot_type" not in manifest["scale"]
-    assert set(manifest["tasks"]) == {
-        "S1.extract-p001", "S1.extract-p002", "S2.plan"
-    }
-    assert all(
-        manifest["tasks"][task_id]["state"] == "ready"
-        for task_id in ("S1.extract-p001", "S1.extract-p002")
-    )
+    s1_ids = {f"S1.extract-{paragraph}-{number}" for paragraph in ("p001", "p002") for number in range(1, 6)}
+    assert set(manifest["tasks"]) == s1_ids | {"S2.plan"}
+    for paragraph in ("p001", "p002"):
+        for number in range(1, 6):
+            task = manifest["tasks"][f"S1.extract-{paragraph}-{number}"]
+            assert task["index"] == [paragraph, str(number)]
+            assert task["deps"] == [f"S1.extract-{paragraph}-{earlier}" for earlier in range(1, number)]
+            assert task["state"] == ("ready" if number == 1 else "blocked")
+    assert set(manifest["tasks"]["S2.plan"]["deps"]) == s1_ids
     assert manifest["tasks"]["S2.plan"]["state"] == "blocked"
