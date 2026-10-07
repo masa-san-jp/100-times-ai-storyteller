@@ -13,29 +13,40 @@
     "what",
     "result",
     "emotion",
-    "foreshadowing",
-    "sources"
+    "foreshadowing"
   ],
   "properties": {
-    "when": {"type": "string"},
-    "where": {"type": "string"},
+    "when": {
+      "type": "string"
+    },
+    "where": {
+      "type": "string"
+    },
     "who": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
     },
-    "why": {"type": "string"},
-    "intent": {"type": "string"},
-    "what": {"type": "string"},
-    "result": {"type": "string"},
-    "emotion": {"type": "string"},
-    "foreshadowing": {"type": "string"},
-    "sources": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {"type": "string"}
+    "why": {
+      "type": "string"
+    },
+    "intent": {
+      "type": "string"
+    },
+    "what": {
+      "type": "string"
+    },
+    "result": {
+      "type": "string"
+    },
+    "emotion": {
+      "type": "string"
+    },
+    "foreshadowing": {
+      "type": "string"
     }
   }
 }

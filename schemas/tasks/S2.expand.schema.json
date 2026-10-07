@@ -4,7 +4,10 @@
   "title": "S2 element expansion",
   "type": "object",
   "additionalProperties": false,
-  "required": ["items", "counterpart", "sources"],
+  "required": [
+    "items",
+    "counterpart"
+  ],
   "properties": {
     "items": {
       "type": "array",
@@ -16,15 +19,6 @@
     },
     "counterpart": {
       "type": "string"
-    },
-    "sources": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 1,
-      "items": {
-        "type": "string",
-        "pattern": "^m[0-9]{3}$"
-      }
     }
   }
 }

@@ -434,7 +434,9 @@ def _collect_indexed_field(
 
 
 def _extend_ids(target: list[str], value: Any) -> None:
-    if not isinstance(value, list) or not value or not all(isinstance(item, str) and item for item in value):
+    # A name task can contain only naming instructions, with no material IDs.
+    # The assembled element's sources are still checked by the story schema.
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
         raise ValueError("sources が不正です")
     for item in value:
         if item not in target:

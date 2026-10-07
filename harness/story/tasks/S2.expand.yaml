@@ -1,6 +1,7 @@
 id: S2.expand
-version: 4
+version: 5
 kind: llm
+element: text
 inputs:
   material:
     label: 素材
@@ -25,8 +26,8 @@ card:
     - 与えられた軸について、素材から着想した要素をちょうど5件書く。各要素は10〜40字で、表層的な特徴から深層の意味まで幅を持たせる。
     - 5件と対極にある要素を1件、同じ軸の定義に沿って書く。対極は単なる反対語ではなく、素材に対する別の再構築にする。
     - 入力スロットの「使わない表現」に含まれる表現を、要素と対極要素に使わない。
-    - sources には入力された素材のIDを1件だけ書く。入力にない人物・設定・固有名詞を付け加えない。
-  output_example: '{"items": ["...", "...", "...", "...", "..."], "counterpart": "...", "sources": ["m003"]}'
+    - 入力にない人物・設定・固有名詞を付け加えない。
+  output_example: '{"items": ["...", "...", "...", "...", "..."], "counterpart": "..."}'
 validate:
   schema: schemas/tasks/S2.expand.schema.json
   checks:
@@ -69,7 +70,6 @@ validate:
     - max_chars:
         field: counterpart
         n: 40
-    - sources_exist
     - count:
         field: items
         n: 5

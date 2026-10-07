@@ -41,7 +41,7 @@ def test_registration_metadata_and_ids_are_stable():
     assert len(glossary) == 5
     protagonist = next(entry for entry in glossary if entry["name"] == "カナリ")
     assert protagonist == {
-        "id": "g" + hashlib.sha256(b"S5.name-c1:1").hexdigest()[:6],
+        "id": "g" + hashlib.sha256(b"S5.name-c1:0").hexdigest()[:6],
         "name": "カナリ", "reading": "カナリ", "kind": "人物",
         "definition": "主人公", "registered_task": "S5.name-c1",
     }

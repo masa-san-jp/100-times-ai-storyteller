@@ -1,6 +1,7 @@
 id: S4.item
-version: 8
+version: 9
 kind: llm
+element: text
 inputs:
   facts:
     label: 今回の観点の事実

@@ -239,12 +239,10 @@ def test_s8_judge_invalidates_s7_when_a_comparison_is_yes() -> None:
                 {
                     "answer": "no",
                     "reason": "整合している。",
-                    "sources": ["e001", "e003"],
                 },
                 {
                     "answer": "yes",
                     "reason": "結果が食い違う。",
-                    "sources": ["e002", "e003"],
                 },
             ]
         },
@@ -267,12 +265,10 @@ def test_s8_judge_flattens_indexed_comparison_outputs() -> None:
                 "e003-k1": {
                     "answer": "no",
                     "reason": "整合している。",
-                    "sources": ["e001", "e003"],
                 },
                 "e003-k2": {
                     "answer": "yes",
                     "reason": "結果が食い違う。",
-                    "sources": ["e002", "e003"],
                 },
             }
         },
@@ -306,7 +302,6 @@ def test_s8_judge_adopts_last_s7_output_at_invalidation_limit(
                 {
                     "answer": "yes",
                     "reason": "結果が食い違う。",
-                    "sources": ["e002", "e003"],
                 }
             ]
         },
@@ -332,7 +327,6 @@ def test_s8_judge_does_not_invalidate_without_yes() -> None:
                 {
                     "answer": "no",
                     "reason": "整合している。",
-                    "sources": ["e001", "e003"],
                 }
             ]
         },
@@ -352,7 +346,7 @@ def _llm_definition(task_id: str) -> dict[str, object]:
     return {
         "id": task_id,
         "version": 1,
-        "kind": "llm",
+        "kind": "llm", "element": "text",
         "output": "json",
         "card": {
             "role": "入力を確認する。",
@@ -490,9 +484,9 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
         if task["state"] != "ready" or task_id == "S6.expand":
             continue
         if task_id.startswith("S4.facts-"):
-            output = {"facts": [], "glossary": [], "sources": ["place:t1"]}
+            output = {"facts": [], "glossary": []}
         elif task_id.startswith("S4."):
-            output = {"body": "水路の音が境界を知らせる場所。", "sources": ["place:t1"]}
+            output = {"body": "水路の音が境界を知らせる場所。"}
         elif task_id.startswith("S5.name-"):
             output = {"name": "カナ"}
         elif task_id.startswith("S5.motive-"):
@@ -514,7 +508,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
             break
         for task_id, task in pending:
             if task_id.startswith("S4."):
-                output = {"body": "水路の音が境界を知らせる場所。", "sources": ["place:t1"]}
+                output = {"body": "水路の音が境界を知らせる場所。"}
             elif task_id.startswith("S5.name-"):
                 output = {"name": "カナ"}
             elif task_id.startswith("S5.motive-"):
@@ -524,7 +518,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
             elif task_id.startswith("S7.detail-"):
                 output = "場面の説明。"
             else:
-                output = {"answer": "no", "reason": "整合している", "sources": []}
+                output = {"answer": "no", "reason": "整合している"}
             orchestrator._complete_task(run_id, task_id, output)
 
     manifest = orchestrator.load_run(run_id)

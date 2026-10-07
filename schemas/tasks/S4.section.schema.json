@@ -4,18 +4,12 @@
   "title": "Story pipeline S4 single world section",
   "type": "object",
   "additionalProperties": false,
-  "required": ["body", "sources"],
+  "required": [
+    "body"
+  ],
   "properties": {
     "body": {
       "type": "string"
-    },
-    "sources": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "type": "string"
-      }
     }
   }
 }

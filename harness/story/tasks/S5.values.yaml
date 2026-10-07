@@ -1,6 +1,7 @@
 id: S5.values
-version: 7
+version: 8
 kind: llm
+element: text
 inputs:
   facts:
     label: 人物の事実のシート

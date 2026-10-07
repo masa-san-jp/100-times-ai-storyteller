@@ -32,6 +32,52 @@
         "$ref": "#/$defs/input-slot"
       }
     },
+    "element": {
+      "type": "string",
+      "enum": [
+        "text",
+        "number",
+        "integer",
+        "name",
+        "labeled",
+        "choice",
+        "judgement"
+      ]
+    },
+    "range": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "pattern": "^\\{[a-z][a-z0-9_.]*\\}$"
+            }
+          ]
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "pattern": "^\\{[a-z][a-z0-9_.]*\\}$"
+            }
+          ]
+        }
+      }
+    },
+    "choice_max": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1
+    },
     "output": {
       "type": "string",
       "enum": ["json", "text"]
@@ -76,14 +122,6 @@
       "exclusiveMinimum": 0,
       "default": 30
     },
-    "default_sources": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
     "on_exhausted": {
       "type": "string",
       "enum": ["fail", "skip"],
@@ -118,7 +156,9 @@
             {"required": ["max_invalidations"]},
             {"required": ["share_across_runs"]},
             {"required": ["lease_minutes"]},
-            {"required": ["default_sources"]},
+            {"required": ["element"]},
+            {"required": ["range"]},
+            {"required": ["choice_max"]},
             {"required": ["on_exhausted"]},
             {"required": ["continuation"]},
             {"required": ["extend_to_min"]}
@@ -133,7 +173,7 @@
         }
       },
       "then": {
-        "required": ["output", "card"],
+        "required": ["output", "card", "element"],
         "not": {
           "required": ["handler"]
         }
@@ -152,6 +192,61 @@
             "required": ["output_example"]
           },
           "continuation": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "element"
+        ],
+        "properties": {
+          "element": {
+            "not": {
+              "const": "text"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "continuation": {
+            "const": false
+          },
+          "extend_to_min": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "range"
+        ]
+      },
+      "then": {
+        "properties": {
+          "element": {
+            "enum": [
+              "number",
+              "integer"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "choice_max"
+        ]
+      },
+      "then": {
+        "properties": {
+          "element": {
+            "const": "choice"
+          }
         }
       }
     }
@@ -228,7 +323,6 @@
           "type": "string",
           "enum": [
             "no_copy_from_inputs",
-            "sources_exist",
             "max_chars",
             "min_chars",
             "count",
@@ -246,7 +340,6 @@
           "additionalProperties": false,
           "properties": {
             "no_copy_from_inputs": {"type": "object", "additionalProperties": false},
-            "sources_exist": {},
             "max_chars": {"$ref": "#/$defs/max-char-check"},
             "min_chars": {"$ref": "#/$defs/char-check"},
             "count": {"$ref": "#/$defs/count-check"},

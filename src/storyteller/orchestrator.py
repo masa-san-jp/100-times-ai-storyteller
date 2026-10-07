@@ -777,6 +777,7 @@ class Orchestrator:
                 harness_root=self.definition_root,
                 common_words_path=self.repository_root / "tables" / "common_words.yaml",
                 index=task["index"],
+                run_values={**manifest, **inputs},
                 registered_names=registered_names(build_glossary(
                     registration_outputs(run_dir, manifest)
                 )) if "glossary" in definition.get("inputs", {}) else (),
@@ -2298,7 +2299,7 @@ def _minimum_text_chars(definition: Mapping[str, Any]) -> int:
 
 def _continuation_enabled(definition: Mapping[str, Any]) -> bool:
     """Apply the task-model default for the optional continuation field."""
-    return bool(
+    return definition.get("element", "text") == "text" and bool(
         definition.get(
             "continuation",
             definition.get("output") == "text",

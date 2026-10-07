@@ -1,6 +1,7 @@
 id: S1.extract
-version: 3
+version: 4
 kind: llm
+element: labeled
 inputs:
   paragraph:
     label: 段落
@@ -14,8 +15,8 @@ card:
     - 段落の内容から、物語の素材になる短い語句を5個作る。各語句は10〜30字とし、表層的な事実だけでなく、段落から読み取れる意味や印象も含める。
     - 原文の表現をそのまま引用せず、意味を保ったまま抽象化する。段落にない事実を補わず、断定や診断をしない。
     - 各素材に、desire（切望）、fear（恐れ）、suppression（抑圧）、conflict（自己矛盾と葛藤）、image（心象）、value（価値）、theme（主題）、mood（雰囲気）のいずれか1つを kind として付ける。
-    - 判断できない情報を勝手に確定せず、段落に書かれた意図を保つ。素材の sources には入力された段落のIDを1件だけ書く。
-  output_example: '{"materials": [{"text": "...", "kind": "conflict"}, {"text": "...", "kind": "desire"}, {"text": "...", "kind": "mood"}, {"text": "...", "kind": "image"}, {"text": "...", "kind": "value"}], "sources": ["p001"]}'
+    - 判断できない情報を勝手に確定せず、段落に書かれた意図を保つ。
+  output_example: '{"materials": [{"text": "...", "kind": "conflict"}, {"text": "...", "kind": "desire"}, {"text": "...", "kind": "mood"}, {"text": "...", "kind": "image"}, {"text": "...", "kind": "value"}]}'
 validate:
   schema: schemas/tasks/S1.extract.schema.json
   checks:
@@ -52,7 +53,6 @@ validate:
     - max_chars:
         field: materials.4.text
         n: 30
-    - sources_exist
     - count:
         field: materials
         n: 5

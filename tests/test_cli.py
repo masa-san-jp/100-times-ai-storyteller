@@ -110,7 +110,7 @@ def _drain_run(data_dir: Path, run_id: str) -> None:
         task_id = _task_id_for_ticket(data_dir, run_id, claim["ticket"])
         if task_id.startswith("D2.echo-"):
             item_id = task_id.rsplit("-", 1)[1]
-            output = json.dumps({"text": "ok", "sources": [item_id]})
+            output = "ok"
         else:
             output = "alpha beta gamma。"
         accepted = _run_st(
@@ -152,7 +152,7 @@ def test_phase0_cli_creates_dummy_and_claims_json_card(tmp_path, monkeypatch, ca
     assert "D1.items" not in claim["card"]
 
     monkeypatch.setattr(
-        "sys.stdin", io.StringIO('{"text":"alpha", "sources":["d1"]}')
+        "sys.stdin", io.StringIO("alpha")
     )
     assert main(["submit", claim["ticket"]]) == 0
     assert capsys.readouterr().out == "accepted\n"
@@ -201,14 +201,13 @@ def test_mixed_story_and_dummy_runs_use_manifest_harness_kind_for_next_and_submi
                         {"text": f"水路に残る記憶と{index}番目の影", "kind": "image"}
                         for index in range(5)
                     ],
-                    "sources": ["p001"],
                 },
                 ensure_ascii=False,
             )
         else:
             assert task_id.startswith("D2.echo-")
             item_id = task_id.rsplit("-", 1)[1]
-            output = json.dumps({"text": "確認できた項目です。", "sources": [item_id]})
+            output = "確認できた項目です。"
         submitted = _run_st(data_dir, "submit", ticket, input=output)
         assert submitted.returncode == 0, submitted.stdout + submitted.stderr
 
@@ -224,7 +223,7 @@ def test_submit_rejection_uses_exit_code_five(tmp_path, monkeypatch, capsys):
     assert main(["next", "--run", run_id, "--json"]) == 0
     ticket = json.loads(capsys.readouterr().out)["ticket"]
 
-    monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
+    monkeypatch.setattr("sys.stdin", io.StringIO("あ" * 51))
     assert main(["submit", ticket]) == 5
     assert capsys.readouterr().out.startswith("rejected: ")
 
@@ -252,7 +251,7 @@ def test_subprocess_json_and_status_outputs_are_machine_readable(tmp_path):
         data_dir,
         "submit",
         claim["ticket"],
-        input='{"text":"ok", "sources":["d1"]}',
+        input="ok",
     )
     assert accepted.returncode == 0
     assert accepted.stdout == "accepted\n"
@@ -287,9 +286,7 @@ def test_subprocess_stdio_is_utf8_with_cp1252_default(tmp_path):
         data_dir,
         "submit",
         claim["ticket"],
-        input=json.dumps(
-            {"text": "日本語の提出", "sources": ["d1"]}, ensure_ascii=False
-        ).encode("utf-8"),
+        input="日本語の提出".encode("utf-8"),
     )
     assert accepted.returncode == 0, accepted.stderr.decode("utf-8")
     assert accepted.stdout == b"accepted\n"
@@ -303,7 +300,7 @@ def test_subprocess_exit_codes_cover_success_no_task_and_submission_states(tmp_p
     data_dir = tmp_path / "data"
     run_id = _new_dummy(data_dir, seed=8)
     claim = _claim(data_dir, run_id)
-    rejected = _run_st(data_dir, "submit", claim["ticket"], input="not json")
+    rejected = _run_st(data_dir, "submit", claim["ticket"], input="あ" * 51)
     assert rejected.returncode == 5
     assert rejected.stdout.startswith("rejected: ")
 
@@ -312,7 +309,7 @@ def test_subprocess_exit_codes_cover_success_no_task_and_submission_states(tmp_p
         data_dir,
         "submit",
         replacement["ticket"],
-        input='{"text":"ok", "sources":["d1"]}',
+        input="ok",
     )
     assert accepted.returncode == 0
     assert accepted.stdout == "accepted\n"
@@ -333,13 +330,13 @@ def test_subprocess_exit_codes_cover_success_no_task_and_submission_states(tmp_p
             failed_data,
             "submit",
             failed_claim["ticket"],
-            input="not json",
+            input="あ" * 51,
         )
         assert failed.returncode == 5
     assert _run_st(failed_data, "retry", failed_task_id).returncode == 0
 
 
-def test_subprocess_exit_code_one_covers_invalid_arguments_and_state(tmp_path):
+def test_subprocess_rejects_invalid_arguments_state_and_truncated_short_text(tmp_path):
     data_dir = tmp_path / "data"
     assert _run_st(data_dir, "resume").returncode == 1
     assert _run_st(data_dir, "next", "--wait", "-1").returncode == 1
@@ -355,9 +352,9 @@ def test_subprocess_exit_code_one_covers_invalid_arguments_and_state(tmp_path):
         "submit",
         claim["ticket"],
         "--truncated",
-        input='{"text":"ok"}',
+        input="ok",
     )
-    assert truncated.returncode == 1
+    assert truncated.returncode == 5
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -403,7 +400,7 @@ def test_subprocess_exit_code_six_covers_halted_next_and_submit_and_resume(tmp_p
         data_dir,
         "submit",
         claim["ticket"],
-        input='{"text":"ok", "sources":["d1"]}',
+        input="ok",
     )
     assert halted_submit.returncode == 6
     assert _run_st(

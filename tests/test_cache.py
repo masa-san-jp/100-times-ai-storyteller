@@ -22,7 +22,7 @@ def llm_definition(task_id: str, **extra: object) -> dict:
     definition = {
         "id": task_id,
         "version": 1,
-        "kind": "llm",
+        "kind": "llm", "element": "text",
         "output": "json",
         "card": {
             "role": "入力を確認する。",

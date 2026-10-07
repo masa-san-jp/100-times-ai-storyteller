@@ -130,7 +130,7 @@ def _fake_output(
             }
             for offset, kind in enumerate(kinds, start=1)
         ]
-        return {"materials": materials, "sources": [paragraph_id]}
+        return {"materials": materials}
 
     if task_type == "S2.expand":
         source = inputs["material"]["id"]
@@ -138,7 +138,6 @@ def _fake_output(
         return {
             "items": [f"{marker}から生まれる具体的な要素{number}" for number in range(1, 6)],
             "counterpart": f"{marker}から生まれる対極の要素",
-            "sources": [source],
         }
 
     if task_type == "S4.item_name":
@@ -152,8 +151,7 @@ def _fake_output(
         properties = inputs["fact_schema"]["properties"]["facts"]["items"]["properties"]
         row.update({field: "共同体の記録。" for field in properties if field not in row})
         return {"facts": [row], "glossary": [{"name": reading, "reading": reading,
-                 "kind": "地名", "definition": "観測の基準となる地点。"}],
-                "sources": [inputs["place"]["id"]]}
+                 "kind": "地名", "definition": "観測の基準となる地点。"}]}
 
     if task_type in {"S4.section", "S4.item"}:
         body = _filler_text(task_id, "世界の本文", 900 if task_type == "S4.item" else 1150)
@@ -165,7 +163,7 @@ def _fake_output(
     if task_type == "S5.name":
         sound = inputs["name_sound"]
         reading = "".join(sound["sounds"][:2])
-        return {"name": reading, "reading": reading, "sources": [sound["set_id"]]}
+        return {"name": reading, "reading": reading}
 
     if task_type == "S5.facts":
         entry = inputs["world_facts"][0]["glossary"][0]
@@ -174,7 +172,7 @@ def _fake_output(
                 "build": "細身", "birthplace": entry["id"], "residence": entry["id"],
                 "occupation": "水路の点検係", "affiliation": None, "family": [],
                 "timeline": [{"year": 12, "event": "集落で生まれた。"}],
-                "skills": ["流水の音から漏れを探す。"], "sources": [inputs["character"]["id"]]}
+                "skills": ["流水の音から漏れを探す。"]}
 
     if task_type.startswith("S5."):
         field = task_type.removeprefix("S5.")
@@ -185,7 +183,7 @@ def _fake_output(
             "catchphrase": f"私は{person_id}として進む。",
         }
         if field in short_values:
-            return {field: short_values[field], "sources": [person_id]}
+            return short_values[field]
         # story-pipeline.md §8 / ADR-0007: the new S5 items each enforce a
         # min_chars/max_chars range (tables/volume.yaml), so the placeholder
         # text must actually land inside it, not just be non-empty.
@@ -216,7 +214,6 @@ def _fake_output(
             "result": f"新しい道筋が見える（試行{task.get('attempt', 0)}）。",
             "emotion": "静かな決意を抱く。",
             "foreshadowing": "遠くで次の変化が始まる。",
-            "sources": [character_ids[0]],
         }
 
     if task_type == "S7.detail":
@@ -229,7 +226,7 @@ def _fake_output(
         event_b = inputs["event_b"]["id"]
         answer = "yes" if send_comparison_yes else "no"
         reason = "比較対象と結果が矛盾する。" if answer == "yes" else "二つの記述は整合している。"
-        return {"answer": answer, "reason": reason, "sources": [event_a, event_b]}
+        return {"answer": answer, "reason": reason}
 
     raise AssertionError(f"未知の LLM タスクです: {task_type}")
 
@@ -300,8 +297,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             terms = [*inputs["glossary"], *inputs["facts"]["glossary"]]
             assert terms
             assert all("registered_task" not in entry for entry in terms)
-            rejected_output = {**output, "intro": "ゼラフィナを訪ねる人物。"}
-            rejected = harness.submit(claimed["ticket"], json.dumps(rejected_output, ensure_ascii=False))
+            rejected = harness.submit(claimed["ticket"], "ゼラフィナを訪ねる人物。")
             assert not rejected.accepted and any("未登録の固有名詞" in error for error in rejected.errors)
             quality_rejections.add("noun")
             rejected_tasks.add(task_id)

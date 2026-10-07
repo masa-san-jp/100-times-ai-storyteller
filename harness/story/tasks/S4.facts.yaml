@@ -1,6 +1,7 @@
 id: S4.facts
-version: 1
+version: 2
 kind: llm
+element: labeled
 inputs:
   section:
     label: 世界セクションの定義
@@ -60,13 +61,11 @@ card:
     - 一覧項目の名前が与えられている場合はその項目の年・規模・構成・所属を定める。
     - 新しい固有名詞は与えられた音の2個以上から組み立て、glossary に名前・カタカナの読み・種類・1文の定義を記す。既存の名前は入力と用語集の表記を使う。
     - 名前の響きや出力スキーマなど、作り方の指示は事実に書かない。
-    - sources には使った入力素材の ID を記す。
-  output_example: '{"facts": [{"name": "...", "value": 0, "unit": "...", "year": 0, "calendar": "...", "count": 0}], "glossary": [{"name": "...", "reading": "...", "kind": "...", "definition": "..."}], "sources": ["place:t1"]}'
+  output_example: '{"facts": [{"name": "...", "value": 0, "unit": "...", "year": 0, "calendar": "...", "count": 0}], "glossary": [{"name": "...", "reading": "...", "kind": "...", "definition": "..."}]}'
 validate:
   schema: schemas/tasks/S4.facts.schema.json
   checks:
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml
-    - sources_exist
 max_input_chars: 3000

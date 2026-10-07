@@ -282,15 +282,15 @@ def test_submission_validation_enforces_max_length_with_task_checks() -> None:
     schema_path = root / "schemas/tasks/S5.intro.schema.json"
     definition = load_yaml(root / "harness/story/tasks/S5.intro.yaml")
     inputs = {"character": {"id": "c1"}}
-    too_long = {"intro": "あ" * 50 + "。", "sources": ["c1"]}
+    too_long = {"intro": "あ" * 50 + "。"}
 
     assert validate_document(too_long, schema_path) == too_long
-    rejected = validate_output(definition, json.dumps(too_long), inputs=inputs)
+    rejected = validate_output(definition, too_long["intro"], inputs=inputs)
     assert not rejected.passed
     assert any("max_chars" in error for error in rejected.errors)
 
-    ok = {"intro": "あ" * 49 + "。", "sources": ["c1"]}
-    assert validate_output(definition, json.dumps(ok), inputs=inputs).passed
+    ok = {"intro": "あ" * 49 + "。"}
+    assert validate_output(definition, ok["intro"], inputs=inputs).passed
 
 
 def test_non_local_endpoint_is_rejected() -> None:
@@ -422,9 +422,9 @@ def test_auto_downgrades_json_mode_and_persists_warning(tmp_path: Path) -> None:
         [
             AdapterResponse("", "stop"),
             AdapterResponse("", "stop"),
-            AdapterResponse('{"text":"ok","sources":["d1"]}', "stop"),
-            AdapterResponse('{"text":"ok","sources":["d2"]}', "stop"),
-            AdapterResponse('{"text":"ok","sources":["d3"]}', "stop"),
+            AdapterResponse("ok", "stop"),
+            AdapterResponse("ok", "stop"),
+            AdapterResponse("ok", "stop"),
             AdapterResponse("確認文をまとめた本文です。", "stop"),
         ]
     )
@@ -482,16 +482,15 @@ def test_auto_uses_the_manifest_harness_for_mixed_runs(tmp_path: Path) -> None:
                                 {"text": f"水路に残る記憶と{index}番目の影", "kind": "image"}
                                 for index in range(5)
                             ],
-                            "sources": ["p001"],
                         },
                         ensure_ascii=False,
                     ),
                     "stop",
                 )
-            if '"text": "..."' in card:
+            if "### 項目\n" in card:
                 item_id = card.split("id: '[", 1)[1].split("]'", 1)[0]
                 return AdapterResponse(
-                    json.dumps({"text": "確認できた項目です。", "sources": [item_id]}),
+                    "確認できた項目です。",
                     "stop",
                 )
             return AdapterResponse("確認文をまとめた本文です。", "stop")

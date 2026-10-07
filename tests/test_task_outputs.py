@@ -7,7 +7,7 @@ from storyteller.validation import input_source_ids
 
 def test_text_sources_use_fitted_input_and_survive_cache_reuse(tmp_path: Path) -> None:
     definition = {
-        "id": "S4.section", "version": 1, "kind": "llm", "output": "text",
+        "id": "S4.section", "version": 1, "kind": "llm", "element": "text", "output": "text",
         "inputs": {
             "cut": {"label": "切り口", "from": "input", "select": "input.cut", "required": True},
             "unused": {"label": "補足", "from": "input", "select": "input.unused", "truncate": "drop"},
@@ -51,4 +51,4 @@ def test_text_sources_exclude_context_identifiers() -> None:
         "role_definition": {"id": "protagonist"},
         "plot_requirements": {"id": "quest"},
         "name_sound": {"set_id": "sound-01"},
-    }) == ["c1", "sound-01", "want:t1"]
+    }) == ["c1", "want:t1"]

@@ -10,7 +10,7 @@ def llm_task(**overrides):
     task = {
         "id": "D2.echo",
         "version": 1,
-        "kind": "llm",
+        "kind": "llm", "element": "text",
         "output": "json",
         "inputs": {
             "items": {
@@ -29,7 +29,7 @@ def llm_task(**overrides):
         "card": {
             "role": "与えられた項目だけを使って、応答を書く。",
             "steps": ["項目を一つずつ確認する。", "JSONを出力する。"],
-            "output_example": '{"text": "...", "sources": ["d1"]}',
+            "output_example": '{"text": "..."}',
         },
     }
     task.update(overrides)
@@ -106,7 +106,7 @@ def test_card_has_fixed_sections_and_hides_task_metadata():
     assert "## 出力形式\n次のJSONだけを出力すること。前後に説明を書かないこと。" in card
     assert "## 守ること" in card
     assert "- 日本語で書く（ID・列挙値を除く）。" in card
-    assert "- sources には、入力に [ ] で示された ID だけを書く。" in card
+    assert "sources" not in card
     assert "D2.echo" not in card
     assert "D1.items" not in card
     assert "run" not in card

@@ -1,6 +1,7 @@
 id: S5.motive
-version: 6
+version: 7
 kind: llm
+element: text
 inputs:
   facts:
     label: 人物の事実のシート
@@ -69,7 +70,7 @@ inputs:
     select: glossary
     required: false
     truncate: head
-output: json
+output: text
 card:
   role: 人物のプロフィールと周囲の人物から、その人物の動機を書く。
   steps:
@@ -78,10 +79,8 @@ card:
     - 名前、役、プロフィール、他の人物の名前と役の関係から、動機を1つ書く。
     - 主人公には抑圧されている自己像が入力されていれば、それを動機の緊張として反映する。
     - プロット型の人物要件と、非主人公の場合に与えられた主人公の名前・役・紹介に沿い、120字以内で書く。
-    - 入力にない過去や関係を付け加えず、sources には使った入力のIDを記録する。
-  output_example: '{"motive": "...", "sources": ["c1"]}'
+    - 入力にない過去や関係を付け加えない。
 validate:
-  schema: schemas/tasks/S5.motive.schema.json
   checks:
     - no_new_proper_nouns:
         mode: fail
@@ -89,11 +88,8 @@ validate:
     - avoid_listed:
         table: tables/meta_terms.yaml
     - min_chars:
-        field: motive
         n: 1
-    - sources_exist
     - max_chars:
-        field: motive
         n: 120
 max_input_chars: 3000
-default_sources: ["{slot}"]
+continuation: false

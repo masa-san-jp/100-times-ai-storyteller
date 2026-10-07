@@ -1,6 +1,7 @@
 id: S8.compare
-version: 5
+version: 6
 kind: llm
+element: judgement
 inputs:
   event_a:
     label: 記述A
@@ -25,9 +26,9 @@ card:
     - 矛盾とは、2つの記述が事実として両立しないことだけを指す（同じ人物が同時に別の場所にいる、記述Aで確定した結果を記述Bが理由なく覆す、存在しないはずの人物・物が現れる、など）。人物の心情・関係・状況の変化や展開は矛盾に含めない。
     - 記述Aの結果と、記述Bの内容が、上の定義に当てはまるかだけを判定する。
     - 矛盾があれば answer を yes、なければ no にする。
-    - reason は判定理由を1文で書き、sources には記述Aと記述Bの出来事IDを順に入れる。
+    - reason は判定理由を1文で書く。
     - 入力にない出来事や事情を付け加えない。
-  output_example: '{"answer": "...", "reason": "...", "sources": ["e001", "e002"]}'
+  output_example: '{"answer": "...", "reason": "..."}'
 validate:
   schema: schemas/tasks/S8.compare.schema.json
   checks:
@@ -37,10 +38,6 @@ validate:
     - min_chars:
         field: reason
         n: 1
-    - sources_exist
-    - count:
-        field: sources
-        n: 2
 # Both descriptions contain validated event fields of at most 120 characters.
 # Their complete bounded objects fit; head/tail only shorten strings or arrays.
 max_input_chars: 2800

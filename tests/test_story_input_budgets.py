@@ -30,7 +30,7 @@ def _assert_fits(task_type, inputs):
     size = input_char_count(definition, fitted)
     assert size <= definition["max_input_chars"]
     tail = None
-    if definition["output"] == "text":
+    if definition.get("continuation", definition["output"] == "text"):
         remaining = definition["max_input_chars"] - size
         assert remaining >= 1000
         tail = "末" * remaining
@@ -96,7 +96,6 @@ def test_comparison_preserves_both_max_length_valid_events():
     event = _event()
     event.update({name: "記" * 120 for name, value in event.items() if isinstance(value, str)})
     event["who"] = [f"c{i}" for i in range(1, 6)]
-    event["sources"] = [*event["who"], "place", "customs", "object:t100", "m001"]
     inputs = {"event_a": {"id": "e001", "event": event}, "event_b": {"id": "e002", "event": event}}
     assert _assert_fits("S8.compare", inputs) == inputs
 

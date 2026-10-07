@@ -145,7 +145,7 @@ def test_continuation_paragraph_similarity(paragraph: str, removed: bool):
 
 
 def _continuation_definition(**extra):
-    return {"id": "D1.story", "version": 1, "kind": "llm", "output": "text",
+    return {"id": "D1.story", "version": 1, "kind": "llm", "element": "text", "output": "text",
             "continuation": True, "max_input_chars": 3000,
             "card": {"role": "本文を書く。", "steps": ["本文を完結させる。"]},
             "validate": {"checks": ["ends_complete"]}, **extra}

@@ -37,6 +37,7 @@ def test_load_yaml_validates_a_task_definition(tmp_path):
         id: S1.profile
         version: 1
         kind: llm
+        element: labeled
         inputs:
           character:
             label: 人物
@@ -49,11 +50,10 @@ def test_load_yaml_validates_a_task_definition(tmp_path):
           role: 与えられた属性だけを使う。
           steps:
             - プロフィールを書く。
-          output_example: '{"profile": "...", "sources": ["want:i007"]}'
+          output_example: '{"profile": "..."}'
         validate:
           schema: schemas/tasks/S1.profile.schema.json
           checks:
-            - sources_exist
             - max_chars:
                 field: profile
                 n: 200
@@ -73,7 +73,7 @@ def test_load_yaml_validates_a_task_definition(tmp_path):
     assert value["validate"]["schema"] == "schemas/tasks/S1.profile.schema.json"
 
 
-def test_task_definition_output_example_allows_placeholders_enums_and_source_ids(
+def test_task_definition_output_example_allows_placeholders_and_enums(
     tmp_path,
 ):
     path = write_yaml(
@@ -83,11 +83,12 @@ def test_task_definition_output_example_allows_placeholders_enums_and_source_ids
         id: S1.extract
         version: 1
         kind: llm
+        element: labeled
         output: json
         card:
           role: 素材を抽出する。
           steps: [抽出する。]
-          output_example: '{"materials": [{"text": "...", "kind": "conflict"}], "sources": ["p001"]}'
+          output_example: '{"materials": [{"text": "...", "kind": "conflict"}]}'
         validate:
           schema: schemas/tasks/S1.extract.schema.json
         """,
@@ -101,8 +102,8 @@ def test_task_definition_output_example_allows_placeholders_enums_and_source_ids
 @pytest.mark.parametrize(
     "output_example",
     [
-        '{"materials": [{"text": "具体的な文例", "kind": "conflict"}], "sources": ["p001"]}',
-        '{"materials": [{"text": "...", "kind": "具体的な種類"}], "sources": ["p001"]}',
+        '{"materials": [{"text": "具体的な文例", "kind": "conflict"}]}',
+        '{"materials": [{"text": "...", "kind": "具体的な種類"}]}',
     ],
 )
 def test_task_definition_rejects_concrete_output_example_strings(
@@ -115,6 +116,7 @@ def test_task_definition_rejects_concrete_output_example_strings(
         id: S1.extract
         version: 1
         kind: llm
+        element: labeled
         output: json
         card:
           role: 素材を抽出する。
@@ -149,6 +151,7 @@ def test_task_definition_validate_schema_is_a_relative_schema_path(
         id: S1.profile
         version: 1
         kind: llm
+        element: labeled
         output: text
         card:
           role: プロフィールを書く。
@@ -179,6 +182,7 @@ def test_task_definition_requires_kind_specific_fields(tmp_path):
         id: D2.echo
         version: 1
         kind: llm
+        element: labeled
         output: text
         """,
     )
@@ -197,6 +201,7 @@ def test_yaml_no_is_not_accepted_as_a_string(tmp_path):
         id: S1.profile
         version: 1
         kind: llm
+        element: labeled
         output: text
         card:
           role: no
@@ -274,15 +279,13 @@ def test_schemas_are_valid_draft_2020_12_schemas():
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
 
 
-def output_task(output="json", checks=None, schema=None, default_sources=None):
+def output_task(output="json", checks=None, schema=None):
     validation = {}
     if checks is not None:
         validation["checks"] = checks
     if schema is not None:
         validation["schema"] = schema
     task = {"output": output, "validate": validation}
-    if default_sources is not None:
-        task["default_sources"] = default_sources
     return task
 
 
@@ -353,109 +356,9 @@ def test_submitted_string_values_are_stripped_before_validation_and_storage() ->
     assert result.value == {"text": "本文", "items": ["項目"]}
 
 
-def test_sources_exist_removes_unknown_ids_and_keeps_valid_ids() -> None:
-    task = output_task(checks=["sources_exist"])
-    inputs = {
-        "character": {
-            "id": "c1",
-            "role_definition": {"id": "adversary", "definition": "定義"},
-            "plot_context": {"id": "romance", "character_requirements": "要件"},
-            "name_sound": {"set_id": "sound-05"},
-        },
-        "role_definition": {"id": "adversary", "definition": "定義"},
-        "plot_requirements": {"id": "romance", "character_requirements": "要件"},
-    }
-
-    result = validate_output(
-        task,
-        json.dumps(
-            {
-                "sources": [
-                    "c1",
-                    "role_definition:adversary",
-                    "plot_context:romance",
-                    "name_sound:set_id sound-05",
-                ]
-            },
-            ensure_ascii=False,
-        ),
-        inputs=inputs,
-    )
-
-    assert result.passed
-    assert result.value == {"sources": ["c1"]}
-    assert result.warnings == (
-        "未知の出典 ID を除去: "
-        "['role_definition:adversary', 'plot_context:romance', "
-        "'name_sound:set_id sound-05']",
-    )
-
-
-def test_sources_exist_rejects_when_all_ids_are_unknown() -> None:
-    result = validate_output(
-        output_task(checks=["sources_exist"]),
-        '{"sources": ["missing"]}',
-        inputs={"character": {"id": "c1"}},
-    )
-
-    assert not result.passed
-    assert result.value == {"sources": []}
-    assert any("有効な出典 ID がありません" in error for error in result.errors)
-
-
-def test_default_sources_fills_in_the_task_s_own_id_when_no_source_survives() -> None:
-    task = output_task(checks=["sources_exist"], default_sources=["{slot}"])
-
-    result = validate_output(
-        task,
-        '{"sources": ["c1"]}',
-        inputs={"character": {"id": "c2"}},
-        index=["c2"],
-    )
-
-    assert result.passed
-    assert result.value == {"sources": ["c2"]}
-    assert result.warnings == (
-        "未知の出典 ID を除去: ['c1']",
-        "出典を補完: ['c2']",
-    )
-
-
-def test_default_sources_does_not_run_when_a_valid_source_already_survives() -> None:
-    task = output_task(checks=["sources_exist"], default_sources=["{slot}"])
-
-    result = validate_output(
-        task,
-        '{"sources": ["c2"]}',
-        inputs={"character": {"id": "c2"}},
-        index=["c2"],
-    )
-
-    assert result.passed
-    assert result.value == {"sources": ["c2"]}
-    assert result.warnings == ()
-
-
-def test_sources_exist_still_fails_without_default_sources() -> None:
-    result = validate_output(
-        output_task(checks=["sources_exist"]),
-        '{"sources": ["c1"]}',
-        inputs={"character": {"id": "c2"}},
-        index=["c2"],
-    )
-
-    assert not result.passed
-    assert any("有効な出典 ID がありません" in error for error in result.errors)
-
-
 @pytest.mark.parametrize(
     ("check", "good", "bad"),
     [
-        (
-            "sources_exist",
-            {"sources": ["a1"]},
-            {"sources": ["unknown"]},
-        ),
         (
             {"max_chars": {"field": "text", "n": 3}},
             {"text": "あいう"},
@@ -632,7 +535,7 @@ def test_short_s5_items_still_reject_excess_length(field, maximum):
     definition = load_yaml(ROOT / f"harness/story/tasks/S5.{field}.yaml", TASK_SCHEMA)
     result = validate_output(
         definition,
-        json.dumps({field: "人。" * (maximum // 2 + 1), "sources": ["c1"]}, ensure_ascii=False),
+        json.dumps({field: "人。" * (maximum // 2 + 1)}, ensure_ascii=False),
         inputs={"character": {"id": "c1"}},
     )
 
@@ -647,7 +550,7 @@ def test_s2_counterpart_keeps_its_former_schema_char_range(length, passed):
     definition = load_yaml(ROOT / "harness/story/tasks/S2.expand.yaml", TASK_SCHEMA)
     result = validate_output(
         definition,
-        json.dumps({"items": ["素" * 10] * 5, "counterpart": "対" * length, "sources": ["m001"]}, ensure_ascii=False),
+        json.dumps({"items": ["素" * 10] * 5, "counterpart": "対" * length}, ensure_ascii=False),
         inputs={"material": {"id": "m001"}},
     )
 
@@ -668,7 +571,7 @@ def test_array_item_char_ranges_are_enforced_by_checks(task_id, field, minimum, 
 
     def submit():
         values = [{"text": text, "kind": "theme"} for text in texts] if field == "materials" else texts
-        output = {field: values, "sources": [source_id]}
+        output = {field: values}
         if task_id == "S2.expand":
             output["counterpart"] = "対" * minimum
         return validate_output(definition, json.dumps(output, ensure_ascii=False), inputs={"source": {"id": source_id}})

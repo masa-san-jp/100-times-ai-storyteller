@@ -1,6 +1,7 @@
 id: S7.detail
-version: 6
+version: 7
 kind: llm
+element: text
 inputs:
   when:
     label: 出来事のいつ
