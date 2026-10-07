@@ -29,6 +29,8 @@ from .cards import (
 )
 from .cache import cache_key, lookup_cache, save_cache
 from .task_outputs import read_task_output
+from .failure_reports import write_failure_reports
+from .task_ranges import preflight_range, fixed_range_value
 from .story_quality import join_continuation
 from .glossary import build_glossary, registration_outputs, related_glossary, registered_names
 from .manifest import load_manifest, write_manifest
@@ -357,6 +359,7 @@ class Orchestrator:
                 "tasks": {},
                 "warnings": [],
             }
+            self._preflight_ranges(manifest, resolved_run_id, specs)
             for spec in specs:
                 record = _new_task_record(
                     spec, self.task_definitions[spec.type], manifest
@@ -366,7 +369,7 @@ class Orchestrator:
                     parents=True, exist_ok=False
                 )
             _update_run_status(manifest)
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
         except BaseException:
             # Remove the private directory created by this failed run attempt.
             shutil.rmtree(run_dir, ignore_errors=True)
@@ -403,11 +406,11 @@ class Orchestrator:
                 manifest = load_manifest(run_dir / "manifest.json")
                 if self._halt_if_harness_changed(manifest):
                     _touch_manifest(manifest, self._now())
-                    write_manifest(run_dir / "manifest.json", manifest)
+                    self._persist_manifest(run_dir, manifest)
                     return manifest
                 if manifest["status"] in _TERMINAL_RUN_STATUSES:
                     _touch_manifest(manifest, self._now())
-                    write_manifest(run_dir / "manifest.json", manifest)
+                    self._persist_manifest(run_dir, manifest)
                     return manifest
                 _refresh_blocked_tasks(manifest, self._now())
                 self._complete_ready_cached_tasks(manifest, run_id)
@@ -416,14 +419,14 @@ class Orchestrator:
                 if task_id is None:
                     _update_run_status(manifest)
                     _touch_manifest(manifest, self._now())
-                    write_manifest(run_dir / "manifest.json", manifest)
+                    self._persist_manifest(run_dir, manifest)
                     return manifest
                 # ハンドラから Orchestrator を呼び戻さないこと。ここでは
                 # 1コードタスクの読み込み・実行・書き込みだけをロックする。
                 self._execute_code_task(manifest, run_id, task_id)
                 _touch_manifest(manifest, self._now())
                 _update_run_status(manifest)
-                write_manifest(run_dir / "manifest.json", manifest)
+                self._persist_manifest(run_dir, manifest)
 
     def claim_next(
         self,
@@ -465,7 +468,7 @@ class Orchestrator:
                         manifest = load_manifest(run_dir / "manifest.json")
                         if self._halt_if_harness_changed(manifest):
                             _touch_manifest(manifest, self._now())
-                            write_manifest(run_dir / "manifest.json", manifest)
+                            self._persist_manifest(run_dir, manifest)
                             break
                         if manifest["status"] != "active" and not retry_same_run:
                             break
@@ -487,7 +490,7 @@ class Orchestrator:
                             if changed:
                                 _update_run_status(manifest)
                             _touch_manifest(manifest, now)
-                            write_manifest(run_dir / "manifest.json", manifest)
+                            self._persist_manifest(run_dir, manifest)
                             break
 
                         result = self._claim_task_locked(
@@ -500,7 +503,7 @@ class Orchestrator:
                         )
                         _update_run_status(manifest)
                         _touch_manifest(manifest, now)
-                        write_manifest(run_dir / "manifest.json", manifest)
+                        self._persist_manifest(run_dir, manifest)
                         if result is not None:
                             return result
                         # A card error or O_EXCL race consumed this candidate.
@@ -545,7 +548,7 @@ class Orchestrator:
             manifest = load_manifest(run_dir / "manifest.json")
             if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
-                write_manifest(run_dir / "manifest.json", manifest)
+                self._persist_manifest(run_dir, manifest)
                 raise HaltedRunError(f"run は停止中です: {run_id}")
             if manifest["status"] == "halted":
                 raise HaltedRunError(f"run は停止中です: {run_id}")
@@ -561,7 +564,7 @@ class Orchestrator:
                 if cache_changed:
                     _update_run_status(manifest)
                     _touch_manifest(manifest, now)
-                    write_manifest(run_dir / "manifest.json", manifest)
+                    self._persist_manifest(run_dir, manifest)
                 raise ClaimError(f"task is not ready for claim: {task_id}")
             result = self._claim_task_locked(
                 manifest,
@@ -575,7 +578,7 @@ class Orchestrator:
                 raise ClaimError(f"task is already claimed: {task_id}")
             _update_run_status(manifest)
             _touch_manifest(manifest, now)
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
             return result
 
     _claim_task = claim_task
@@ -593,7 +596,7 @@ class Orchestrator:
             _refresh_blocked_tasks(manifest, self._now())
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
             return manifest
 
     # Short aliases used by callers implementing the future ``st resume`` CLI.
@@ -639,7 +642,7 @@ class Orchestrator:
             manifest = load_manifest(run_dir / "manifest.json")
             if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
-                write_manifest(run_dir / "manifest.json", manifest)
+                self._persist_manifest(run_dir, manifest)
                 raise HaltedRunError(f"run は停止中です: {found_run_id}")
             if manifest["status"] == "halted":
                 raise HaltedRunError(f"run は停止中です: {found_run_id}")
@@ -691,7 +694,7 @@ class Orchestrator:
             manifest = load_manifest(run_dir / "manifest.json")
             if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
-                write_manifest(run_dir / "manifest.json", manifest)
+                self._persist_manifest(run_dir, manifest)
                 raise HaltedRunError(f"run は停止中です: {run_id}")
             if manifest["status"] == "halted":
                 raise HaltedRunError(f"run は停止中です: {run_id}")
@@ -770,6 +773,13 @@ class Orchestrator:
                         and "field" not in check["min_chars"]
                     ):
                         check["min_chars"]["n"] = (check["min_chars"]["n"] + 1) // 2
+            if definition.get("range"):
+                context = self._build_context(manifest, run_id, task_id)
+                validation_definition = dict(validation_definition, range=preflight_range(
+                    definition, {**manifest, **context.inputs}, run_input=context.run_input,
+                    outputs=_source_outputs(manifest, task, definition, context.dependency_outputs),
+                    index=task["index"],
+                ))
             validation = validate_output(
                 validation_definition,
                 submission_output,
@@ -810,7 +820,9 @@ class Orchestrator:
     submit_output = submit
     process_submission = submit
 
-    def record_executor_failure(self, ticket: str, reason: str) -> SubmissionResult:
+    def record_executor_failure(
+        self, ticket: str, reason: str, *, fatal: bool = False,
+    ) -> SubmissionResult:
         """Record an executor or adapter failure as a failed submission."""
 
         if not isinstance(reason, str) or not reason.strip():
@@ -823,7 +835,7 @@ class Orchestrator:
             manifest = load_manifest(run_dir / "manifest.json")
             if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
-                write_manifest(run_dir / "manifest.json", manifest)
+                self._persist_manifest(run_dir, manifest)
                 raise HaltedRunError(f"run は停止中です: {run_id}")
             if manifest["status"] == "halted":
                 raise HaltedRunError(f"run は停止中です: {run_id}")
@@ -835,6 +847,7 @@ class Orchestrator:
             None,
             ValidationResult(None, errors=(reason.strip(),)),
             inputs,
+            fatal=fatal,
         )
 
     submit_failure = record_executor_failure
@@ -849,13 +862,14 @@ class Orchestrator:
         card_inputs: Mapping[str, Any],
         *,
         discard_partial: bool = False,
+        fatal: bool = False,
     ) -> SubmissionResult:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
             if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
-                write_manifest(run_dir / "manifest.json", manifest)
+                self._persist_manifest(run_dir, manifest)
                 raise HaltedRunError(f"run は停止中です: {run_id}")
             if manifest["status"] == "halted":
                 raise HaltedRunError(f"run は停止中です: {run_id}")
@@ -905,7 +919,7 @@ class Orchestrator:
                 _refresh_blocked_tasks(manifest, at)
                 _update_run_status(manifest)
                 _touch_manifest(manifest, at)
-                write_manifest(run_dir / "manifest.json", manifest)
+                self._persist_manifest(run_dir, manifest)
                 _remove_partial_output(self.task_dir(run_id, task_id))
                 return SubmissionResult(
                     True,
@@ -943,7 +957,9 @@ class Orchestrator:
             max_attempts = int(task_definition.get("max_attempts", 5))
             exhausted = task["tries"] >= max_attempts
             on_exhausted = task_definition.get("on_exhausted", "fail")
-            if exhausted and on_exhausted == "skip":
+            if fatal:
+                next_state = "failed"
+            elif exhausted and on_exhausted == "skip":
                 next_state = "skipped"
             elif exhausted:
                 next_state = "failed"
@@ -962,19 +978,19 @@ class Orchestrator:
                     f"{task_id}: 試行の上限に達したため省略: {reason}"
                 )
                 _refresh_blocked_tasks(manifest, at)
-            _update_run_status(manifest)
-            _touch_manifest(manifest, at)
-            write_manifest(run_dir / "manifest.json", manifest)
-            _release_claim(run_dir, task_id, task)
-            _remove_task_outputs(run_dir, task_id)
-            if discard_partial:
-                _remove_partial_output(self.task_dir(run_id, task_id))
             atomic_write_json(
                 self.task_dir(run_id, task_id)
                 / "attempts"
                 / f"{attempt_number}.json",
                 attempt_record,
             )
+            _update_run_status(manifest)
+            _touch_manifest(manifest, at)
+            self._persist_manifest(run_dir, manifest)
+            _release_claim(run_dir, task_id, task)
+            _remove_task_outputs(run_dir, task_id)
+            if discard_partial:
+                _remove_partial_output(self.task_dir(run_id, task_id))
             return SubmissionResult(
                 False,
                 run_id,
@@ -1002,7 +1018,7 @@ class Orchestrator:
             manifest = load_manifest(run_dir / "manifest.json")
             if self._halt_if_harness_changed(manifest):
                 _touch_manifest(manifest, self._now())
-                write_manifest(run_dir / "manifest.json", manifest)
+                self._persist_manifest(run_dir, manifest)
                 raise HaltedRunError(f"run は停止中です: {run_id}")
             if manifest["status"] == "halted":
                 raise HaltedRunError(f"run は停止中です: {run_id}")
@@ -1043,7 +1059,7 @@ class Orchestrator:
             _refresh_blocked_tasks(manifest, at)
             _update_run_status(manifest)
             _touch_manifest(manifest, at)
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
             return SubmissionResult(
                 True,
                 run_id,
@@ -1095,7 +1111,7 @@ class Orchestrator:
             )
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
             return manifest
 
     retry_task = retry_failed
@@ -1124,7 +1140,7 @@ class Orchestrator:
             )
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
             return manifest
 
     invalidate = invalidate_task
@@ -1135,6 +1151,7 @@ class Orchestrator:
         task_id: str,
         *,
         reason: str = "claimを取り消し",
+        expected_ticket: str | None = None,
     ) -> dict[str, Any]:
         """Cancel a live claim and return the task to ``ready``.
 
@@ -1148,6 +1165,13 @@ class Orchestrator:
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
             task = _get_task(manifest, task_id)
+            current_claim = task.get("claim")
+            if expected_ticket is not None and (
+                task["state"] != "claimed"
+                or not isinstance(current_claim, Mapping)
+                or current_claim.get("ticket") != expected_ticket
+            ):
+                return manifest
             if task["state"] != "claimed":
                 raise ClaimError(f"task is not claimed: {task_id}")
             claim_path = self.task_dir(run_id, task_id) / "claim.json"
@@ -1182,7 +1206,7 @@ class Orchestrator:
             )
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
             return manifest
 
     _revoke_claim = revoke_claim
@@ -1433,7 +1457,7 @@ class Orchestrator:
             _refresh_blocked_tasks(manifest, self._now())
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
             return manifest
 
     def _complete_task(
@@ -1482,12 +1506,13 @@ class Orchestrator:
                 (),
                 self.task_definitions,
             )
+            self._preflight_ranges(manifest, run_id, additions)
             _create_dynamic_task_dirs(run_id, additions, self.task_dir)
             _commit_dynamic_tasks(manifest, additions, self.task_definitions)
             _refresh_blocked_tasks(manifest, self._now())
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
-            write_manifest(run_dir / "manifest.json", manifest)
+            self._persist_manifest(run_dir, manifest)
             return manifest
 
     def _execute_code_task(
@@ -1532,6 +1557,11 @@ class Orchestrator:
             for invalidated_id, reason in normalised.invalidations:
                 _validate_invalidation_request(manifest, invalidated_id, reason)
             _validate_manifest_updates(normalised.manifest_updates)
+            self._preflight_ranges(
+                manifest, run_id, normalised.add_tasks,
+                pending_outputs={task_id: normalised.output},
+                updates=normalised.manifest_updates,
+            )
             created_dirs = _create_dynamic_task_dirs(
                 run_id,
                 normalised.add_tasks,
@@ -1682,6 +1712,22 @@ class Orchestrator:
                     self.task_definitions[task["type"]],
                     context.inputs,
                 )
+                fixed = None
+                if context.definition.get("range"):
+                    limits = preflight_range(
+                        context.definition, {**manifest, **context.inputs},
+                        run_input=context.run_input, outputs=_source_outputs(
+                            manifest, task, context.definition, context.dependency_outputs
+                        ), index=task["index"],
+                    )
+                    fixed = fixed_range_value(context.definition, limits)
+                if fixed is not None:
+                    atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
+                    _write_submitted_output(self.task_dir(run_id, task_id), context.definition, fixed)
+                    _set_task_state(manifest, task_id, "done", self._now(), reason="値の範囲が1つに確定")
+                    task["error"] = None
+                    changed = True
+                    continue
                 key = self._cache_key_for_task(manifest, task_id, card_inputs)
             except Exception as error:
                 _fail_task(
@@ -1743,6 +1789,45 @@ class Orchestrator:
 
     def _now(self) -> str:
         return _timestamp(self._clock)
+
+    def _preflight_ranges(
+        self, manifest: Mapping[str, Any], run_id: str, specs: Sequence[TaskSpec], *,
+        pending_outputs: Mapping[str, Any] | None = None,
+        updates: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Reject defective bounds before creating any of the added task directories."""
+        if not any(self.task_definitions[spec.type].get("range") for spec in specs):
+            return
+        values = {**manifest, **(updates or {})}
+        run_input = _read_run_input(self.run_dir(run_id))
+        prospective = deepcopy(manifest)
+        for spec in specs:
+            prospective["tasks"][spec.task_id] = _new_task_record(
+                spec, self.task_definitions[spec.type], prospective
+            )
+        for key in pending_outputs or {}:
+            prospective["tasks"][key]["state"] = "done"
+        for spec in specs:
+            definition = self.task_definitions[spec.type]
+            if not definition.get("range"):
+                continue
+            task = {"deps": list(spec.deps), "index": list(spec.index)}
+            dependencies = _read_dependency_outputs(self.run_dir(run_id), prospective, task)
+            dependencies.update({key: value for key, value in (pending_outputs or {}).items()
+                                 if key in spec.deps})
+            sources = _source_outputs(prospective, task, definition, dependencies)
+            limits = preflight_range(definition, values, run_input=run_input,
+                                     outputs=sources, index=spec.index)
+            fixed_range_value(definition, limits)
+
+    def _persist_manifest(self, run_dir: Path, manifest: Mapping[str, Any]) -> None:
+        write_failure_reports(
+            run_dir, manifest, self.task_definitions, self.repository_root,
+            resolve_inputs=lambda task_id: self._build_context(
+                manifest, manifest["run_id"], task_id
+            ).inputs,
+        )
+        write_manifest(run_dir / "manifest.json", manifest)
 
 
 # A shorter name is useful to callers that treat this as a run engine.

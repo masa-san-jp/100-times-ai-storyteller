@@ -54,7 +54,7 @@
     "task": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["task_id", "type", "state", "tries", "invalidations", "executor_id", "isolation", "error"],
+      "required": ["task_id", "type", "state", "tries", "invalidations", "executor_id", "isolation", "error", "failure_report"],
       "properties": {
         "task_id": {"type": "string"},
         "type": {"type": "string"},
@@ -63,7 +63,8 @@
         "invalidations": {"type": "integer", "minimum": 0},
         "executor_id": {"type": ["string", "null"]},
         "isolation": {"type": ["string", "null"]},
-        "error": {"type": ["string", "null"]}
+        "error": {"type": ["string", "null"]},
+        "failure_report": {"type": ["string", "null"]}
       }
     }
   }

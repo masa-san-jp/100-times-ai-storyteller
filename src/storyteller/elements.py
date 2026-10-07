@@ -23,7 +23,7 @@ def clean_value(raw: str, unit: str = "") -> str:
     unit = unicodedata.normalize("NFKC", unit)
     if unit and text.endswith(unit):
         text = text[:-len(unit)].strip()
-    return text
+    return re.sub(r"^(?:(?:おおよそ|およそ|約)\s*)+", "", text)
 
 
 def parse_element_value(
@@ -37,16 +37,16 @@ def parse_element_value(
         if (not selected or len(selected) > choice_max
                 or len(set(selected)) != len(selected)
                 or not set(selected).issubset(choices)):
-            raise ValueError("choice: 選択肢の ID と選べる数の上限に従ってください")
+            raise ValueError("choice: 値を1つだけ書く（choice_max が2以上なら上限までの ID）。選択肢に従ってください")
         return selected[0] if choice_max == 1 else selected
     text = text.replace(",", "")
     if element == "integer":
         if not re.fullmatch(r"[+-]?[0-9]+", text):
-            raise ValueError("integer: 整数1つを解析できません")
+            raise ValueError("integer: 値を1つだけ書く（整数を解析できません）")
         value = int(text)
     elif element == "number":
         if not re.fullmatch(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", text):
-            raise ValueError("number: 数値1つを解析できません")
+            raise ValueError("number: 値を1つだけ書く（数値を解析できません）")
         value = float(text)
         if not math.isfinite(value):
             raise ValueError("number: 有限の数値を指定してください")

@@ -28,7 +28,7 @@ def test_value_normalization(element, raw, unit, expected):
 @pytest.mark.parametrize(("element", "raw"), [
     ("integer", "12.0"), ("integer", "年は12"), ("integer", "12 13"),
     ("number", "NaN"), ("number", "Infinity"), ("number", "1e999"),
-    ("number", "およそ450"), ("number", "450m"),
+    ("number", "450m"),
 ])
 def test_values_reject_explanations_and_nonfinite_numbers(element, raw):
     with pytest.raises(ValueError):
