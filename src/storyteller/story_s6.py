@@ -10,6 +10,7 @@ from typing import Any
 
 from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
+from .story_s7 import event_tasks
 from .tables import load_table
 from .validation import validate_document
 from .volume import compute_initial_volume
@@ -712,14 +713,16 @@ def _build_downstream_tasks(
     for slot in slots:
         event_id = slot["id"]
         thread_id = slot["thread"]
-        s7_id = f"S7.event-{event_id}"
+        s7_id = f"S7.assemble-{event_id}"
         deps = [parent_task_id]
         previous_judge = previous_by_thread.get(thread_id)
         if previous_judge is not None:
             deps.append(previous_judge)
-        additions.append(
-            TaskSpec(s7_id, "S7.event", deps=_unique(deps), index=(event_id,))
+        previous_event = (
+            previous_judge.replace("S8.judge-", "S7.assemble-", 1)
+            if previous_judge is not None else None
         )
+        additions.extend(event_tasks(parent_task_id, event_id, deps, previous_event))
         s7_ids_in_time_order.append(s7_id)
         previous_by_thread[thread_id] = f"S8.judge-{event_id}"
 
@@ -741,7 +744,7 @@ def _build_downstream_tasks(
         previous_detail: str | None = None
         for number, _beat in enumerate(beat_definitions, start=1):
             detail_id = f"S7.detail-{event_id}-b{number}"
-            deps = [parent_task_id, f"S7.event-{event_id}", f"S8.judge-{event_id}"]
+            deps = [parent_task_id, f"S7.assemble-{event_id}", f"S8.judge-{event_id}"]
             if previous_detail is not None:
                 deps.append(previous_detail)
             additions.append(

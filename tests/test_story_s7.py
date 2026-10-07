@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from storyteller.cards import generate_task_card
@@ -10,7 +9,6 @@ from storyteller.validation import load_and_validate_yaml, validate_output
 
 ROOT = Path(__file__).parents[1]
 TASK_SCHEMA = ROOT / "schemas" / "task-definition.schema.json"
-S7_SCHEMA = ROOT / "schemas" / "tasks" / "S7.event.schema.json"
 
 
 def _load_definition() -> dict[str, object]:
@@ -64,49 +62,24 @@ def _event() -> dict[str, object]:
     }
 
 
-def test_s7_definition_and_schema_are_valid() -> None:
+def test_s7_definitions_generate_one_text_element() -> None:
+    from tools.check_harness import MIGRATION_EXCEPTIONS, check_harness
+
+    assert "S7.event" not in MIGRATION_EXCEPTIONS
+    assert check_harness() == []
     definition = _load_definition()
-
     assert definition["id"] == "S7.event"
+    assert definition["element"] == "text"
+    assert definition["output"] == "text"
+    assert definition["continuation"] is False
+    assert "schema" not in definition["validate"]
+    assert "decided_fields" in definition["inputs"]
+    assert "who" not in definition["inputs"]
     assert definition["candidates"] == 1
-    assert definition["validate"]["schema"] == "schemas/tasks/S7.event.schema.json"
-    assert any(
-        "why・where・when は、この出来事に固有の内容にし" in step
-        and "人物の動機をそのまま書き写さない" in step
-        for step in definition["card"]["steps"]
-    )
-    assert set(definition["inputs"]) == {
-        "stage_definition",
-        "stage_guidance",
-        "required_events",
-        "absent_role_note",
-        "object",
-        "characters",
-        "world_sections",
-        "previous_result",
-        "conflict",
-        "climax",
-        "theme",
-        "glossary",
-    }
-
-    result = validate_output(
-        definition,
-        json.dumps(_event(), ensure_ascii=False),
-        inputs={"characters": _slot()["characters"], "world_sections": _slot()["world_sections"]},
-        harness_root=ROOT,
-    )
-    assert result.passed, result.errors
-
-    invalid = dict(_event(), who=["c2"])
-    rejected = validate_output(
-        definition,
-        json.dumps(invalid, ensure_ascii=False),
-        inputs={"characters": _slot()["characters"]},
-        harness_root=ROOT,
-    )
-    assert not rejected.passed
-    assert any("ids_subset" in error for error in rejected.errors)
+    assert definition["max_invalidations"] == 2
+    for text, passed in [("小さな変化が起きる。", True), ("変" * 121, False), ("", False)]:
+        result = validate_output(definition, text, harness_root=ROOT)
+        assert result.passed == passed, result.errors
 
 
 def test_s7_card_contains_only_local_slot_context() -> None:
@@ -119,6 +92,7 @@ def test_s7_card_contains_only_local_slot_context() -> None:
         "motive": "道を閉ざしたい。",
     }
     inputs = {
+        "event_field": "何が起きたか",
         "stage_definition": current["stage"]["definition"],
         "stage_guidance": current["stage"]["guidance"],
         "required_events": current["required_events"],
@@ -147,6 +121,7 @@ def test_s7_card_includes_climax_only_for_a_climax_stage() -> None:
     definition = _load_definition()
     current = _slot()
     inputs = {
+        "event_field": "何が起きたか",
         "stage_definition": current["stage"]["definition"],
         "stage_guidance": current["stage"]["guidance"],
         "required_events": current["required_events"],
@@ -171,14 +146,14 @@ def test_s7_card_includes_climax_only_for_a_climax_stage() -> None:
     assert "最後のスロット" not in climax_card
 
 
-def test_s7_input_selectors_use_s6_slot_and_previous_judge_result() -> None:
+def test_s7_input_selectors_use_s6_slot_and_previous_assembled_result() -> None:
     definition = _load_definition()
     inputs = definition["inputs"]
 
     assert inputs["characters"]["from"] == "S6.expand"
     assert inputs["characters"]["select"] == "slots[{slot}].characters"
     assert inputs["world_sections"]["select"] == "slots[{slot}].world_sections"
-    assert inputs["previous_result"]["from"] == "S8.judge"
+    assert inputs["previous_result"]["from"] == "S7.assemble"
     assert inputs["previous_result"]["select"] == "output"
     assert inputs["climax"]["required"] is False
 
@@ -188,7 +163,7 @@ def test_s7_input_selectors_use_s6_slot_and_previous_judge_result() -> None:
     }
     resolved = resolve_inputs(
         definition,
-        {"S6.expand": {"slots": [slot]}},
+        {"S6.expand": {"slots": [slot], "event_field": "何が起きたか"}},
         index="e001",
     )
     assert "climax" not in resolved

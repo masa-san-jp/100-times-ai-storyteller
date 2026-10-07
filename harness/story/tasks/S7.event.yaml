@@ -1,5 +1,5 @@
 id: S7.event
-version: 6
+version: 7
 kind: llm
 element: text
 inputs:
@@ -43,7 +43,7 @@ inputs:
     truncate: head
   previous_result:
     label: 同じ筋の直前の出来事の結果
-    from: S8.judge
+    from: S7.assemble
     select: output
     required: false
   conflict:
@@ -67,74 +67,40 @@ inputs:
     select: glossary
     required: false
     truncate: head
-output: json
+  event_field:
+    label: 生成する項目
+    from: S6.expand
+    select: event_field
+    required: true
+  decided_fields:
+    label: 先に決まった項目
+    from: S7.event
+    select: output
+    required: false
+output: text
 candidates: 1
+select_candidate: least_similar
 card:
-  role: 与えられた段階と局所的な文脈だけを使って、1つの出来事を書く。
+  role: 与えられた局所的な文脈から、入力で指定された出来事の項目1つだけを書く。
   steps:
-    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
-    - 段階の定義と指針に従い、必須の出来事があればそれを満たす1つの出来事を組み立てる。
-    - 割り当て人物のID・名前・役・動機、選択された世界セクション、直前の結果だけを使い、入力にない人物や出来事を加えない。
-    - 不在の役の注記と象徴的な事物を反映する。クライマックスの条件が入力にある場合だけ、それと葛藤を反映し、解決すべき主題との関係を示す。
-    - why・where・when は、この出来事に固有の内容にし、人物の動機をそのまま書き写さない。
-    - when・where・who・why・intent・what・result・emotion・foreshadowing をそれぞれ120字以内で書く。
-    - who には割り当て人物のIDだけを書く。
-  output_example: '{"when": "...", "where": "...", "who": ["c1"], "why": "...", "intent": "...", "what": "...", "result": "...", "emotion": "...", "foreshadowing": "..."}'
+  - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
+  - 段階の定義と指針に従い、必須の出来事があれば、それを満たす項目の本文を書く。
+  - 割り当て人物のID・名前・役・動機、選択された世界セクション、直前の結果だけを使い、入力にない人物や出来事を加えない。
+  - 不在の役の注記と象徴的な事物を反映する。クライマックスの条件が入力にある場合だけ、それと葛藤を反映し、解決すべき主題との関係を示す。
+  - 先に決まった項目が入力にある場合は、その内容を引き継ぎ、矛盾しない本文を書く。
+  - 理由・場所・時は、この出来事に固有の内容にし、人物の動機をそのまま書き写さない。
+  - 「生成する項目」に指定された本文だけを1〜120字で書く。他の項目、項目名、説明は出力しない。
 validate:
-  schema: schemas/tasks/S7.event.schema.json
   checks:
-    - no_copy_from_inputs
-    - avoid_listed:
-        table: tables/meta_terms.yaml
-    - min_chars:
-        field: when
-        n: 1
-    - min_chars:
-        field: where
-        n: 1
-    - min_chars:
-        field: why
-        n: 1
-    - min_chars:
-        field: intent
-        n: 1
-    - min_chars:
-        field: what
-        n: 1
-    - min_chars:
-        field: result
-        n: 1
-    - min_chars:
-        field: emotion
-        n: 1
-    - ids_subset:
-        field: who
-        slot: characters
-    - max_chars:
-        field: when
-        n: 120
-    - max_chars:
-        field: where
-        n: 120
-    - max_chars:
-        field: why
-        n: 120
-    - max_chars:
-        field: intent
-        n: 120
-    - max_chars:
-        field: what
-        n: 120
-    - max_chars:
-        field: result
-        n: 120
-    - max_chars:
-        field: emotion
-        n: 120
-    - max_chars:
-        field: foreshadowing
-        n: 120
-    - no_new_proper_nouns:
-        mode: fail
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - min_chars:
+      n: 1
+  - max_chars:
+      n: 120
+  - no_new_proper_nouns:
+      mode: fail
 max_input_chars: 2800
 max_invalidations: 2
+continuation: false

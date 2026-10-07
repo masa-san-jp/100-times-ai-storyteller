@@ -79,6 +79,8 @@ def test_event_with_long_world_and_character_items_fits():
     characters = [dict(slot["characters"][0], id=f"c{i}", voice="声" * 1500) for i in range(1, 4)]
     world = [dict(section, body="\n".join(["面" * 1199 + "。"] * 10)) for section in slot["world_sections"]]
     _assert_fits("S7.event", {
+        "event_field": "後の出来事への伏線",
+        "decided_fields": {field: "記" * 120 for field in ("what", "where", "when", "why", "intent", "result", "emotion")},
         "stage_definition": slot["stage"]["definition"], "stage_guidance": slot["stage"]["guidance"],
         "required_events": slot["required_events"], "absent_role_note": None,
         "object": slot["object"], "characters": characters, "world_sections": world,

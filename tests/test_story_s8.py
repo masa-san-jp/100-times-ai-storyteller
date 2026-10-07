@@ -11,6 +11,7 @@ from storyteller.orchestrator import (
     TaskSpec,
     _source_outputs,
 )
+from storyteller.story_s7 import story_s7_assemble
 from storyteller.story_s8 import story_s8_judge, story_s8_plan
 from storyteller.story_s3 import story_s3_assign
 from storyteller.story_s5 import story_s5_relationship_context
@@ -40,7 +41,7 @@ def _plan_context(
     dependency_outputs: dict[str, object] = {"S6.expand": {"slots": slots}}
     dependency_outputs.update(
         {
-            f"S7.event-{slot_id}": {"who": who, "result": slot_id}
+            f"S7.assemble-{slot_id}": {"who": who, "result": slot_id}
             for slot_id, who in event_who.items()
         }
     )
@@ -252,7 +253,7 @@ def test_s8_judge_invalidates_s7_when_a_comparison_is_yes() -> None:
 
     assert result.output == {"slot": "e003", "invalidated": True}
     assert result.invalidations == [
-        ("S7.event-e003", "比較結果に矛盾あり：結果が食い違う。")
+        ("S7.event-e003-what", "比較結果に矛盾あり：結果が食い違う。")
     ]
 
 
@@ -278,7 +279,7 @@ def test_s8_judge_flattens_indexed_comparison_outputs() -> None:
 
     assert result.output["invalidated"] is True
     assert result.invalidations == [
-        ("S7.event-e003", "比較結果に矛盾あり：結果が食い違う。")
+        ("S7.event-e003-what", "比較結果に矛盾あり：結果が食い違う。")
     ]
 
 
@@ -286,7 +287,7 @@ def test_s8_judge_adopts_last_s7_output_at_invalidation_limit(
     tmp_path: Path, monkeypatch
 ) -> None:
     manifest = {
-        "tasks": {"S7.event-e003": {"invalidations": 2}},
+        "tasks": {"S7.event-e003-what": {"invalidations": 2}},
         "warnings": [],
     }
     monkeypatch.setattr(
@@ -313,7 +314,7 @@ def test_s8_judge_adopts_last_s7_output_at_invalidation_limit(
     assert result.invalidations == []
     assert result.manifest_updates == {
         "warnings": [
-            "S7.event-e003: 矛盾あり判定が無効化上限（2回）に達したため、最後の出力を採用"
+            "S7.event-e003-what: 矛盾あり判定が無効化上限（2回）に達したため、最後の出力を採用"
         ]
     }
 
@@ -366,7 +367,8 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
         "S4.facts": _llm_definition("S4.facts"),
         "S4.diversity": _code_definition("S4.diversity", "diversity"),
         "S6.expand": _code_definition("S6.expand", "expand"),
-        "S7.event": _llm_definition("S7.event"),
+        "S7.assemble": {**_code_definition("S7.assemble", "event_assemble"), "inputs": {"slot": {"from": "S6.expand", "select": "slots[{slot}]", "label": "スロット"}}},
+        "S7.event": {**_llm_definition("S7.event"), "output": "text", "continuation": False},
         "S7.detail": _llm_definition("S7.detail"),
         "S8.plan": _code_definition("S8.plan", "plan"),
         "S8.compare": _llm_definition("S8.compare"),
@@ -438,6 +440,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
             "diversity": lambda _context: {"invalidated": []},
             "relationship_context": story_s5_relationship_context,
             "expand": story_s6_expand,
+            "event_assemble": story_s7_assemble,
             "plan": story_s8_plan,
             "judge": lambda _context: {"invalid": False},
             "assemble": lambda _context: {"ok": True},
@@ -497,7 +500,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
 
     # Complete the synthetic S7/compare outputs as they become ready.  Each
     # advance call executes the real S6 or S8.plan code tasks in between.
-    for _ in range(30):
+    for _ in range(100):
         manifest = orchestrator.advance(run_id)
         pending = [
             (task_id, task)
@@ -514,7 +517,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
             elif task_id.startswith("S5.motive-"):
                 output = {"motive": "道を確かめたい。"}
             elif task_id.startswith("S7.event-"):
-                output = {"who": ["c1"], "result": task_id}
+                output = "出来事の項目。"
             elif task_id.startswith("S7.detail-"):
                 output = "場面の説明。"
             else:
