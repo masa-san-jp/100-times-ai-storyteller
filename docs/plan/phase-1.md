@@ -45,6 +45,7 @@
 | P1-32 | 世界の暦と事実の再設計：`tables/world_facts.yaml`（キー・見出し・形・単位・範囲・`refers`・`item_facts`、`current_year_range`）、現在の年をコードで決定、S4.calendar_name・S4.calendar_epoch、S4.fact（値1つ）、セクション内の順次実行、S4.facts と `fact_schema` の廃止、`world_facts.md` の組み立て | P1-30 | story-pipeline §9.1〜§9.3, §9.5 | 実機で暦が1つに揃い、同じ量が1回だけ定まり、1項目の失敗で run が止まらない |
 | P1-33 | 人物の事実の再設計：`tables/character_facts.yaml`、S5.fact（年齢・身長・体格・職業・出身地・居住地・所属・家族・年表・技能）、生年をコードで計算、事実のシートの組み立て、S5.facts の廃止 | P1-32 | story-pipeline §9.4, §9.5 | 人物の事実が1項目1推論で作られ、シートに揃う |
 | P1-34 | S7.event の項目への分割：`S7.event-e<3桁>-<項目>`（8項目を順に）、`who` をコードが記録、出来事の組み立て、S8 の無効化の対象を `what` に | P1-30 | story-pipeline S7, S8 | 出来事が項目ごとに作られ、S8 の無効化で作り直される |
+| P1-35 | 失敗の扱い：通信の失敗（試行に数えず送り直す）・要求の拒否（直ちに failed）・空の応答の区別、`failure.md`（Issue の下書き）と `st status --json` での提示、値の範囲の事前計算、解析の前置きの除去 | P1-30 | task-model §2.5, §6.3 | 4xx が1回で failed になり failure.md が書かれる。接続断で試行が増えない |
 | P1-15 | end-to-end：ローカルモデルとコーディングエージェントでの短編の完走（P1-16〜P1-19 の後、分量の最低ラインを満たすこと）。開発者が書いた自由入力による生成例を `examples/` に置く | P1-11, P1-12, P1-13 | ROADMAP Phase 1 | 完了条件 1〜4 |
 
 ## 順序
