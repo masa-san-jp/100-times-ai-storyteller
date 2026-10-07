@@ -75,12 +75,12 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S2.merge` | C | S2.plan、S2.expand・S2.counter すべて | 入力由来プール（ID つき） |
 | `S3.assign` | C | S2.merge | assignment。S4・S5・S6 を追加 |
 | `S4.calendar_name`・`S4.calendar_epoch` | L | S3.assign（epoch は calendar_name） | 世界の暦の名前・紀元の出来事（現在の年はコードが S3 で決める） |
-| `S4.fact-<キー>`・`S4.fact-<item id>-<キー>` | L | S3.assign、S4.calendar_name、前提セクションの S4.fact、同じセクションの直前の事実の項目、一覧型は S4.item_name | 事実の値1つ |
+| `S4.fact-<キー>`・`S4.fact-<item id>-<キー>` | L | S3.assign、S4.calendar_name、前提セクションの S4.fact、同じセクションの直前の事実の項目、一覧型は S4.item_name | 事実の値1つ（範囲が1点ならコードが記録） |
 | `S4.section-<section id>-<観点番号>-f<面番号>` | L | S3.assign、前提セクションのタスク | 世界セクションの観点の1面（`single`） |
 | `S4.item-<section id>-<3桁>` | L | S3.assign、前提セクションのタスク | 一覧型セクションの項目（`list`） |
 | `S4.diversity-<section id>` | C | そのセクションの面すべて | 書き出しが似すぎた面を無効化 |
 | `S5.name-c<n>` | L | S3.assign | 名前 |
-| `S5.fact-c<n>-<キー>` | L | S5.name-c<n>、S4.calendar_name、関係する S4.fact、同じ人物の直前の事実の項目 | 人物の事実の値1つ |
+| `S5.fact-c<n>-<キー>` | L | S5.name-c<n>、S4.calendar_name、関係する S4.fact、同じ人物の直前の事実の項目 | 人物の事実の値1つ（範囲が1点ならコードが記録） |
 | `S5.profile-c<n>` | L | S5.name-c<n>、S5.fact-c<n> すべて | プロフィール |
 | `S5.intro-c<n>`・`S5.appearance-c<n>` | L | S5.profile-c<n> | 短い紹介・外見 |
 | `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて、主人公の S5.intro（主人公以外の場合） | 動機 |

@@ -257,11 +257,10 @@ def test_ollama_http_error_includes_bounded_body(monkeypatch, body: bytes) -> No
         OllamaAdapter(_model("http://127.0.0.1:11434")).complete("カード")
 
     reason = str(caught.value)
-    assert "3回失敗" in reason
     assert "HTTP status 400" in reason
     assert body[:2048].decode("utf-8", errors="replace")[:500] in reason
     assert "末尾の秘密" not in reason
-    assert len(calls) == 3
+    assert len(calls) == 1
 
 
 def test_ollama_http_error_preserves_status_when_body_read_fails(monkeypatch) -> None:
@@ -273,7 +272,7 @@ def test_ollama_http_error_preserves_status_when_body_read_fails(monkeypatch) ->
         raise HTTPError(request.full_url, 400, "Bad Request", {}, BrokenBody())
 
     monkeypatch.setattr("storyteller.adapter.urlopen", fail)
-    with pytest.raises(AdapterRequestError, match="3回失敗.*HTTP status 400"):
+    with pytest.raises(AdapterRequestError, match="HTTP status 400"):
         OllamaAdapter(_model("http://127.0.0.1:11434")).complete("カード")
 
 
@@ -360,8 +359,8 @@ def test_auto_records_adapter_failure_as_attempt_and_releases_claim(
     manifest = orchestrator.load_run(run_id)
     task = manifest["tasks"]["D2.echo-d1"]
     assert task["state"] == "failed"
-    assert task["tries"] == 5
-    assert task["attempt"] == 5
+    assert task["tries"] == 1
+    assert task["attempt"] == 1
     assert task["claim"] is None
     attempt = json.loads(
         (
@@ -371,10 +370,9 @@ def test_auto_records_adapter_failure_as_attempt_and_releases_claim(
             / "tasks"
             / "D2.echo-d1"
             / "attempts"
-            / "5.json"
+            / "1.json"
         ).read_text(encoding="utf-8")
     )
-    assert "3回失敗" in attempt["reason"]
     assert "HTTP status 400" in attempt["reason"]
     assert detail in attempt["reason"]
     assert detail in task["error"]

@@ -386,6 +386,12 @@ def _run_status(data_dir: Path, run_id: str) -> dict[str, Any]:
                 "executor_id": claim["executor_id"] if claim else None,
                 "isolation": claim["isolation"] if claim else None,
                 "error": task["error"],
+                "failure_report": (
+                    (Path("tasks") / task_id / "failure.md").as_posix()
+                    if task["state"] == "failed"
+                    and (data_dir / "runs" / run_id / "tasks" / task_id / "failure.md").is_file()
+                    else None
+                ),
             }
         )
     return {
@@ -477,7 +483,7 @@ def _print_human_status(payload: dict[str, Any]) -> None:
     print(f"run\t{payload['run_id']}\t{payload['status']}")
     if payload["warnings"]:
         print("warnings\t" + " | ".join(payload["warnings"]))
-    print("TASK_ID\tTYPE\tSTATE\tTRIES\tINVALIDATIONS\tEXECUTOR\tISOLATION\tERROR")
+    print("TASK_ID\tTYPE\tSTATE\tTRIES\tINVALIDATIONS\tEXECUTOR\tISOLATION\tERROR\tFAILURE_REPORT")
     for task in payload["tasks"]:
         print(
             "\t".join(
@@ -486,6 +492,7 @@ def _print_human_status(payload: dict[str, Any]) -> None:
                     str(task["tries"]), str(task["invalidations"]),
                     task["executor_id"] or "-", task["isolation"] or "-",
                     task["error"] or "-",
+                    task["failure_report"] or "-",
                 ]
             )
         )

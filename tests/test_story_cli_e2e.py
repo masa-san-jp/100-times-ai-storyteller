@@ -4,17 +4,20 @@ import json
 import hashlib
 import contextlib
 import io
+from io import BytesIO
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 
 import pytest
 import yaml
 
 from storyteller.cards import input_char_count
+from storyteller.adapter import AutoRunner, ModelConfig
 from storyteller.story_s9 import _validate_references
 from storyteller.validation import validate_document
 from storyteller.cli import main as cli_main
@@ -24,6 +27,80 @@ from storyteller.story_quality import body_texts
 
 ROOT = Path(__file__).parents[1]
 RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
+
+
+def test_story_harness_rejection_status_and_retry(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "data"
+    free_input = tmp_path / "free.md"
+    secret = "静かな町で、失われた記録を探す。"
+    free_input.write_text(secret, encoding="utf-8")
+    created = _cli(data_dir, "new", "--free", str(free_input), "--scale", "short", "--seed", "35")
+    assert created.returncode == 0, created.stderr
+    run_id = created.stdout.strip()
+    harness = create_story_orchestrator(data_dir)
+    schema_path = ROOT / "schemas" / "status.schema.json"
+
+    def status() -> dict[str, Any]:
+        result = _cli(data_dir, "status", "--run", run_id, "--json")
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        validate_document(payload, schema_path)
+        assert [task["task_id"] for task in payload["tasks"]] == sorted(harness.load_run(run_id)["tasks"])
+        return payload
+
+    assert all(task["failure_report"] is None for task in status()["tasks"])
+    calls = []
+
+    def reject(request, *, timeout):
+        calls.append(request)
+        raise HTTPError(request.full_url, 400, "rejected", {}, BytesIO(b"invalid request"))
+
+    monkeypatch.setattr("storyteller.adapter.urlopen", reject)
+    model = ModelConfig("test:model", "ollama", "http://127.0.0.1:11434", 0.2, 50, 1000, "off")
+    AutoRunner(data_dir, model, harness).run(run_id=run_id, workers=1, until_empty=True)
+    failed = [task for task in status()["tasks"] if task["state"] == "failed"]
+    assert len(calls) == len(failed) == 1
+    task = failed[0]
+    assert task["tries"] == 1 and "HTTP status 400: invalid request" in task["error"]
+    report_path = data_dir / "runs" / run_id / task["failure_report"]
+    assert task["failure_report"] == f"tasks/{task['task_id']}/failure.md"
+    report = report_path.read_text(encoding="utf-8")
+    assert secret not in report
+    assert "### 段落" in report and "HTTP status 400" in report
+    assert "ollama.test-model" in report
+    human = _cli(data_dir, "status", "--run", run_id)
+    assert human.returncode == 0, human.stderr
+    assert task["failure_report"] in human.stdout
+
+    listed = _cli(data_dir, "status", "--json")
+    assert listed.returncode == 0, listed.stderr
+    listing = json.loads(listed.stdout)
+    validate_document(listing, schema_path)
+    assert set(listing["runs"][0]) == {"run_id", "status", "counts"}
+
+    retried = _cli(data_dir, "retry", task["task_id"])
+    assert retried.returncode == 0, retried.stderr
+    assert report_path.is_file()
+    assert all(task["failure_report"] is None for task in status()["tasks"])
+    claim = harness.claim_next(run_id, executor_id="e2e")
+    assert claim is not None
+    assert all(task["failure_report"] is None for task in status()["tasks"])
+    inputs = _task_input(data_dir, run_id, task["task_id"])
+    record = harness.load_run(run_id)["tasks"][task["task_id"]]
+    output = _fake_output(task["task_id"], record, inputs, send_comparison_yes=False)
+    submitted = _cli(data_dir, "submit", claim["ticket"], input_text=json.dumps(output, ensure_ascii=False))
+    assert submitted.returncode == 0, submitted.stderr
+    assert all(task["failure_report"] is None for task in status()["tasks"])
+
+    # Older runs may contain failed tasks without a saved draft.
+    claim = harness.claim_next(run_id, executor_id="e2e")
+    assert claim is not None
+    failed_result = harness.record_executor_failure(claim["ticket"], "要求の拒否", fatal=True)
+    missing_report = harness.task_dir(run_id, failed_result.task_id) / "failure.md"
+    missing_report.unlink()
+    payload = status()
+    assert any(task["state"] == "failed" for task in payload["tasks"])
+    assert all(task["failure_report"] is None for task in payload["tasks"])
 
 
 def _cli(data_dir: Path, *arguments: str, input_text: str | None = None) -> subprocess.CompletedProcess[str]:

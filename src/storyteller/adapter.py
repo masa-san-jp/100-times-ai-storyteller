@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import re
 import sys
 import threading
 import time
@@ -19,6 +20,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from http.client import HTTPException
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -31,13 +33,10 @@ from .orchestrator import Orchestrator
 from .storage import acquire_lock, atomic_write_json, manifest_lock
 from .validation import YamlValidationError, parse_json_object, validate_document
 
-
-class AdapterError(ValueError):
-    """Base class for invalid adapter configuration or protocol responses."""
-
-
-class AdapterRequestError(AdapterError):
-    """The local model could not be contacted after all retries."""
+from .adapter_retry import (
+    AdapterError, AdapterRequestError, RequestRejected, TransportError,
+    TransportExhausted, retry_transport,
+)
 
 
 @dataclass(frozen=True)
@@ -304,13 +303,13 @@ class OllamaAdapter:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        last_error: Exception | None = None
-        for _ in range(3):
+
+        def send(timeout: float) -> AdapterResponse:
             try:
-                with urlopen(request, timeout=self.timeout) as response:
+                with urlopen(request, timeout=timeout) as response:
                     status = getattr(response, "status", 200)
                     if status < 200 or status >= 300:
-                        raise AdapterRequestError(f"Ollama HTTP status {status}")
+                        raise HTTPError(request.full_url, status, "HTTP error", {}, response)
                     decoded = json.loads(response.read().decode("utf-8"))
                 return self._decode_response(decoded)
             except HTTPError as error:
@@ -320,13 +319,14 @@ class OllamaAdapter:
                 except OSError:
                     body = ""
                 detail = f": {body}" if body else ""
-                last_error = AdapterRequestError(f"Ollama HTTP status {error.code}{detail}")
-            except (URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
-                last_error = AdapterRequestError(f"Ollama への接続に失敗しました: {error}")
-            except AdapterRequestError as error:
-                last_error = error
-        detail = f": {last_error}" if last_error is not None else ""
-        raise AdapterRequestError(f"Ollama への接続に3回失敗しました{detail}") from last_error
+                category = RequestRejected if 400 <= error.code < 500 and error.code != 429 else TransportError
+                raise category(f"Ollama HTTP status {error.code}{detail}") from error
+            except (URLError, TimeoutError, OSError, HTTPException) as error:
+                raise TransportError(f"Ollama への接続に失敗しました: {error}") from error
+            except (json.JSONDecodeError, UnicodeError) as error:
+                raise AdapterError(f"Ollama の応答を解析できません: {error}") from error
+
+        return retry_transport(send, timeout=self.timeout)
 
     @staticmethod
     def _decode_response(document: Any) -> AdapterResponse:
@@ -414,6 +414,7 @@ class AutoRunner:
         self.orchestrator_factory = orchestrator_factory
         self.state = _StateStore(self.data_dir)
         self.adapter_factory = adapter_factory or OllamaAdapter
+        self._stop = threading.Event()
 
     def run(self, *, run_id: str | None, workers: int, until_empty: bool) -> None:
         if workers < 1:
@@ -431,7 +432,7 @@ class AutoRunner:
 
     def _worker(self, *, run_id: str | None, until_empty: bool) -> None:
         adapter = self.adapter_factory(self.model)
-        while True:
+        while not self._stop.is_set():
             claim, orchestrator = self._claim_next(run_id)
             if claim is None:
                 if not until_empty:
@@ -481,9 +482,17 @@ class AutoRunner:
                 )
                 if not result.accepted:
                     continue
-            except AdapterRequestError as error:
+            except TransportExhausted as error:
+                self._stop.set()
+                orchestrator.revoke_claim(
+                    claim_info["run_id"], claim_info["task_id"], reason=str(error),
+                    expected_ticket=claim["ticket"],
+                )
+                print(f"警告: {error}", file=sys.stderr)
+                return
+            except RequestRejected as error:
                 try:
-                    orchestrator.record_executor_failure(claim["ticket"], str(error))
+                    orchestrator.record_executor_failure(claim["ticket"], str(error), fatal=True)
                 except (AdapterError, OSError, ValueError) as submit_error:
                     print(
                         f"警告: LLMタスクの失敗を記録できません: {submit_error}",
@@ -492,6 +501,7 @@ class AutoRunner:
                 else:
                     print(f"警告: {error}", file=sys.stderr)
             except (AdapterError, OSError, ValueError) as error:
+                orchestrator.record_executor_failure(claim["ticket"], str(error))
                 print(f"警告: LLMタスクを処理できません: {error}", file=sys.stderr)
 
     def _claim_next(
@@ -503,7 +513,7 @@ class AutoRunner:
             return (
                 orchestrator.claim_next(
                     run_id,
-                    executor_id=None,
+                    executor_id=re.sub(r"[^A-Za-z0-9._-]", "-", f"{self.model.provider}.{self.model.name}")[:64],
                     isolation="adapter",
                 ),
                 orchestrator,
@@ -512,7 +522,7 @@ class AutoRunner:
             orchestrator = self._orchestrator_for_run(candidate_run_id)
             claim = orchestrator.claim_next(
                 candidate_run_id,
-                executor_id=None,
+                executor_id=re.sub(r"[^A-Za-z0-9._-]", "-", f"{self.model.provider}.{self.model.name}")[:64],
                 isolation="adapter",
             )
             if claim is not None:

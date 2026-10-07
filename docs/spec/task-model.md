@@ -261,7 +261,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 - 不合格の場合、出力と理由を `attempts/<n>.json` に保存し、`tries` と `attempt` を1ずつ増やす。
 - `tries` が `max_attempts` に達していなければ `ready` に戻し、次のカードの「前回の不合格理由」に理由を書く。達していれば、`on_exhausted` が `fail` なら `failed`、`skip` なら `skipped` にする。
 - 1つの要素（§2.5）が試行の上限まで不合格になるのは、推論のばらつきではなく、カード・条件・解析の欠陥とみなす。`on_exhausted: skip` は、後続の工程が代わりの手段を持つタスク（S1.extract・S2.expand）に限り、それ以外は `fail` とする。
-- **失敗の報告**：タスクが `failed` になったとき、オーケストレータは `tasks/<task_id>/failure.md` に Issue の下書きを書く。内容：タスクの種類と定義の `version`、ハーネスの版（パッケージの版と、取得できれば git のコミット）、実行者（モデル名など）、試行ごとの理由と出力の先頭300字、カード（「入力」節の本文は伏せ、スロットの見出しと文字数だけを示す。入力はユーザーの手元に留めるため：P8）。下書きはどこにも送らない。Issue にするかは人が判断する。`st status --json` は、`failed` のタスクごとに下書きのパスを示す。
+- **失敗の報告**：タスクが `failed` になったとき、オーケストレータは `tasks/<task_id>/failure.md` に Issue の下書きを書く。内容：タスクの種類と定義の `version`、ハーネスの版（パッケージの版と、取得できれば git のコミット）、実行者（モデル名など）、試行ごとの理由と出力の先頭300字、カード（「入力」節の本文は伏せ、スロットの見出しと文字数だけを示す。入力はユーザーの手元に留めるため：P8）。下書きはどこにも送らない。Issue にするかは人が判断する。`st status --run RUN_ID --json` は、タスクの `failure_report` に下書きのパスを示す（[cli.md](cli.md) の `st status`）。
 - `st retry` は、`failed` のタスクだけを対象とし（他の状態なら終了コード 1）、`tries` と `invalidations` と `continuation_step` を0に戻し、`error` を null にして（元の値は `history` に残す）、依存がすべて `done` または `skipped` なら `ready`、そうでなければ `blocked` にする。`partial.md` があれば削除し、`attempts/` は残す。`attempt` は戻さない（同じ seed の再利用を避けるため）。依存先のタスクは変更しない。コードタスクは自動では再試行しないが、`st retry` の対象にはなり、`ready` になった時点で再実行される。
 
 ### 6.4 固有名詞の検出（`no_new_proper_nouns`）
