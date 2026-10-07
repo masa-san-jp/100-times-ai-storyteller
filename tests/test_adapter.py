@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import threading
+from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 
 import pytest
 
@@ -20,7 +23,7 @@ from storyteller.adapter import (
 from storyteller.dev.dummy import create_dummy_orchestrator
 from storyteller.new_run import create_story_orchestrator
 from storyteller.orchestrator import TaskSpec
-from storyteller.validation import load_yaml, validate_document, validate_output
+from storyteller.validation import YamlValidationError, load_yaml, validate_document, validate_output
 from tests.support.dummy_clock import dummy_clock
 
 
@@ -33,12 +36,19 @@ def freeze_dummy_clock():
 class _OllamaHandler(BaseHTTPRequestHandler):
     requests: list[dict[str, Any]] = []
     response: dict[str, Any] = {"message": {"content": "ok"}, "done_reason": "stop"}
+    reject_pattern: bool = False
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         length = int(self.headers["Content-Length"])
-        self.__class__.requests.append(json.loads(self.rfile.read(length)))
-        body = json.dumps(self.__class__.response).encode("utf-8")
-        self.send_response(200)
+        payload = json.loads(self.rfile.read(length))
+        self.__class__.requests.append(payload)
+        rejected = self.reject_pattern and bool(_collect_keys(payload.get("format"), {"pattern"}))
+        response = (
+            {"error": "Pattern must start with '^' and end with '$'"}
+            if rejected else self.__class__.response
+        )
+        body = json.dumps(response).encode("utf-8")
+        self.send_response(400 if rejected else 200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -51,6 +61,7 @@ class _OllamaHandler(BaseHTTPRequestHandler):
 @pytest.fixture
 def ollama_server():
     _OllamaHandler.requests = []
+    _OllamaHandler.reject_pattern = False
     server = ThreadingHTTPServer(("127.0.0.1", 0), _OllamaHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -107,7 +118,7 @@ def _collect_keys(value: Any, keys: set[str]) -> set[str]:
     return found
 
 
-def test_ollama_payload_strips_length_constraints_including_nested(
+def test_ollama_payload_strips_string_constraints_including_nested(
     ollama_server: str,
 ) -> None:
     schema = {
@@ -115,11 +126,11 @@ def test_ollama_payload_strips_length_constraints_including_nested(
         "additionalProperties": False,
         "required": ["intro", "sources"],
         "properties": {
-            "intro": {"type": "string", "minLength": 1, "maxLength": 50},
+            "intro": {"type": "string", "minLength": 1, "maxLength": 50, "pattern": r"\S"},
             "sources": {"$ref": "#/$defs/sources"},
             "variant": {
                 "anyOf": [
-                    {"type": "string", "minLength": 2, "maxLength": 10},
+                    {"type": "string", "minLength": 2, "maxLength": 10, "pattern": r"\S"},
                     {"type": "null"},
                 ]
             },
@@ -128,24 +139,142 @@ def test_ollama_payload_strips_length_constraints_including_nested(
             "sources": {
                 "type": "array",
                 "minItems": 1,
-                "items": {"type": "string", "minLength": 1, "maxLength": 20},
+                "items": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": r"\S"},
             }
         },
     }
 
+    original = deepcopy(schema)
     adapter = OllamaAdapter(_model(ollama_server))
     adapter.complete("次のJSONだけを出力すること。", schema=schema)
 
     sent_format = _OllamaHandler.requests[-1]["format"]
-    assert _collect_keys(sent_format, {"minLength", "maxLength"}) == set()
+    assert _collect_keys(sent_format, {"minLength", "maxLength", "pattern"}) == set()
     # Other constraints survive the copy.
     assert sent_format["$defs"]["sources"]["minItems"] == 1
     assert sent_format["properties"]["intro"]["type"] == "string"
 
     # The caller's schema object (the one used for validating the
     # submission) must be left untouched.
-    assert schema["properties"]["intro"]["maxLength"] == 50
-    assert schema["$defs"]["sources"]["items"]["maxLength"] == 20
+    assert schema == original
+
+
+def test_ollama_schema_preserves_names_and_literal_data(ollama_server: str) -> None:
+    names = ["pattern", "minLength", "maxLength"]
+    constrained = {"type": "string", "minLength": 1, "maxLength": 5, "pattern": r"\S"}
+    literal = {"pattern": "literal", "minLength": 3, "maxLength": 7}
+    schema = {
+        "type": "object",
+        "required": names,
+        "properties": {
+            **{name: deepcopy(constrained) for name in names},
+            "nested": {
+                "type": "array", "items": {
+                    "type": "object", "properties": {"pattern": deepcopy(constrained)},
+                },
+            },
+            "literal": {"const": literal, "default": literal, "enum": [literal]},
+        },
+        "$defs": {"pattern": deepcopy(constrained)},
+        "definitions": {"minLength": deepcopy(constrained)},
+        "patternProperties": {"pattern": deepcopy(constrained)},
+        "dependentSchemas": {"maxLength": {"properties": {"pattern": deepcopy(constrained)}}},
+        "dependencies": {"minLength": names, "pattern": {"properties": {"maxLength": deepcopy(constrained)}}},
+        "allOf": [{"if": {"properties": {"pattern": deepcopy(constrained)}},
+                   "then": {"additionalProperties": deepcopy(constrained)},
+                   "else": {"not": {"propertyNames": deepcopy(constrained)}}}],
+        "additionalProperties": False,
+    }
+    original = deepcopy(schema)
+
+    OllamaAdapter(_model(ollama_server)).complete("カード", schema=schema)
+    sent = _OllamaHandler.requests[-1]["format"]
+
+    assert sent["required"] == names
+    for name in names:
+        assert sent["properties"][name] == {"type": "string"}
+    assert sent["properties"]["nested"]["items"]["properties"]["pattern"] == {"type": "string"}
+    assert sent["properties"]["literal"] == {"const": literal, "default": literal, "enum": [literal]}
+    assert sent["$defs"]["pattern"] == {"type": "string"}
+    assert sent["definitions"]["minLength"] == {"type": "string"}
+    assert sent["patternProperties"]["pattern"] == {"type": "string"}
+    assert sent["dependentSchemas"]["maxLength"]["properties"]["pattern"] == {"type": "string"}
+    assert sent["dependencies"]["minLength"] == names
+    assert sent["dependencies"]["pattern"]["properties"]["maxLength"] == {"type": "string"}
+    assert sent["allOf"] == [{"if": {"properties": {"pattern": {"type": "string"}}},
+                              "then": {"additionalProperties": {"type": "string"}},
+                              "else": {"not": {"propertyNames": {"type": "string"}}}}]
+    assert sent["additionalProperties"] is False
+    assert schema == original
+    # Mutating the server copy must not mutate even literal values in the original.
+    sent["properties"]["literal"]["const"]["pattern"] = "changed"
+    assert schema == original
+
+
+@pytest.mark.parametrize("invalid", ["", "abcdef", "   "])
+def test_original_schema_still_enforces_string_constraints(
+    ollama_server: str, invalid: str,
+) -> None:
+    schema = {"type": "string", "minLength": 1, "maxLength": 5, "pattern": r"\S"}
+    OllamaAdapter(_model(ollama_server)).complete("カード", schema=schema)
+    validate_document(invalid, _OllamaHandler.requests[-1]["format"])
+    with pytest.raises(YamlValidationError):
+        validate_document(invalid, schema)
+
+
+def test_world_fact_schemas_are_accepted_without_pattern(ollama_server: str) -> None:
+    root = Path(__file__).resolve().parents[1]
+    sections = load_yaml(root / "tables/world_sections.yaml")["sections"]
+    original = deepcopy(sections)
+    _OllamaHandler.reject_pattern = True
+    adapter = OllamaAdapter(_model(ollama_server))
+    for section in sections:
+        for schema in section["fact_schema"].values():
+            assert "pattern" in _collect_keys(schema, {"pattern"})
+            response = adapter.complete("次のJSONだけを出力すること。", schema=schema)
+            assert response == AdapterResponse("ok", "stop")
+            sent = _OllamaHandler.requests[-1]["format"]
+            assert _collect_keys(sent, {"minLength", "maxLength", "pattern"}) == set()
+            assert sent["properties"]["facts"]["minItems"] == schema["properties"]["facts"]["minItems"]
+    assert sections == original
+
+
+@pytest.mark.parametrize("body", [
+    b'{"error":"Pattern must start with \'^\' and end with \'$\'"}',
+    ("応答の理由" + "あ" * 600 + "末尾の秘密").encode("utf-8"),
+    b"invalid UTF-8: \xff",
+    b"",
+])
+def test_ollama_http_error_includes_bounded_body(monkeypatch, body: bytes) -> None:
+    calls = []
+
+    def fail(request, *, timeout):
+        calls.append(request)
+        raise HTTPError(request.full_url, 400, "Bad Request", {}, BytesIO(body))
+
+    monkeypatch.setattr("storyteller.adapter.urlopen", fail)
+    with pytest.raises(AdapterRequestError) as caught:
+        OllamaAdapter(_model("http://127.0.0.1:11434")).complete("カード")
+
+    reason = str(caught.value)
+    assert "3回失敗" in reason
+    assert "HTTP status 400" in reason
+    assert body[:2048].decode("utf-8", errors="replace")[:500] in reason
+    assert "末尾の秘密" not in reason
+    assert len(calls) == 3
+
+
+def test_ollama_http_error_preserves_status_when_body_read_fails(monkeypatch) -> None:
+    class BrokenBody(BytesIO):
+        def read(self, *args):
+            raise OSError("body unavailable")
+
+    def fail(request, *, timeout):
+        raise HTTPError(request.full_url, 400, "Bad Request", {}, BrokenBody())
+
+    monkeypatch.setattr("storyteller.adapter.urlopen", fail)
+    with pytest.raises(AdapterRequestError, match="3回失敗.*HTTP status 400"):
+        OllamaAdapter(_model("http://127.0.0.1:11434")).complete("カード")
 
 
 def test_submission_validation_enforces_max_length_with_task_checks() -> None:
@@ -203,7 +332,9 @@ def test_ollama_adapter_uses_model_timeout_by_default(ollama_server: str) -> Non
     assert adapter.timeout == 600
 
 
-def test_auto_records_adapter_failure_as_attempt_and_releases_claim(tmp_path: Path) -> None:
+def test_auto_records_adapter_failure_as_attempt_and_releases_claim(
+    tmp_path: Path, monkeypatch,
+) -> None:
     data_dir = tmp_path / "data"
     orchestrator = create_dummy_orchestrator(data_dir)
     run_id = orchestrator.create_run(
@@ -211,18 +342,18 @@ def test_auto_records_adapter_failure_as_attempt_and_releases_claim(tmp_path: Pa
         seed=1,
     )
 
-    class FailingAdapter:
-        def __init__(self, model: ModelConfig) -> None:
-            pass
+    detail = "Pattern must start with '^' and end with '$'"
 
-        def complete(self, *args: Any, **kwargs: Any) -> AdapterResponse:
-            raise AdapterRequestError("Ollama への接続に3回失敗しました")
+    def fail(request, *, timeout):
+        body = json.dumps({"error": detail}).encode("utf-8")
+        raise HTTPError(request.full_url, 400, "Bad Request", {}, BytesIO(body))
+
+    monkeypatch.setattr("storyteller.adapter.urlopen", fail)
 
     runner = AutoRunner(
         data_dir,
         _model("http://127.0.0.1:11434"),
         orchestrator,
-        adapter_factory=FailingAdapter,
     )
     runner.run(run_id=run_id, workers=1, until_empty=True)
 
@@ -244,6 +375,9 @@ def test_auto_records_adapter_failure_as_attempt_and_releases_claim(tmp_path: Pa
         ).read_text(encoding="utf-8")
     )
     assert "3回失敗" in attempt["reason"]
+    assert "HTTP status 400" in attempt["reason"]
+    assert detail in attempt["reason"]
+    assert detail in task["error"]
 
 
 def test_auto_records_empty_response_as_attempt_and_releases_claim(tmp_path: Path) -> None:

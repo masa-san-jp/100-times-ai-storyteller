@@ -15,6 +15,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -223,24 +224,38 @@ def _chat_url(endpoint: str) -> str:
     return endpoint.rstrip("/") if endpoint.rstrip("/").endswith("/api/chat") else endpoint.rstrip("/") + "/api/chat"
 
 
-def _without_length_constraints(value: Any) -> Any:
-    """Return a deep copy of ``value`` with string length constraints removed.
+def _without_string_constraints(value: Any) -> Any:
+    """Copy a server schema without string length and pattern keywords (§6.5).
 
-    Servers that enforce ``minLength``/``maxLength`` while generating
-    structured output can cut sentences mid-way or pad them with whitespace to
-    satisfy the constraint (docs/spec/task-model.md §6.5).  The task's own
-    schema (used for validating the submission) is left untouched; this
-    function only shapes the copy sent to the server as ``format``.
+    Visit only schema locations so property/definition names and literal data
+    remain intact. Submission validation still uses the caller's original.
     """
 
     if isinstance(value, Mapping):
-        return {
-            key: _without_length_constraints(item)
-            for key, item in value.items()
-            if key not in ("minLength", "maxLength")
-        }
+        result = {}
+        for key, item in value.items():
+            if key in {"minLength", "maxLength", "pattern"}:
+                continue
+            if key in {
+                "properties", "patternProperties", "$defs", "definitions",
+                "dependentSchemas", "dependencies",
+            } and isinstance(item, Mapping):
+                result[key] = {
+                    name: _without_string_constraints(schema)
+                    for name, schema in item.items()
+                }
+            elif key in {
+                "additionalProperties", "unevaluatedProperties", "propertyNames",
+                "items", "additionalItems", "unevaluatedItems", "contains",
+                "not", "if", "then", "else", "contentSchema",
+                "allOf", "anyOf", "oneOf", "prefixItems",
+            }:
+                result[key] = _without_string_constraints(item)
+            else:
+                result[key] = deepcopy(item)
+        return result
     if isinstance(value, list):
-        return [_without_length_constraints(item) for item in value]
+        return [_without_string_constraints(item) for item in value]
     return value
 
 
@@ -280,7 +295,7 @@ class OllamaAdapter:
             if mode == "schema":
                 if schema is None:
                     raise AdapterError("schema モードにはタスクの JSON Schema が必要です")
-                payload["format"] = _without_length_constraints(schema)
+                payload["format"] = _without_string_constraints(schema)
             elif mode == "json":
                 payload["format"] = "json"
         request = Request(
@@ -299,7 +314,13 @@ class OllamaAdapter:
                     decoded = json.loads(response.read().decode("utf-8"))
                 return self._decode_response(decoded)
             except HTTPError as error:
-                last_error = AdapterRequestError(f"Ollama HTTP status {error.code}")
+                try:
+                    with error:
+                        body = error.read(2048).decode("utf-8", errors="replace")[:500]
+                except OSError:
+                    body = ""
+                detail = f": {body}" if body else ""
+                last_error = AdapterRequestError(f"Ollama HTTP status {error.code}{detail}")
             except (URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
                 last_error = AdapterRequestError(f"Ollama への接続に失敗しました: {error}")
             except AdapterRequestError as error:
