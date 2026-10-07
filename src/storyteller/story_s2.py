@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 import unicodedata
 from collections.abc import Mapping
 from copy import deepcopy
@@ -14,16 +13,17 @@ from typing import Any
 from .manifest import load_manifest
 from .orchestrator import CodeTaskResult, CodeTaskContext, TaskSpec
 from .tables import load_table
+from .story_materials import materials_from_outputs
+from .task_outputs import task_sources
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-_MATERIAL_ID = re.compile(r"^m([0-9]{3})$")
 
 
 def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
     """Create the per-material/per-axis expansion tasks and their merge task."""
 
-    materials = _materials_from_s1(context.dependency_outputs)
+    materials = materials_from_outputs(context.dependency_outputs)
     if not materials:
         raise ValueError("S1 の素材がありません")
 
@@ -53,14 +53,18 @@ def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
                 "material": deepcopy(material),
                 "axis": deepcopy(axis),
             }
-            expand_tasks.append(
-                TaskSpec(
-                    task_id=f"S2.expand-{plan_key}",
-                    type="S2.expand",
-                    deps=(context.task_id,),
-                    index=(plan_key,),
-                )
-            )
+            previous_ids: list[str] = []
+            for number in range(1, 6):
+                task_id = f"S2.expand-{plan_key}-{number}"
+                expand_tasks.append(TaskSpec(
+                    task_id=task_id, type="S2.expand",
+                    deps=(context.task_id, *previous_ids), index=(plan_key, str(number)),
+                ))
+                previous_ids.append(task_id)
+            expand_tasks.append(TaskSpec(
+                task_id=f"S2.counter-{plan_key}", type="S2.counter",
+                deps=(context.task_id, *previous_ids), index=(plan_key,),
+            ))
 
     expand_ids = tuple(task.task_id for task in expand_tasks)
     merge_task = TaskSpec(
@@ -89,33 +93,23 @@ def story_s2_merge(context: CodeTaskContext) -> CodeTaskResult:
         if not isinstance(dependency, Mapping) or dependency.get("type") != "S2.expand":
             continue
         index = dependency.get("index")
-        if not isinstance(index, list) or len(index) != 1:
+        if not isinstance(index, list) or len(index) != 2:
             raise ValueError(f"S2.expand の添字が不正です: {dependency_id}")
         axis_key = _axis_from_plan(context.run_dir, index[0])
         output = context.dependency_outputs.get(dependency_id)
-        if not isinstance(output, Mapping):
+        if not isinstance(output, str):
             continue
-        items = output.get("items")
-        sources = output.get("sources")
-        if not isinstance(items, list) or not isinstance(sources, list) or not sources:
-            raise ValueError(f"S2.expand の出力が不正です: {dependency_id}")
-        source = sources[0]
-        if not isinstance(source, str):
+        sources = task_sources(context.run_dir / "tasks" / dependency_id)
+        if not sources:
             raise ValueError(f"S2.expand の source が不正です: {dependency_id}")
-        for item in items:
-            if not isinstance(item, str):
-                raise ValueError(f"S2.expand の item が不正です: {dependency_id}")
-            normalized = normalize_element_text(item)
-            if not normalized or normalized in seen[axis_key]:
-                continue
-            seen[axis_key].add(normalized)
-            pools[axis_key].append(
-                {
-                    "id": f"{axis_key}:i{len(pools[axis_key]) + 1:02d}",
-                    "text": normalized,
-                    "source": source,
-                }
-            )
+        normalized = normalize_element_text(output)
+        if not normalized or normalized in seen[axis_key]:
+            continue
+        seen[axis_key].add(normalized)
+        pools[axis_key].append({
+            "id": f"{axis_key}:i{len(pools[axis_key]) + 1:02d}",
+            "text": normalized, "source": sources[0],
+        })
     return CodeTaskResult(
         output={"pools": pools},
         add_tasks=[
@@ -132,30 +126,6 @@ def normalize_element_text(value: str) -> str:
     """Return the S2 canonical form used for duplicate detection."""
 
     return "".join(unicodedata.normalize("NFKC", value).split())
-
-
-def _materials_from_s1(outputs: Mapping[str, Any]) -> list[dict[str, Any]]:
-    materials: list[dict[str, Any]] = []
-    for output in outputs.values():
-        if not isinstance(output, Mapping) or not isinstance(output.get("materials"), list):
-            continue
-        for material in output["materials"]:
-            if not isinstance(material, Mapping):
-                continue
-            material_id = material.get("id")
-            text = material.get("text")
-            kind = material.get("kind")
-            if (
-                isinstance(material_id, str)
-                and _MATERIAL_ID.fullmatch(material_id)
-                and isinstance(text, str)
-                and isinstance(kind, str)
-            ):
-                materials.append(
-                    {"id": material_id, "text": text, "kind": kind}
-                )
-    materials.sort(key=lambda value: int(value["id"][1:]))
-    return materials
 
 
 def _axis_from_plan(run_dir: Path, plan_key: Any) -> str:

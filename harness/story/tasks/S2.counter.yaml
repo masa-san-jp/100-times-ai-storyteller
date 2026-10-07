@@ -1,5 +1,5 @@
-id: S2.expand
-version: 6
+id: S2.counter
+version: 1
 kind: llm
 element: text
 inputs:
@@ -20,16 +20,15 @@ inputs:
     required: true
     truncate: head
   previous_elements:
-    label: すでに書いた要素（重ねない）
+    label: 対極を作る対象の要素
     from: S2.expand
     select: previous
-    required: false
+    required: true
 output: text
 card:
   role: 与えられた一つの素材と一つの要素の軸だけを手がかりに、具体的で意外性のある要素を作る。
   steps:
-    - 与えられた軸について、素材から着想した要素を1件書く。要素は10〜40字とし、すでに書いた要素と内容を重ねない。
-    - 表層的な特徴から深層の意味まで、軸の観点と生成規則に沿って幅を持たせる。
+    - すでに書いた要素と対極にある要素を1件、10〜40字で、同じ軸の定義に沿って書く。対極は単なる反対語ではなく、素材に対する別の再構築にする。
     - 入力スロットの「使わない表現」に含まれる表現を使わない。
     - 入力にない人物・設定・固有名詞を付け加えない。
 validate:

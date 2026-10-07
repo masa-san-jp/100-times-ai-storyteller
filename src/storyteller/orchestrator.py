@@ -1606,6 +1606,8 @@ class Orchestrator:
         source_outputs = _source_outputs(
             manifest, task, definition, dependency_outputs
         )
+        from .story_materials import sequential_sources
+        source_outputs = sequential_sources(task, manifest, dependency_outputs, source_outputs)
         run_input = _read_run_input(self.run_dir(run_id))
         try:
             if "glossary" in definition.get("inputs", {}):
@@ -2355,30 +2357,9 @@ def _write_submitted_output(
 
 
 def _postprocess_accepted_output(task: Mapping[str, Any], value: Any) -> Any:
-    """Add code-owned IDs to accepted S1 materials before they are stored."""
+    from .story_materials import assign_material_id
 
-    if task.get("type") != "S1.extract":
-        return value
-    if not isinstance(value, Mapping) or not isinstance(value.get("materials"), list):
-        return value
-    index = task.get("index")
-    if not isinstance(index, list) or len(index) != 1:
-        return value
-    paragraph_id = index[0]
-    if not isinstance(paragraph_id, str) or not re.fullmatch(r"p[0-9]{3}", paragraph_id):
-        return value
-
-    paragraph_number = int(paragraph_id[1:])
-    materials = []
-    for offset, material in enumerate(value["materials"], start=1):
-        if not isinstance(material, Mapping):
-            return value
-        copied = dict(material)
-        copied["id"] = f"m{(paragraph_number - 1) * 5 + offset:03d}"
-        materials.append(copied)
-    result = dict(value)
-    result["materials"] = materials
-    return result
+    return assign_material_id(task, value)
 
 
 def _normalise_invalidation_requests(value: Any) -> list[tuple[str, str]]:

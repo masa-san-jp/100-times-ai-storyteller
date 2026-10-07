@@ -1,52 +1,29 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://100-times-ai-storyteller.example/schemas/tasks/S1.extract.schema.json",
-  "title": "S1 extracted materials",
+  "title": "S1 extracted material",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "materials"
+    "text",
+    "kind"
   ],
   "properties": {
-    "materials": {
-      "type": "array",
-      "minItems": 5,
-      "maxItems": 5,
-      "items": {
-        "$ref": "#/$defs/material"
-      }
-    }
-  },
-  "$defs": {
-    "material": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "text",
-        "kind"
-      ],
-      "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^m[0-9]{3}$"
-        },
-        "text": {
-          "type": "string"
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "desire",
-            "fear",
-            "suppression",
-            "conflict",
-            "image",
-            "value",
-            "theme",
-            "mood"
-          ]
-        }
-      }
+    "text": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "desire",
+        "fear",
+        "suppression",
+        "conflict",
+        "image",
+        "value",
+        "theme",
+        "mood"
+      ]
     }
   }
 }

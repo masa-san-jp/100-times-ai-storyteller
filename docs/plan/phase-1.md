@@ -68,10 +68,11 @@ P1-11 + P1-12 + P1-13 → P1-15
 
 | タスク | kind | 依存 | 作るもの |
 |---|---|---|---|
-| `S1.extract-p<3桁>` | L | — | 段落ごとの素材 |
-| `S2.plan` | C | S1 すべて | S2.expand と S2.merge を追加 |
-| `S2.expand-m<3桁>-<axis>` | L | S2.plan | 要素5件と対極要素 |
-| `S2.merge` | C | S2.expand すべて | 入力由来プール（ID つき） |
+| `S1.extract-p<3桁>-<n>` | L | 同じ段落の先行する S1.extract（最初は依存なし） | 分類つきの素材1件 |
+| `S2.plan` | C | S1 すべて | S2.expand・S2.counter・S2.merge を追加 |
+| `S2.expand-m<3桁>-<axis>-<n>` | L | S2.plan、同じ素材・軸の先行する S2.expand | 要素1件 |
+| `S2.counter-m<3桁>-<axis>` | L | S2.plan、同じ素材・軸の S2.expand 5件 | 対極の要素1件 |
+| `S2.merge` | C | S2.plan、S2.expand・S2.counter すべて | 入力由来プール（ID つき） |
 | `S3.assign` | C | S2.merge | assignment。S4・S5・S6 を追加 |
 | `S4.calendar_name`・`S4.calendar_epoch` | L | S3.assign（epoch は calendar_name） | 世界の暦の名前・紀元の出来事（現在の年はコードが S3 で決める） |
 | `S4.fact-<キー>`・`S4.fact-<item id>-<キー>` | L | S3.assign、S4.calendar_name、前提セクションの S4.fact、同じセクションの直前の事実の項目、一覧型は S4.item_name | 事実の値1つ |

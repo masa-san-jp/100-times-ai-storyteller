@@ -57,11 +57,13 @@ def create_free_run(
 
     task_specs = [
         TaskSpec(
-            task_id=f"S1.extract-{paragraph['id']}",
+            task_id=f"S1.extract-{paragraph['id']}-{number}",
             type="S1.extract",
-            index=(paragraph["id"],),
+            deps=tuple(f"S1.extract-{paragraph['id']}-{earlier}" for earlier in range(1, number)),
+            index=(paragraph["id"], str(number)),
         )
         for paragraph in free_input.paragraphs
+        for number in range(1, 6)
     ]
     s1_task_ids = tuple(spec.task_id for spec in task_specs)
     task_specs.append(

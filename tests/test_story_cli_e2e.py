@@ -119,26 +119,14 @@ def _fake_output(
     index = task.get("index", [])
 
     if task_type == "S1.extract":
-        paragraph_id = index[0]
-        paragraph_number = int(paragraph_id[1:])
+        paragraph_number = int(index[0][1:])
+        number = int(index[1])
         kinds = ("theme", "suppression", "conflict", "desire", "value")
-        materials = [
-            {
-                "id": f"m{(paragraph_number - 1) * 5 + offset:03d}",
-                "text": f"段落{paragraph_number}から見える素材{offset}",
-                "kind": kind,
-            }
-            for offset, kind in enumerate(kinds, start=1)
-        ]
-        return {"materials": materials}
+        return {"text": f"段落{paragraph_number}から見える素材{number}", "kind": kinds[number - 1]}
 
-    if task_type == "S2.expand":
-        source = inputs["material"]["id"]
+    if task_type in {"S2.expand", "S2.counter"}:
         marker = "-".join(index)
-        return {
-            "items": [f"{marker}から生まれる具体的な要素{number}" for number in range(1, 6)],
-            "counterpart": f"{marker}から生まれる対極の要素",
-        }
+        return f"{marker}から生まれる具体的な要素"
 
     if task_type == "S4.item_name":
         reading = "".join(inputs["name_sound"]["sounds"][:2])
@@ -273,7 +261,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     rewritten_s4 = False
     quality_rejections: set[str] = set()
     rejected_tasks: set[str] = set()
-    for _ in range(500):
+    for _ in range(1000):
         claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
         if claimed is None:
             break

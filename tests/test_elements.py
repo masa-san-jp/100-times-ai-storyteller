@@ -93,7 +93,7 @@ def test_task_schema_requires_element_and_forbids_llm_fields_on_code_tasks():
 
 def test_harness_check_passes_with_only_explicit_followup_exceptions():
     assert check_harness() == []
-    assert MIGRATION_EXCEPTIONS == {"S1.extract": "P1-31", "S2.expand": "P1-31", "S4.facts": "P1-32", "S5.facts": "P1-33", "S7.event": "P1-34"}
+    assert MIGRATION_EXCEPTIONS == {"S4.facts": "P1-32", "S5.facts": "P1-33", "S7.event": "P1-34"}
 
 
 @pytest.mark.parametrize("element,fields", [("name", {"name", "reading"}), ("labeled", {"text", "kind"}), ("judgement", {"answer", "reason"})])

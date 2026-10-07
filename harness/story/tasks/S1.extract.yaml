@@ -1,5 +1,5 @@
 id: S1.extract
-version: 4
+version: 5
 kind: llm
 element: labeled
 inputs:
@@ -8,15 +8,21 @@ inputs:
     from: input
     select: input.paragraphs[{slot}]
     required: true
+  previous_materials:
+    label: すでに抽出した素材（重ねない）
+    from: S1.extract
+    select: previous
+    required: false
 output: json
 card:
   role: 与えられた段落だけを手がかりに、物語に使える素材を抽出する。
   steps:
-    - 段落の内容から、物語の素材になる短い語句を5個作る。各語句は10〜30字とし、表層的な事実だけでなく、段落から読み取れる意味や印象も含める。
+    - 段落の内容から、物語の素材になる短い語句を1個作る。語句は10〜30字とし、表層的な事実だけでなく、段落から読み取れる意味や印象も含める。
+    - すでに抽出した素材と内容を重ねず、別の観点から抽出する。
     - 原文の表現をそのまま引用せず、意味を保ったまま抽象化する。段落にない事実を補わず、断定や診断をしない。
-    - 各素材に、desire（切望）、fear（恐れ）、suppression（抑圧）、conflict（自己矛盾と葛藤）、image（心象）、value（価値）、theme（主題）、mood（雰囲気）のいずれか1つを kind として付ける。
+    - 素材に、desire（切望）、fear（恐れ）、suppression（抑圧）、conflict（自己矛盾と葛藤）、image（心象）、value（価値）、theme（主題）、mood（雰囲気）のいずれか1つを kind として付ける。
     - 判断できない情報を勝手に確定せず、段落に書かれた意図を保つ。
-  output_example: '{"materials": [{"text": "...", "kind": "conflict"}, {"text": "...", "kind": "desire"}, {"text": "...", "kind": "mood"}, {"text": "...", "kind": "image"}, {"text": "...", "kind": "value"}]}'
+  output_example: '{"text": "...", "kind": "conflict"}'
 validate:
   schema: schemas/tasks/S1.extract.schema.json
   checks:
@@ -24,38 +30,12 @@ validate:
     - avoid_listed:
         table: tables/meta_terms.yaml
     - min_chars:
-        field: materials.0.text
+        field: text
         n: 10
     - max_chars:
-        field: materials.0.text
+        field: text
         n: 30
-    - min_chars:
-        field: materials.1.text
-        n: 10
-    - max_chars:
-        field: materials.1.text
-        n: 30
-    - min_chars:
-        field: materials.2.text
-        n: 10
-    - max_chars:
-        field: materials.2.text
-        n: 30
-    - min_chars:
-        field: materials.3.text
-        n: 10
-    - max_chars:
-        field: materials.3.text
-        n: 30
-    - min_chars:
-        field: materials.4.text
-        n: 10
-    - max_chars:
-        field: materials.4.text
-        n: 30
-    - count:
-        field: materials
-        n: 5
     - no_new_proper_nouns:
         mode: warn
 share_across_runs: true
+on_exhausted: skip

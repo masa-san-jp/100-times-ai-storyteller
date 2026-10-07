@@ -167,7 +167,7 @@ def test_mixed_story_and_dummy_runs_use_manifest_harness_kind_for_next_and_submi
     # Keep creation order explicit when mixing a story run with the frozen dummy.
     story._clock = lambda: FIXED_TIME - timedelta(seconds=1)
     story_run_id = story.create_run(
-        task_specs=[TaskSpec("S1.extract-p001", "S1.extract", index=("p001",))],
+        task_specs=[TaskSpec("S1.extract-p001-1", "S1.extract", index=("p001", "1"))],
         seed=0x100001,
         input_data={
             "kind": "free",
@@ -197,10 +197,7 @@ def test_mixed_story_and_dummy_runs_use_manifest_harness_kind_for_next_and_submi
         if task_id.startswith("S1."):
             output = json.dumps(
                 {
-                    "materials": [
-                        {"text": f"水路に残る記憶と{index}番目の影", "kind": "image"}
-                        for index in range(5)
-                    ],
+                    "text": "水路に残る記憶と静かな影", "kind": "image",
                 },
                 ensure_ascii=False,
             )
