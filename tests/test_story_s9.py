@@ -55,7 +55,7 @@ def _base_outputs(events: dict[str, dict[str, object]]) -> dict[str, object]:
         "S4.section-place": {"body": "水路の町の描写", "sources": ["place:t1"]},
     }
     for event_id, event in events.items():
-        outputs[f"S7.event-{event_id}"] = event
+        outputs[f"S7.assemble-{event_id}"] = event
     for field, value in {
         "name": "カナ",
         "profile": "旅を続ける人物。",

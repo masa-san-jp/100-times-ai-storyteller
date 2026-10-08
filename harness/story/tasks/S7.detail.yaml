@@ -1,46 +1,46 @@
 id: S7.detail
-version: 7
+version: 8
 kind: llm
 element: text
 inputs:
   when:
     label: 出来事のいつ
-    from: S7.event
+    from: S7.assemble
     select: "[{slot}].when"
     required: true
   where:
     label: 出来事のどこ
-    from: S7.event
+    from: S7.assemble
     select: "[{slot}].where"
     required: true
   who:
     label: 出来事の誰
-    from: S7.event
+    from: S7.assemble
     select: "[{slot}].who"
     required: true
   why:
     label: 出来事の理由
-    from: S7.event
+    from: S7.assemble
     select: "[{slot}].why"
     required: true
   intent:
     label: 出来事の意思
-    from: S7.event
+    from: S7.assemble
     select: "[{slot}].intent"
     required: true
   what:
     label: 出来事の行動
-    from: S7.event
+    from: S7.assemble
     select: "[{slot}].what"
     required: true
   result:
     label: 出来事の結果
-    from: S7.event
+    from: S7.assemble
     select: "[{slot}].result"
     required: true
   emotion:
     label: 出来事の感情
-    from: S7.event
+    from: S7.assemble
     select: "[{slot}].emotion"
     required: true
   beat:

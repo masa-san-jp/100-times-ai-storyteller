@@ -86,10 +86,11 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて、主人公の S5.intro（主人公以外の場合） | 動機 |
 | `S5.catchphrase-c<n>` | L | S5.motive-c<n> | 決め台詞 |
 | `S6.expand` | C | S4 すべて（S4.diversity を含む）、S5 すべて | slots。S7・S8.plan・S9 を追加 |
-| `S7.event-e<3桁>` | L | S6.expand、同じ筋の直前のスロットの S8.judge | 出来事 |
-| `S8.plan-e<3桁>` | C | そのスロットと、時系列でそれより前のすべてのスロットの S7 | 比較相手を決め、S8.compare と S8.judge を追加 |
+| `S7.event-e<3桁>-<項目>` | L | S6.expand、同じスロットの先に決まった項目。what は同じ筋の直前の S8.judge。各項目は直前の S7.assemble も参照（入力は result のみ） | what → where → when → why → intent → result → emotion → foreshadowing の本文1つ |
+| `S7.assemble-e<3桁>` | C | S6.expand、そのスロットの8項目 | 出来事（who は割り当て人物、sources はコードが記録） |
+| `S8.plan-e<3桁>` | C | そのスロットと、時系列でそれより前のすべてのスロットの S7.assemble | 比較相手を決め、S8.compare と S8.judge を追加 |
 | `S8.compare-e<3桁>-k<n>` | L | S8.plan-e<3桁> | 矛盾の有無 |
-| `S8.judge-e<3桁>` | C | そのスロットの S8.compare すべて（比較相手がなければ S8.plan） | 必要なら S7 を無効化 |
+| `S8.judge-e<3桁>` | C | そのスロットの S8.compare すべて（比較相手がなければ S8.plan） | 必要なら S7 の what を無効化（後続項目も依存により作り直す） |
 | `S7.detail-e<3桁>-b<番号>` | L | そのスロットの S8.judge、同じ出来事の直前の場面 | 場面の詳述 |
 | `S9.assemble` | C | S7.detail すべて | story.json、story.md、characters.md、world.md |
 

@@ -385,7 +385,7 @@ def _assemble_events(slots: Sequence[Mapping[str, Any]], outputs: Mapping[str, A
         event_id, thread_id = slot.get("id"), slot.get("thread")
         if not isinstance(event_id, str) or not isinstance(thread_id, str):
             raise ValueError("slot の ID 参照が不正です")
-        output = _mapping_output(outputs, f"S7.event-{event_id}")
+        output = _mapping_output(outputs, f"S7.assemble-{event_id}")
         event = {key: deepcopy(output.get(key)) for key in ("when", "where", "who", "why", "intent", "what", "result", "emotion", "foreshadowing", "sources")}
         event.update({"id": event_id, "stage": {"id": slot["stage"]["id"], "name": slot["stage"]["name"]}, "thread": thread_id})
         if event_id == last_by_thread[thread_id]:

@@ -160,7 +160,7 @@ def test_s9_exports_glossary_and_accepts_glossary_source_ids(tmp_path):
 
     outputs = _base_outputs({"e001": _event()})
     identifier = build_glossary(outputs)[0]["id"]
-    outputs["S7.event-e001"]["sources"] = [identifier]
+    outputs["S7.assemble-e001"]["sources"] = [identifier]
     context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
     story_s9_assemble(context)
     markdown = (context.run_dir / "story" / "glossary.md").read_text(encoding="utf-8")

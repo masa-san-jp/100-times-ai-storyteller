@@ -20,7 +20,6 @@ from storyteller.validation import load_and_validate_yaml
 MIGRATION_EXCEPTIONS = {
     "S4.facts": "P1-32",
     "S5.facts": "P1-33",
-    "S7.event": "P1-34",
 }
 
 

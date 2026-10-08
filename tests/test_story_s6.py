@@ -141,7 +141,7 @@ def test_s6_assigns_absent_role_note_object_and_world_excerpt() -> None:
         }
     ]
     assert {task.task_id for task in result.add_tasks} >= {
-        "S7.event-e001",
+        "S7.assemble-e001",
         "S8.plan-e001",
         "S8.plan-e002",
         "S8.plan-e003",
@@ -183,7 +183,7 @@ def test_s6_adds_chronological_s7_s8_s9_dependencies() -> None:
 
     for index, slot in enumerate(slots):
         event_id = slot["id"]
-        s7 = by_id[f"S7.event-{event_id}"]
+        s7 = by_id[f"S7.event-{event_id}-what"]
         assert s7.deps[0] == "S6.expand"
         same_thread_previous = next(
             (
@@ -197,10 +197,11 @@ def test_s6_adds_chronological_s7_s8_s9_dependencies() -> None:
             assert len(s7.deps) == 1
         else:
             assert f"S8.judge-{same_thread_previous}" in s7.deps
+            assert f"S7.assemble-{same_thread_previous}" in s7.deps
 
         plan = by_id[f"S8.plan-{event_id}"]
-        prior_s7 = {f"S7.event-{prior['id']}" for prior in slots[:index]}
-        assert {s7.task_id, *prior_s7} <= set(plan.deps)
+        prior_s7 = {f"S7.assemble-{prior['id']}" for prior in slots[:index]}
+        assert {f"S7.assemble-{event_id}", *prior_s7} <= set(plan.deps)
 
     judge_ids = [f"S8.judge-{slot['id']}" for slot in slots]
     assemble = by_id["S9.assemble"]
@@ -214,7 +215,7 @@ def test_s6_adds_chronological_s7_s8_s9_dependencies() -> None:
     for task_id in detail_ids:
         detail = by_id[task_id]
         event_id, beat_id = task_id.removeprefix("S7.detail-").split("-b")
-        assert f"S7.event-{event_id}" in detail.deps
+        assert f"S7.assemble-{event_id}" in detail.deps
         assert f"S8.judge-{event_id}" in detail.deps
         if beat_id != "1":
             assert f"S7.detail-{event_id}-b{int(beat_id) - 1}" in detail.deps

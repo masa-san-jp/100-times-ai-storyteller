@@ -267,19 +267,16 @@ def _fake_output(
         return _filler_text(task_id, field, target_length)
 
     if task_type == "S7.event":
-        characters = inputs["characters"]
-        character_ids = [character["id"] for character in characters]
         return {
             "when": "町に変化の兆しが現れたとき。",
             "where": "町の境界で。",
-            "who": character_ids,
             "why": "状況を確かめるため。",
             "intent": "小さな選択をする。",
             "what": "人物は境界の仕組みを動かす。",
             "result": f"新しい道筋が見える（試行{task.get('attempt', 0)}）。",
             "emotion": "静かな決意を抱く。",
             "foreshadowing": "遠くで次の変化が始まる。",
-        }
+        }[task["index"][1]]
 
     if task_type == "S7.detail":
         # Minimum-length scenes must still reach the short-scale floor (§10).
@@ -388,7 +385,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             elif task["type"] == "S5.voice":
                 output = _filler_text(task_id, "voice", 800)
             elif task["type"] == "S7.event":
-                output.update({field: _filler_text(task_id, field, 120) for field in output if isinstance(output[field], str)})
+                output = _filler_text(task_id, task["type"], 120)
         if task["type"] == "S4.section":
             if not similar_facets:
                 similar_facets = sorted(

@@ -1,0 +1,10 @@
+id: S7.assemble
+version: 1
+kind: code
+handler: story_s7_assemble
+inputs:
+  slot:
+    label: 出来事のスロット
+    from: S6.expand
+    select: slots[{slot}]
+    required: true

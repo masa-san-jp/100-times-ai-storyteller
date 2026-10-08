@@ -18,10 +18,9 @@ _S7_MAX_INVALIDATIONS = 2
 def story_s8_plan(context: CodeTaskContext) -> CodeTaskResult:
     """Choose comparison events from the completed S7 ``who`` fields.
 
-    S6 deliberately does not choose comparison targets: the characters that
-    actually appear in an event are only known after S7 has run.  This code
-    task receives the current and all earlier S7 outputs as dependencies, so
-    re-running it after an S7 invalidation naturally recalculates the list.
+    S7 records the S6-assigned characters when assembling an event. This
+    task receives the current and all earlier assembled events, so re-running
+    it after a what invalidation naturally recalculates the comparison list.
     """
 
     event_id = _event_id(context)
@@ -155,7 +154,7 @@ def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
             if not detail
             else f"比較結果に矛盾あり：{detail}"
         )
-        target_id = f"S7.event-{event_id}"
+        target_id = f"S7.event-{event_id}-what"
         invalidation_count, existing_warnings = _s7_invalidation_state(
             context, target_id
         )
@@ -258,7 +257,7 @@ def _slot_id(slot: Mapping[str, Any]) -> str:
 def _event_output(
     dependency_outputs: Mapping[str, Any], event_id: str
 ) -> Mapping[str, Any]:
-    task_id = f"S7.event-{event_id}"
+    task_id = f"S7.assemble-{event_id}"
     value = dependency_outputs.get(task_id)
     if not isinstance(value, Mapping):
         raise ValueError(f"S7 の出力がありません: {task_id}")

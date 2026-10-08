@@ -1,5 +1,5 @@
 id: S9.assemble
-version: 2
+version: 3
 kind: code
 handler: story_s9_assemble
 inputs:
@@ -15,7 +15,7 @@ inputs:
     required: true
   events:
     label: 出来事
-    from: S7.event
+    from: S7.assemble
     select: output
     required: true
   details:
