@@ -55,11 +55,24 @@ def _base_outputs(events: dict[str, dict[str, object]]) -> dict[str, object]:
         "S3.assign": assignment,
         "S4.calendar_name": {"name": "カナ暦", "reading": "カナ"},
         "S4.calendar_epoch": "共同体が水路を開いた。",
-        "S5.facts-c1": _facts(),
         "S4.fact-place.location_name": {"name": "カナ", "reading": "カナ"},
         "S6.expand": slots,
         "S4.section-place": {"body": "水路の町の描写", "sources": ["place:t1"]},
     }
+    facts = _facts()
+    assignment["character_fact_tasks"] = []
+    for field in ("age", "height_cm", "build", "occupation", "birthplace", "residence", "affiliation"):
+        shape = "integer" if field == "age" else "number" if field == "height_cm" else "choice" if field in {"birthplace", "residence", "affiliation"} else "text"
+        assignment["character_fact_tasks"].append({"id": f"c1-{field}", "key": field, "label": field, "person_id": "c1", "element": shape})
+        value = facts[field]
+        outputs[f"S5.fact-c1-{field}"] = "none" if value is None else str(value)
+    for group in ("timeline", "skills"):
+        for ordinal, value in enumerate(facts[group], 1):
+            values = value if isinstance(value, dict) else {"skill": value}
+            for field, value in values.items():
+                key = f"{group}.{ordinal}.{field}" if group == "timeline" else f"skills.{ordinal}"
+                assignment["character_fact_tasks"].append({"id": f"c1-{key}", "key": key, "label": key, "person_id": "c1", "element": "integer" if field == "year" else "text"})
+                outputs[f"S5.fact-c1-{key}"] = str(value)
     for event_id, event in events.items():
         outputs[f"S7.assemble-{event_id}"] = event
     for field, value in {
@@ -125,7 +138,7 @@ def test_s9_assembles_three_canonical_files_and_clears_last_foreshadowing(tmp_pa
     assert "1. " in story_md
     assert "## カナ" in characters_md
     assert characters_md.index("### 事実のシート") < characters_md.index("### 描写")
-    assert "| 身長（cm） | 170 |" in characters_md
+    assert "| 身長（cm） | 170.0 |" in characters_md
     assert story["meta"]["volume"]["characters"]["chars"] == sum(not char.isspace() for char in characters_md)
     assert "## 場の描写" in world_md
 
@@ -204,9 +217,10 @@ def test_s9_summary_resolves_multiple_names_and_keeps_detail_in_event_order(tmp_
     assignment = outputs["S3.assign"]
     other = {**assignment["cast"][0], "id": "c2", "role": "supporter"}
     assignment["cast"].append(other)
+    assignment["character_fact_tasks"].extend({**entry, "id": entry["id"].replace("c1-", "c2-"), "person_id": "c2"} for entry in list(assignment["character_fact_tasks"]))
     for task_id, value in list(outputs.items()):
         if task_id.startswith("S5."):
-            outputs[task_id.replace("c1", "c2")] = {**value, "sources": ["c2"]}
+            outputs[task_id.replace("c1", "c2")] = {**value, "sources": ["c2"]} if isinstance(value, dict) else value
     outputs["S5.name-c2"] = {"name": "リオ", "reading": "リオ", "sources": ["sound-01"]}
     outputs["S7.detail-e001-b2"] = "二番目の場面。"
     outputs["S7.detail-e002-b1"] = "次の出来事の場面。"

@@ -20,6 +20,7 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _TABLE_SCHEMA_ROOT = Path("schemas") / "tables"
 
 _TABLE_SPECS: dict[str, tuple[Path, Path]] = {
+    "character_facts": (Path("tables/character_facts.yaml"), _TABLE_SCHEMA_ROOT / "character_facts.schema.json"),
     "world_facts": (Path("tables/world_facts.yaml"), _TABLE_SCHEMA_ROOT / "world_facts.schema.json"),
     "meta_terms": (Path("tables/meta_terms.yaml"), _TABLE_SCHEMA_ROOT / "meta_terms.schema.json"),
     "dedup": (Path("tables/dedup.yaml"), _TABLE_SCHEMA_ROOT / "dedup.schema.json"),

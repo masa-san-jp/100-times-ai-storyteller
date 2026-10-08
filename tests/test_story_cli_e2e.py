@@ -5,6 +5,7 @@ import hashlib
 import contextlib
 import io
 from io import BytesIO
+from datetime import datetime, timezone
 import os
 import re
 import subprocess
@@ -15,6 +16,7 @@ from urllib.error import HTTPError
 
 import pytest
 import yaml
+from jsonschema import Draft202012Validator
 
 from storyteller.cards import input_char_count
 from storyteller.adapter import AutoRunner, ModelConfig
@@ -22,12 +24,66 @@ from storyteller.story_s9 import _validate_references
 from storyteller.validation import validate_document
 from storyteller.cli import main as cli_main
 from storyteller.new_run import create_story_orchestrator
+from storyteller.orchestrator import Orchestrator
 from storyteller.world_facts import specialize_fact_definition
 from storyteller.story_quality import body_texts
 
 
 ROOT = Path(__file__).parents[1]
 RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
+
+
+@pytest.fixture
+def memoized_manifest_tasks(monkeypatch):
+    """Reuse only successful checks of identical records in the large DAG.
+
+    The real CLI and harness still run every transition and validation call.
+    Changed records are checked by the original validator, as are all other
+    schema references. The final manifest is checked again without this cache.
+    """
+    original = Draft202012Validator.VALIDATORS["$ref"]
+    accepted = set()
+
+    def check_reference(validator, reference, instance, schema):
+        if reference != "#/$defs/task":
+            yield from original(validator, reference, instance, schema)
+            return
+        key = json.dumps(instance, ensure_ascii=False, sort_keys=True)
+        if key in accepted:
+            return
+        errors = tuple(original(validator, reference, instance, schema))
+        if not errors:
+            accepted.add(key)
+        yield from errors
+
+    monkeypatch.setitem(Draft202012Validator.VALIDATORS, "$ref", check_reference)
+
+    def validate_without_cache(document, schema):
+        with monkeypatch.context() as context:
+            context.setitem(Draft202012Validator.VALIDATORS, "$ref", original)
+            return validate_document(document, schema)
+
+    return validate_without_cache
+
+
+def test_manifest_task_validation_cache_rechecks_changed_and_invalid_records(memoized_manifest_tasks):
+    from storyteller.validation import SchemaValidationError
+
+    schema = json.loads((ROOT / "schemas/manifest.schema.json").read_text(encoding="utf-8"))
+    task_schema = {"$ref": "#/$defs/task", "$defs": schema["$defs"]}
+    record = {"type": "S5.fact", "kind": "llm", "state": "ready", "deps": [], "index": ["c1-age"],
+              "attempt": 0, "tries": 0, "invalidations": 0, "continuation_step": 0,
+              "cache_key": None, "claim": None, "history": [], "error": None}
+    for _ in range(2):
+        assert validate_document(record, task_schema) == record
+    record["state"] = "invalid"
+    for _ in range(2):
+        with pytest.raises(SchemaValidationError):
+            validate_document(record, task_schema)
+    with pytest.raises(SchemaValidationError):
+        memoized_manifest_tasks(record, task_schema)
+    record["state"] = "done"
+    assert validate_document(record, task_schema) == memoized_manifest_tasks(record, task_schema)
 
 
 def test_story_harness_rejection_status_and_retry(tmp_path: Path, monkeypatch) -> None:
@@ -234,14 +290,18 @@ def _fake_output(
         reading = "".join(sound["sounds"][:2])
         return {"name": reading, "reading": reading}
 
-    if task_type == "S5.facts":
-        entry = inputs["world_facts"][0]["glossary"][0]
-        calendar = inputs["world_facts"][0]["facts"][0]["calendar"]
-        return {"age": 30, "birth_year": 12, "calendar": calendar, "height_cm": 170,
-                "build": "細身", "birthplace": entry["id"], "residence": entry["id"],
-                "occupation": "水路の点検係", "affiliation": None, "family": [],
-                "timeline": [{"year": 12, "event": "集落で生まれた。"}],
-                "skills": ["流水の音から漏れを探す。"]}
+    if task_type == "S5.fact":
+        shape = inputs["shape"]
+        if shape == "name":
+            reading = "".join(inputs["name_sound"]["sounds"][:2])
+            return {"name": reading, "reading": reading}
+        if shape == "choice":
+            return inputs["choices"][0]["id"]
+        if shape in {"number", "integer"}:
+            bounds = inputs.get("bounds", {})
+            value = 170 if inputs["label"] == "身長" else 30
+            return str(max(bounds.get("min", value), min(value, bounds.get("max", value))))
+        return "母" if inputs["label"] == "続柄" else "水路を点検する"
 
     if task_type.startswith("S5."):
         field = task_type.removeprefix("S5.")
@@ -301,6 +361,7 @@ def _fake_output(
 def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     tmp_path: Path,
     long_inputs: bool,
+    memoized_manifest_tasks,
 ) -> None:
     data_dir = tmp_path / "data"
     free_input = tmp_path / "free.md"
@@ -326,6 +387,12 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     assert RUN_ID.fullmatch(run_id)
     harness = create_story_orchestrator(data_dir)
     model = yaml.safe_load((ROOT / "config/models.yaml").read_text(encoding="utf-8"))["models"]["gpt-oss:20b"]
+    # This test covers generation, not lease expiry: use the production
+    # orchestrator's clock injection so host load cannot expire a valid claim.
+    now = datetime.now(timezone.utc)
+    harness = Orchestrator(data_dir, harness.task_definitions, harness.code_handlers,
+                           clock=lambda: now, harness_root=harness.definition_root,
+                           repository_root=harness.repository_root, harness_kind=harness.harness_kind)
 
     sent_comparison_yes = False
     comparison_answers: list[str] = []
@@ -522,6 +589,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         assert f"{task_id}: 字数の上限で切り詰め" in final_manifest["warnings"]
 
     run_dir = data_dir / "runs" / run_id
+    memoized_manifest_tasks(final_manifest, ROOT / "schemas/manifest.schema.json")
     story_path = run_dir / "story" / "story.json"
     markdown_path = run_dir / "story" / "story.md"
     assert story_path.is_file()
@@ -545,12 +613,12 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             assert card_input["current_year"] == current_year
     characters_markdown = (run_dir / "story" / "characters.md").read_text(encoding="utf-8")
     character_facts = {task_id: task for task_id, task in final_manifest["tasks"].items()
-                       if task["type"] == "S5.facts"}
+                       if task["type"] == "S5.fact"}
     assert character_facts and all(task["state"] == "done" for task in character_facts.values())
-    assert characters_markdown.count("### 事実のシート") == len(character_facts)
-    assert characters_markdown.count("| 身長（cm） | 170 |") == len(character_facts)
+    assert characters_markdown.count("### 事実のシート") == len(assignment["cast"])
+    assert characters_markdown.count("| 身長（cm） | 170.0 |") == len(assignment["cast"])
     for task_id, task in final_manifest["tasks"].items():
-        if task["type"].startswith("S5.") and task["type"] not in {"S5.name", "S5.facts", "S5.relationship_context"}:
+        if task["type"].startswith("S5.") and task["type"] not in {"S5.name", "S5.fact", "S5.fact_plan", "S5.relationship_context"}:
             card_input = _task_input(data_dir, run_id, task_id)
             assert card_input["facts"]["age"] == 30
             assert card_input["facts"]["height_cm"] == 170

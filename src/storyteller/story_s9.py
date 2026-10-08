@@ -19,7 +19,7 @@ from .task_outputs import read_task_output
 from .volume import multiplier_for_preset
 from .glossary import build_glossary, render_glossary_markdown
 from .world_facts import render_world_facts_markdown
-from .character_facts import render_character_sheet
+from .character_facts import render_character_sheet, assemble_character_sheet
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -561,7 +561,7 @@ def render_characters_markdown(
             ]
         )
         if outputs is not None:
-            sheet = _mapping_output(outputs, f"S5.facts-{person['id']}")
+            sheet = assemble_character_sheet(outputs, person["id"])
             lines.extend(["", render_character_sheet(sheet, glossary), "### 描写", ""])
         for field, label in _CHARACTER_FIELDS:
             value = person.get(field)

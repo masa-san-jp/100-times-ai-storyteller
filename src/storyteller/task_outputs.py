@@ -41,6 +41,8 @@ def read_task_output(task_dir: Path, task_type: str) -> Any:
         return output
     if task_type == "D2.echo":
         return {"text": text, "sources": task_sources(task_dir)}
+    if task_type == "S5.fact":
+        return text
     if task_type.startswith("S5."):
         return {task_type.split(".", 1)[1]: text, "sources": task_sources(task_dir)}
     return text

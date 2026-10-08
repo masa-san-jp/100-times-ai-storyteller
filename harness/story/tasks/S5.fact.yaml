@@ -1,0 +1,105 @@
+id: S5.fact
+version: 1
+kind: llm
+element: text
+inputs:
+  label:
+    label: 今回の事実の見出し
+    from: S3.assign
+    select: character_fact_tasks[{slot}].label
+    required: true
+  shape:
+    label: 値の形
+    from: S3.assign
+    select: character_fact_tasks[{slot}].element
+    required: true
+  unit:
+    label: 単位
+    from: S3.assign
+    select: character_fact_tasks[{slot}].unit
+    required: false
+  bounds:
+    label: 値の範囲
+    from: S3.assign
+    select: character_fact_tasks[{slot}].range
+    required: false
+  max_chars:
+    label: 字数の上限
+    from: S3.assign
+    select: character_fact_tasks[{slot}].max_chars
+    required: false
+  character:
+    label: 割り当てられた人物
+    from: S3.assign
+    select: character
+    required: true
+  name:
+    label: 人物の名前
+    from: S5.name
+    select: "[{slot}].name"
+    required: true
+  protagonist_name:
+    label: 主人公の名前
+    from: S5.name
+    select: "[c1].name"
+    required: false
+    truncate: head
+  protagonist_role:
+    label: 主人公の役
+    from: S3.assign
+    select: cast[c1].role
+    required: false
+  name_sound:
+    label: 名前の響き
+    from: S3.assign
+    select: character_fact_tasks[{slot}].name_sound
+    required: false
+  choices:
+    label: 選択肢
+    from: S3.assign
+    select: character_fact_tasks[{slot}].choices
+    required: false
+  previous_facts:
+    label: 先に決まった人物の事実
+    from: S5.fact
+    select: previous
+    required: false
+    truncate: tail
+  world_facts:
+    label: 関係する世界の事実
+    from: S4.fact
+    select: world
+    required: false
+    truncate: tail
+  calendar:
+    label: 世界の暦
+    from: S4.calendar_name
+    select: name
+    required: true
+  current_year:
+    label: 現在の年
+    from: S3.assign
+    select: calendar.current_year
+    required: true
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
+output: text
+continuation: false
+card:
+  role: 人物の今回の見出しに対応する客観的な事実の値を1つだけ定める。
+  steps:
+  - 今回の見出しだけを扱い、割り当てられた人物の年齢・種族・能力・役割と、先に決まった事実に矛盾させない。技能は能力を具体化する。
+  - 暦は与えられたものを使い、年や数値は指定された範囲に収める。
+  - 値1つだけを書く。見出し・単位・出典・説明や作り方の指示を加えない。
+validate:
+  checks:
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - max_chars:
+      n: 40
+max_input_chars: 3000

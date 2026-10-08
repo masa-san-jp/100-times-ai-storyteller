@@ -18,7 +18,7 @@ from .world_facts import (
     assign_world_fact_tasks, assign_calendar, build_world_fact_specs,
     description_entries, fact_ids_by_section,
 )
-from .character_facts import CHARACTER_WORLD_SECTIONS
+from .character_facts import assign_character_fact_tasks, initial_character_specs
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -102,6 +102,7 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         name_sets, context.random,
         current_year=assignment["calendar"]["current_year"], repository_root=repository_root,
     )
+    assignment["character_fact_tasks"] = assign_character_fact_tasks(assignment["cast"], name_sets, context.random, repository_root)
     validate_document(assignment, repository_root / "schemas" / "story" / "assignment.schema.json")
 
     # story-pipeline.md §8 / ADR-0007: decide each character's item counts
@@ -826,7 +827,7 @@ def _build_downstream_tasks(
         if not isinstance(counts, Mapping):
             raise ValueError(f"人物の分量配分がありません: {person_id}")
         name_id = f"S5.name-{person_id}"
-        facts_id = f"S5.facts-{person_id}"
+        fact_ids = tuple(f"S5.fact-{entry['id']}" for entry in assignment["character_fact_tasks"] if entry["person_id"] == person_id)
         profile_id = f"S5.profile-{person_id}"
         intro_id = f"S5.intro-{person_id}"
         appearance_id = f"S5.appearance-{person_id}"
@@ -836,7 +837,7 @@ def _build_downstream_tasks(
         protagonist_name_deps = () if is_protagonist else (protagonist_name_id,)
         protagonist_intro_deps = () if is_protagonist else (protagonist_intro_id,)
         # profile の後に並行して書く項目（story-pipeline.md S5）。
-        parallel_deps = _unique_dependencies((parent_task_id, profile_id, facts_id, *protagonist_name_deps))
+        parallel_deps = _unique_dependencies((parent_task_id, profile_id, *fact_ids, *protagonist_name_deps))
 
         personality_id = f"S5.personality-{person_id}"
         values_id = f"S5.values-{person_id}"
@@ -854,21 +855,14 @@ def _build_downstream_tasks(
         if expected_relationships != len(relationship_targets):
             raise ValueError(f"人物の relationship の配分件数が不正です: {person_id}")
 
+        additions.extend(initial_character_specs(parent_task_id, person_id, assignment))
         additions.extend(
             [
                 TaskSpec(name_id, "S5.name", deps=(parent_task_id,), index=(person_id,)),
                 TaskSpec(
-                    facts_id, "S5.facts",
-                    deps=_unique_dependencies((parent_task_id, name_id, "S4.calendar_name", *protagonist_name_deps, *(
-                        task_id for section_id in CHARACTER_WORLD_SECTIONS
-                        for task_id in facts_by_section.get(section_id, [])[-1:]
-                    ))),
-                    index=(person_id,),
-                ),
-                TaskSpec(
                     profile_id,
                     "S5.profile",
-                    deps=_unique_dependencies((parent_task_id, *protagonist_name_deps, name_id, facts_id)),
+                    deps=_unique_dependencies((parent_task_id, *protagonist_name_deps, name_id, *fact_ids)),
                     index=(person_id,),
                 ),
                 TaskSpec(intro_id, "S5.intro", deps=parallel_deps, index=(person_id,)),
@@ -883,7 +877,7 @@ def _build_downstream_tasks(
                     motive_id,
                     "S5.motive",
                     deps=_unique_dependencies(
-                        (parent_task_id, profile_id, facts_id, *name_task_ids, *protagonist_intro_deps)
+                        (parent_task_id, profile_id, *fact_ids, *name_task_ids, *protagonist_intro_deps)
                     ),
                     index=(person_id,),
                 ),
@@ -912,7 +906,7 @@ def _build_downstream_tasks(
                     (
                         parent_task_id,
                         motive_id,
-                        facts_id,
+                        *fact_ids,
                         personality_id,
                         values_id,
                         voice_id,

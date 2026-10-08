@@ -450,7 +450,7 @@ class AutoRunner:
                 fact_inputs = (
                     json.loads((orchestrator.task_dir(claim_info["run_id"], claim_info["task_id"])
                                 / "input.json").read_text(encoding="utf-8"))
-                    if definition.get("id") == "S4.fact" else None
+                    if definition.get("id") in {"S4.fact", "S5.fact"} else None
                 )
                 from .world_facts import specialize_fact_definition
                 definition = specialize_fact_definition(definition, fact_inputs or {})

@@ -80,7 +80,9 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `S4.item-<section id>-<3桁>` | L | S3.assign、S4.calendar_name、S4.item_name、その項目と `refers` の S4.fact、前提セクションのタスク | 一覧型セクションの項目（`list`） |
 | `S4.diversity-<section id>` | C | そのセクションの面すべて | 書き出しが似すぎた面を無効化 |
 | `S5.name-c<n>` | L | S3.assign | 名前 |
-| `S5.fact-c<n>-<キー>` | L | S5.name-c<n>、S4.calendar_name、関係する S4.fact、同じ人物の直前の事実の項目 | 人物の事実の値1つ（範囲が1点ならコードが記録） |
+| `S5.fact-c<n>-age` | L | S5.name-c<n>、S4.calendar_name、関係する S4.fact | 年齢1つ（範囲が1点ならコードが記録） |
+| `S5.fact_plan-c<n>` | C | S5.fact-c<n>-age、S5.name-c<n>、S4.calendar_name、関係する S4.fact | 生年・年表の範囲・選択肢を計算し、残りの事実のタスクを追加 |
+| `S5.fact-c<n>-<キー>`（age 以外） | L | S5.fact_plan-c<n>、S5.name-c<n>、S4.calendar_name、関係する S4.fact、同じ人物の直前の事実の項目 | 人物の事実の値1つ（範囲が1点ならコードが記録） |
 | `S5.profile-c<n>` | L | S5.name-c<n>、S5.fact-c<n> すべて | プロフィール |
 | `S5.intro-c<n>`・`S5.appearance-c<n>` | L | S5.profile-c<n> | 短い紹介・外見 |
 | `S5.motive-c<n>` | L | S5.profile-c<n>、S5.name すべて、主人公の S5.intro（主人公以外の場合） | 動機 |

@@ -382,7 +382,7 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
     }
     for task_type in (
         "S5.name",
-        "S5.facts",
+        "S5.fact",
         "S5.profile",
         "S5.intro",
         "S5.appearance",
@@ -396,6 +396,7 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
         "S5.catchphrase",
     ):
         definitions[task_type] = _llm_definition(task_type)
+    definitions["S5.fact_plan"] = _code_definition("S5.fact_plan", "fact_plan")
     return definitions
 
 
@@ -432,6 +433,14 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
             add_tasks=[TaskSpec("S3.assign", "S3.assign", deps=(context.task_id,))],
         )
 
+    def fact_plan(context):
+        assignment = context.outputs["S3.assign"]
+        return CodeTaskResult(output={}, add_tasks=[
+            TaskSpec(f"S5.fact-{entry['id']}", "S5.fact", deps=(context.task_id,), index=(entry["id"],))
+            for entry in assignment["character_fact_tasks"]
+            if entry["person_id"] == context.task["index"][0] and entry["key"] != "age"
+        ])
+
     orchestrator = Orchestrator(
         tmp_path / "data",
         _integration_definitions(),
@@ -441,6 +450,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
             "assign": story_s3_assign,
             "diversity": lambda _context: {"invalidated": []},
             "relationship_context": story_s5_relationship_context,
+            "fact_plan": fact_plan,
             "expand": story_s6_expand,
             "event_assemble": story_s7_assemble,
             "plan": story_s8_plan,

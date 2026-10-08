@@ -1637,6 +1637,8 @@ class Orchestrator:
         dependency_outputs = _read_dependency_outputs(
             self.run_dir(run_id), manifest, task
         )
+        from .character_facts import supplement_character_outputs
+        dependency_outputs = supplement_character_outputs(self.run_dir(run_id), manifest, task, dependency_outputs)
         from .world_facts import supplement_fact_outputs
         dependency_outputs = supplement_fact_outputs(self.run_dir(run_id), manifest, task, dependency_outputs, definition=definition)
         source_outputs = _source_outputs(
@@ -1651,12 +1653,6 @@ class Orchestrator:
                 # the persisted assignment and registration outputs stay intact.
                 registrations = registration_outputs(self.run_dir(run_id), manifest)
                 glossary = build_glossary(registrations)
-                if "S5.facts" in source_outputs:
-                    from .character_facts import sheet_for_card
-                    source_outputs["S5.facts"] = {
-                        key: sheet_for_card(sheet, glossary)
-                        for key, sheet in source_outputs["S5.facts"].items()
-                    }
                 base_definition = {**definition, "inputs": {
                     name: slot for name, slot in definition["inputs"].items()
                     if name != "glossary"
@@ -1804,7 +1800,7 @@ class Orchestrator:
         updates: Mapping[str, Any] | None = None,
     ) -> None:
         """Reject defective bounds before creating any of the added task directories."""
-        if not any(self.task_definitions[spec.type].get("range") or spec.type == "S4.fact"
+        if not any(self.task_definitions[spec.type].get("range") or spec.type in {"S4.fact", "S5.fact"}
                    for spec in specs):
             return
         values = {**manifest, **(updates or {})}
@@ -1818,7 +1814,7 @@ class Orchestrator:
             prospective["tasks"][key]["state"] = "done"
         for spec in specs:
             definition = self.task_definitions[spec.type]
-            fact_inputs = spec.type == "S4.fact" and "shape" in definition.get("inputs", {})
+            fact_inputs = spec.type in {"S4.fact", "S5.fact"} and "shape" in definition.get("inputs", {})
             if not definition.get("range") and not fact_inputs:
                 continue
             task = {"type": spec.type, "deps": list(spec.deps), "index": list(spec.index)}
@@ -2107,10 +2103,12 @@ def _validate_input_dependencies(
 
 
 def _is_deferred_dependency(task_id: str) -> bool:
-    return _deferred_dependency_type(task_id) == "S8.judge"
+    return _deferred_dependency_type(task_id) in {"S8.judge", "S5.fact"}
 
 
 def _deferred_dependency_type(task_id: str) -> str | None:
+    if re.fullmatch(r"S5\.fact-c[0-9]+-[a-z][a-z0-9_.]*", task_id):
+        return "S5.fact"
     if re.fullmatch(r"S8\.judge-e[0-9]{3}", task_id):
         return "S8.judge"
     return None
@@ -2372,6 +2370,13 @@ def _prepare_card_inputs(
     continuation actually becomes necessary.
     """
     budget = int(definition.get("max_input_chars", 3000))
+    world_rows = inputs.get("world_facts")
+    if (definition.get("id") == "S5.fact" and isinstance(world_rows, list)
+        and definition.get("inputs", {}).get("world_facts", {}).get("truncate") == "tail"
+        and all(isinstance(row, Mapping) and isinstance(row.get("id"), str)
+                and isinstance(row.get("text"), str) for row in world_rows)):
+        from .world_facts import over_budget_fact_tail
+        inputs = {**inputs, "world_facts": over_budget_fact_tail(world_rows, budget)}
     collection_slot = {
         "S5.motive": "names", "S5.relationship": "other_person",
     }.get(definition.get("id"))
@@ -3149,6 +3154,11 @@ def _source_outputs(
         ]
         if not matching:
             continue
+        if slot == "S5.fact":
+            from .character_facts import character_source_context
+            if slot not in result:
+                result[slot] = character_source_context(dependency_outputs, task)
+            continue
 
         indexed = any(
             _dependency_index_key(dependency, manifest["tasks"][dependency]) is not None
@@ -3187,6 +3197,27 @@ def _source_outputs(
             # same type, but preserve all values if a custom harness creates
             # such a graph rather than silently discarding one.
             source_value = [dependency_outputs[task_id] for task_id in matching]
+        if slot == "S5.name" and task.get("type") == "S5.fact":
+            fact_index = task["index"][0]
+            person_id = fact_index.split("-", 1)[0]
+            source_value = {**source_value, fact_index: source_value[person_id]}
+        if slot == "S3.assign" and task.get("type") == "S5.fact":
+            from .character_facts import character_entries, character_card_view
+            person_id = task["index"][0].split("-", 1)[0]
+            entries = deepcopy(character_entries(dependency_outputs, person_id))
+            choice_names = {entry["id"]: entry["name"] for entry in build_glossary(dependency_outputs)}
+            for entry in entries:
+                for option in entry.get("choices", []):
+                    if option["id"] in choice_names:
+                        option["name"] = choice_names[option["id"]]
+            source_value = {**source_value, "character_fact_tasks": entries,
+                "character": character_card_view(next(person for person in source_value["cast"] if person["id"] == person_id))}
+        elif (slot == "S3.assign" and task.get("type", "").startswith("S5.")
+              and input_slots.get("character", {}).get("select") == "character"):
+            from .character_facts import character_card_view
+            person_id = task["index"][0]
+            source_value = {**source_value, "character": character_card_view(
+                next(person for person in source_value["cast"] if person["id"] == person_id), description=True)}
         if slot_name == "prerequisite_items" and slot == "S4.item":
             source_value = _summarize_world_items(source_value)
         if slot_name == "prerequisite_sections" and slot == "S4.section":

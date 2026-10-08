@@ -170,9 +170,7 @@ def validate_output(
             errors.append(f"schema: {error}")
 
     checks = validation.get("checks", [])
-    if task_definition.get("id") == "S5.facts":
-        from .character_facts import validate_character_facts
-        errors.extend(validate_character_facts(value, slot_values))
+
     if not isinstance(checks, list):
         raise ValidationConfigurationError("validate.checks must be a list")
     if task_definition.get("element") in VALUE_ELEMENTS:

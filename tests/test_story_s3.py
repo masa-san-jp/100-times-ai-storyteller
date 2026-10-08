@@ -23,7 +23,7 @@ from storyteller.volume import multiplier_for_preset
 ROOT = Path(__file__).parents[1]
 ALL_S5_TYPES = (
     "S5.name",
-    "S5.facts",
+    "S5.fact",
     "S5.profile",
     "S5.intro",
     "S5.appearance",
@@ -84,6 +84,7 @@ def _definitions(material_kind: str = "suppression") -> dict[str, dict[str, obje
         "S5.relationship_context": _code_definition(
             "S5.relationship_context", "relationship_context"
         ),
+        "S5.fact_plan": _code_definition("S5.fact_plan", "fact_plan"),
         "S6.expand": _code_definition("S6.expand", "s6"),
     }
     definitions.update({task_id: _llm_definition(task_id) for task_id in ALL_S5_TYPES})
@@ -445,20 +446,21 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
         motive_id = f"S5.motive-{person_id}"
         context_name_deps = [] if position == 0 else [protagonist_name_id]
         context_intro_deps = [] if position == 0 else [protagonist_intro_id]
-        parallel_deps = ["S3.assign", profile_id, f"S5.facts-{person_id}", *context_name_deps]
+        fact_ids = [f"S5.fact-{entry['id']}" for entry in assignment["character_fact_tasks"] if entry["person_id"] == person_id]
+        parallel_deps = ["S3.assign", profile_id, *fact_ids, *context_name_deps]
         assert tasks[f"S5.name-{person_id}"]["deps"] == ["S3.assign"]
         assert tasks[profile_id]["deps"] == [
             "S3.assign",
             *context_name_deps,
             f"S5.name-{person_id}",
-            f"S5.facts-{person_id}",
+            *fact_ids,
         ]
         for field in ("intro", "appearance", "personality", "values", "voice", "inner_conflict"):
             assert tasks[f"S5.{field}-{person_id}"]["deps"] == parallel_deps
         assert tasks[motive_id]["deps"] == [
             "S3.assign",
             profile_id,
-            f"S5.facts-{person_id}",
+            *fact_ids,
             *name_ids,
             *context_intro_deps,
         ]
@@ -486,7 +488,7 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
         assert tasks[f"S5.catchphrase-{person_id}"]["deps"] == [
             "S3.assign",
             motive_id,
-            f"S5.facts-{person_id}",
+            *fact_ids,
             f"S5.personality-{person_id}",
             f"S5.values-{person_id}",
             f"S5.voice-{person_id}",

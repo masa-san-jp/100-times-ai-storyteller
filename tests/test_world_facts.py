@@ -14,7 +14,7 @@ from storyteller.glossary import build_glossary, glossary_id, related_glossary
 from storyteller.tables import load_table
 from storyteller.validation import load_and_validate_yaml, validate_output, input_source_ids
 from storyteller.world_facts import (
-    description_entries, fact_source_context, legacy_character_world_context,
+    description_entries, fact_source_context,
     render_world_facts_markdown, specialize_fact_definition,
 )
 from tests.test_story_s3 import _run
@@ -181,15 +181,6 @@ def test_glossary_ids_and_fact_context_are_section_scoped_and_survive_budget():
     card = generate_task_card(definition, "ticket", inputs=fitted)
     assert "標高：200.0 m" in card and "S4" not in card
 
-
-def test_legacy_s5_input_is_assembled_from_new_facts():
-    assignment, outputs = _assembled()
-    context = legacy_character_world_context(assignment, outputs)
-    assert context[0]["facts"][0]["calendar"] == "カナ暦"
-    assert context[0]["facts"][0]["value"] == 300
-    assert all(row["facts"][0]["year"] == 300 for row in context)
-    assert any(row["facts"][0]["value"] == 200 for row in context)
-    assert all("registered_task" not in term for row in context for term in row["glossary"])
 
 
 def test_future_year_ranges_and_cross_section_references(tmp_path):

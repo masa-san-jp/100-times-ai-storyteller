@@ -12,6 +12,7 @@ from .seed import generated_seed
 from .story_s2 import story_s2_merge, story_s2_plan
 from .story_s3 import story_s3_assign
 from .story_s4 import story_s4_diversity
+from .character_facts import story_s5_fact_plan
 from .story_s5 import story_s5_relationship_context
 from .story_s6 import story_s6_expand
 from .story_s7 import story_s7_assemble
@@ -112,6 +113,7 @@ def create_story_orchestrator(data_dir: str | Path) -> Orchestrator:
             "story_s2_merge": story_s2_merge,
             "story_s3_assign": story_s3_assign,
             "story_s4_diversity": story_s4_diversity,
+            "story_s5_fact_plan": story_s5_fact_plan,
             "story_s5_relationship_context": story_s5_relationship_context,
             "story_s6_expand": story_s6_expand,
             "story_s7_assemble": story_s7_assemble,
