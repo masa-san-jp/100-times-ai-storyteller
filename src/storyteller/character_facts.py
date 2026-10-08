@@ -3,36 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from itertools import zip_longest
 from typing import Any
-
-from .world_facts import facts_for_card
-
 
 # These sections supply locations, institutions, calendars and dated history.
 CHARACTER_WORLD_SECTIONS = (
     "place", "customs", "organizations", "social_groups", "social_structure",
     "people", "past_events",
 )
-
-
-def world_context(outputs: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Interleave complete rows and their terms so trimming preserves context.
-
-    A long place sheet must not crowd out the calendar or an organization.
-    Entries carry no task IDs or descriptions of the whole world.
-    """
-    groups = []
-    for section in CHARACTER_WORLD_SECTIONS:
-        rows = []
-        for task_id, output in sorted(outputs.items()):
-            if not task_id.startswith(f"S4.facts-{section}-"):
-                continue
-            sheet = facts_for_card(task_id, output)
-            rows.extend({"id": section, "facts": [row], "glossary": sheet["glossary"]}
-                        for row in sheet["facts"])
-        groups.append(rows)
-    return [row for group in zip_longest(*groups) for row in group if row is not None]
 
 
 def sheet_for_card(output: Mapping[str, Any], glossary: Sequence[Mapping[str, str]]) -> dict[str, Any]:
@@ -51,7 +28,7 @@ def validate_character_facts(output: Any, inputs: Mapping[str, Any]) -> list[str
         return []  # The JSON Schema reports malformed shapes.
     errors = []
     entries = list(inputs.get("glossary", []))
-    calendars = set()
+    calendars = {inputs["calendar"]} if "calendar" in inputs else set()
     for sheet in inputs.get("world_facts", []):
         entries.extend(sheet.get("glossary", []))
         calendars.update(row["calendar"] for row in sheet.get("facts", []))

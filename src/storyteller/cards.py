@@ -52,6 +52,8 @@ def generate_task_card(
         run_input=run_input,
         index=index,
     )
+    from .world_facts import specialize_fact_definition
+    task_definition = specialize_fact_definition(task_definition, rendered_slots)
     input_body = _render_input_body(task_definition, rendered_slots)
 
     output = task_definition.get("output")

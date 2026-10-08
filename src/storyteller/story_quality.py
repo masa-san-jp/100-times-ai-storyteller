@@ -13,7 +13,7 @@ _INSTRUCTION_KEYS = frozenset({
     "name_sound", "role_definition", "plot_context", "plot_requirements",
     "plot_type", "protagonist_role", "section", "viewpoint", "axis", "cliches",
     "stage_definition", "stage_guidance", "required_events", "absent_role_note",
-    "beat", "climax", "role", "fact_schema", "event_field",
+    "beat", "climax", "role", "event_field",
 })
 _METADATA_KEYS = frozenset({"id", "set_id", "source", "sources", "kind"})
 _ABSENT = object()

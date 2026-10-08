@@ -7,7 +7,7 @@ import pytest
 
 from storyteller.cards import generate_task_card, prepare_task_inputs, input_char_count
 from storyteller.character_facts import (
-    CHARACTER_WORLD_SECTIONS, render_character_sheet, sheet_for_card, world_context,
+    CHARACTER_WORLD_SECTIONS, render_character_sheet, sheet_for_card,
 )
 from storyteller.glossary import glossary_id
 from storyteller.validation import load_and_validate_yaml, validate_output, input_source_ids
@@ -30,7 +30,7 @@ def _world_output():
 
 
 def _glossary():
-    return [{"id": glossary_id("S4.facts-place-1", 1), **_world_output()["glossary"][0]}]
+    return [{"id": glossary_id("S4.fact-place.location_name", 0), **_world_output()["glossary"][0]}]
 
 
 def _output():
@@ -43,10 +43,18 @@ def _output():
             "skills": ["流水の音から漏れを探す。"]}
 
 
+def _fixture_world_context(outputs):
+    # S5.facts remains unchanged until P1-33; construct its input packets here.
+    return [{"id": "place", "facts": [row], "glossary": [{"id": glossary_id(task_id, 0), **term}
+             for term in output["glossary"]]}
+            for task_id, output in outputs.items() for row in output["facts"]]
+
+
 def _inputs():
     character = _character("protagonist", "c1", "本人")
     return {**_s5_inputs("リオ", character), "glossary": _glossary(),
-            "world_facts": world_context({"S4.facts-place-1": _world_output()})}
+            "calendar": "開拓暦", "current_year": 300,
+            "world_facts": _fixture_world_context({"S4.fact-place.location_name": _world_output()})}
 
 
 def _validate(output, inputs=None):
@@ -107,27 +115,6 @@ def test_character_facts_invalid_shapes_report_errors_without_crashing(output):
     assert not result.passed
 
 
-def test_world_context_preserves_complete_rows_terms_and_interleaves_sections():
-    world = _world_output()
-    world["facts"] *= 6
-    context = world_context({"S4.facts-place-1": world,
-                             "S4.facts-customs-1": _world_output(),
-                             "S4.facts-events-1": _world_output()})
-    assert [row["id"] for row in context[:2]] == ["place", "customs"]
-    assert all(len(row["facts"]) == 1 for row in context)
-    assert context[0]["glossary"][0]["id"] == _glossary()[0]["id"]
-    assert "events" not in {row["id"] for row in context}
-    inputs = _inputs()
-    inputs["world_facts"] = context * 20
-    fitted = prepare_task_inputs(_definition(), inputs)
-    assert fitted["world_facts"] and len(fitted["world_facts"]) < len(inputs["world_facts"])
-    assert fitted["world_facts"] == inputs["world_facts"][:len(fitted["world_facts"])]
-    card = generate_task_card(_definition(), "ticket", fitted)
-    assert "S4.facts" not in card and "S5.facts" not in card
-    assert input_char_count(_definition(), fitted) <= _definition()["max_input_chars"]
-    assert _validate(_output(), fitted).passed
-
-
 def test_required_sheet_and_referenced_terms_survive_description_budget():
     inputs = _inputs()
     sheet = sheet_for_card(_output(), _glossary())
@@ -152,11 +139,13 @@ def test_fact_tasks_precede_every_description_and_depend_only_on_relevant_world(
     assert tasks["S5.name-c1"]["deps"] == ["S3.assign"]
     facts_id = "S5.facts-c1"
     assert "S5.name-c1" in tasks[facts_id]["deps"]
-    assert any(task_id.startswith("S4.facts-place-") for task_id in tasks[facts_id]["deps"])
+    assert any(task_id.startswith("S4.fact-place.") for task_id in tasks[facts_id]["deps"])
     for task_id in tasks[facts_id]["deps"]:
         if task_id.startswith("S4."):
-            assert task_id.startswith("S4.facts-")
-            assert any(task_id.startswith(f"S4.facts-{section}-") for section in CHARACTER_WORLD_SECTIONS)
+            assert task_id == "S4.calendar_name" or any(
+                task_id.startswith(f"S4.fact-{section}.") or task_id.startswith(f"S4.fact-{section}-")
+                for section in CHARACTER_WORLD_SECTIONS
+            )
     for task in tasks.values():
         if task["type"].startswith("S5.") and task["type"] not in {"S5.name", "S5.facts", "S5.relationship_context"}:
             assert facts_id in task["deps"]
@@ -179,7 +168,7 @@ def test_character_sheet_renders_names_units_sorted_timeline_and_safe_cells():
 def test_character_facts_reject_terms_removed_from_the_card_by_budget():
     inputs = _inputs()
     for ordinal in range(1, 20):
-        inputs["world_facts"].extend(world_context({f"S4.facts-customs-{ordinal}": _world_output()}))
+        inputs["world_facts"].extend(_fixture_world_context({f"S4.fact-customs.{ordinal}": _world_output()}))
     fitted = prepare_task_inputs(_definition(), inputs)
     assert len(fitted["world_facts"]) < len(inputs["world_facts"])
     output = _output()

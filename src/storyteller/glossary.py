@@ -30,6 +30,7 @@ def build_glossary(outputs: Mapping[str, Any]) -> list[dict[str, str]]:
     people = {person["id"]: person for person in assignment.get("cast", [])}
     world_tasks = {task["id"]: task for task in assignment.get("world_tasks", [])}
     sections = {section["id"]: section for section in assignment.get("world_sections", [])}
+    fact_tasks = {entry["id"]: entry for entry in assignment.get("world_fact_tasks", [])}
     result: list[dict[str, str]] = []
     seen: set[str] = set()
     for task_id, output in sorted(outputs.items()):
@@ -44,12 +45,14 @@ def build_glossary(outputs: Mapping[str, Any]) -> list[dict[str, str]]:
             item_id = task_id.removeprefix("S4.item_name-")
             section = sections[world_tasks[item_id]["section_id"]]
             entries = [{**output, "kind": section["name"], "definition": f"{section['name']}の項目"}]
-        elif task_id.startswith("S4.facts-"):
-            entries = output.get("glossary", [])
-            if not isinstance(entries, list):
-                raise ValueError(f"用語集の出力が不正です: {task_id}")
-        start = 1 if task_id.startswith("S4.facts-") else 0
-        for ordinal, entry in enumerate(entries, start=start):
+        elif task_id == "S4.calendar_name":
+            entries = [{**output, "kind": "暦", "definition": "この世界の暦"}]
+        elif task_id.startswith("S4.fact-"):
+            field = fact_tasks.get(task_id.removeprefix("S4.fact-"))
+            if field and field["element"] == "name":
+                entries = [{**output, "kind": field["label"],
+                            "definition": f"{field['section']['name']}の{field['label']}"}]
+        for ordinal, entry in enumerate(entries):
             identifier = glossary_id(task_id, ordinal)
             if identifier in seen:
                 raise ValueError(f"用語集の ID が衝突しています: {identifier}")
@@ -69,12 +72,17 @@ def build_glossary(outputs: Mapping[str, Any]) -> list[dict[str, str]]:
 
 def registration_outputs(run_dir: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:
     """Ignore stale files belonging to invalidated, blocked or skipped tasks."""
-    return {
+    result = {
         task_id: read_task_output(run_dir / "tasks" / task_id, task["type"])
         for task_id, task in manifest["tasks"].items()
         if task["state"] == "done"
-        and task["type"] in {"S3.assign", "S5.name", "S4.item_name", "S4.facts"}
+        and task["type"] in {"S3.assign", "S5.name", "S4.item_name", "S4.calendar_name"}
     }
+    for entry in result.get("S3.assign", {}).get("world_fact_tasks", []):
+        task_id = f"S4.fact-{entry['id']}"
+        if entry["element"] == "name" and manifest["tasks"].get(task_id, {}).get("state") == "done":
+            result[task_id] = read_task_output(run_dir / "tasks" / task_id, "S4.fact")
+    return result
 
 
 def related_glossary(
@@ -104,7 +112,6 @@ def related_glossary(
     world_tasks = {task["id"]: task for task in assignment.get("world_tasks", [])}
     fact_tasks = {task["id"]: task for task in assignment.get("world_fact_tasks", [])}
     own_section = {**world_tasks, **fact_tasks}.get(index[0], {}).get("section_id") if index else None
-    sections = [section["id"] for section in assignment.get("world_sections", [])]
     result: list[dict[str, str]] = []
     for entry in glossary:
         task_id = entry["registered_task"]
@@ -112,11 +119,10 @@ def related_glossary(
         section_id = None
         if task_id.startswith("S4.item_name-"):
             section_id = world_tasks[task_id.removeprefix("S4.item_name-")]["section_id"]
-        elif task_id.startswith("S4.facts-"):
-            suffix = task_id.removeprefix("S4.facts-")
-            section_id = next((section for section in sorted(sections, key=len, reverse=True)
-                               if suffix == section or suffix.startswith(section + "-")), None)
-        if entry["id"] in references or person_id in references or (
+        elif task_id.startswith("S4.fact-"):
+            section_id = fact_tasks.get(task_id.removeprefix("S4.fact-"), {}).get("section_id")
+        if (entry["id"] in references or entry["name"] in references
+                or entry["reading"] in references or person_id in references) or (
             section_id is not None and (section_id == own_section or section_id in references)
         ):
             result.append({key: value for key, value in entry.items() if key != "registered_task"})

@@ -1,12 +1,12 @@
 id: S4.section
-version: 9
+version: 10
 kind: llm
 element: text
 inputs:
   facts:
     label: 今回の観点の事実
-    from: S4.facts
-    select: output
+    from: S4.fact
+    select: own
     required: true
   section:
     label: 世界セクションの定義
@@ -55,6 +55,16 @@ inputs:
     select: glossary
     required: false
     truncate: head
+  calendar:
+    label: 世界の暦
+    from: S4.calendar_name
+    select: name
+    required: true
+  current_year:
+    label: 現在の年
+    from: S3.assign
+    select: calendar.current_year
+    required: true
 output: text
 extend_to_min: true
 card:

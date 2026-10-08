@@ -140,6 +140,8 @@ def validate_output(
     checks do not alter retry counters or task state.
     """
 
+    from .world_facts import specialize_fact_definition
+    task_definition = specialize_fact_definition(task_definition, inputs or {})
     output_kind = task_definition.get("output")
     if output_kind not in {"json", "text"}:
         raise ValidationConfigurationError("task definition output must be json or text")
@@ -168,9 +170,6 @@ def validate_output(
             errors.append(f"schema: {error}")
 
     checks = validation.get("checks", [])
-    if task_definition.get("id") == "S4.facts":
-        from .world_facts import validate_world_facts
-        errors.extend(validate_world_facts(value, slot_values))
     if task_definition.get("id") == "S5.facts":
         from .character_facts import validate_character_facts
         errors.extend(validate_character_facts(value, slot_values))

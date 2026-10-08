@@ -701,6 +701,8 @@ class Orchestrator:
             task = _get_task(manifest, task_id)
             definition = self.task_definitions[task["type"]]
             inputs = _load_card_inputs(self.task_dir(run_id, task_id))
+            from .world_facts import specialize_fact_definition
+            definition = specialize_fact_definition(definition, inputs)
 
         continuation = _continuation_enabled(definition)
         extend_to_min = (
@@ -882,7 +884,8 @@ class Orchestrator:
                 self._now(),
             )
             at = self._now()
-            definition = self.task_definitions[task["type"]]
+            from .world_facts import specialize_fact_definition
+            definition = specialize_fact_definition(self.task_definitions[task["type"]], card_inputs)
             discard_partial = discard_partial or (
                 definition.get("output") == "text" and definition.get("extend_to_min", False)
             )
@@ -901,7 +904,7 @@ class Orchestrator:
                 save_cache(self.data_dir, key, stored_value)
                 _write_submitted_output(
                     self.task_dir(run_id, task_id),
-                    self.task_definitions[task["type"]],
+                    definition,
                     stored_value,
                 )
                 task["cache_key"] = key
@@ -1354,6 +1357,7 @@ class Orchestrator:
         task = _get_task(manifest, task_id)
         definition = self.task_definitions[task["type"]]
         context = self._build_context(manifest, run_id, task_id)
+        definition = context.definition
         card_inputs = _prepare_card_inputs(definition, context.inputs)
         retry_reason = task.get("error")
         if not isinstance(retry_reason, str):
@@ -1633,6 +1637,8 @@ class Orchestrator:
         dependency_outputs = _read_dependency_outputs(
             self.run_dir(run_id), manifest, task
         )
+        from .world_facts import supplement_fact_outputs
+        dependency_outputs = supplement_fact_outputs(self.run_dir(run_id), manifest, task, dependency_outputs, definition=definition)
         source_outputs = _source_outputs(
             manifest, task, definition, dependency_outputs
         )
@@ -1673,6 +1679,8 @@ class Orchestrator:
             )
         except (KeyError, SelectorError, TypeError) as error:
             raise TaskCardError(f"入力の生成に失敗しました: {error}") from error
+        from .world_facts import specialize_fact_definition
+        definition = specialize_fact_definition(definition, inputs)
         return CodeTaskContext(
             run_id=run_id,
             task_id=task_id,
@@ -1749,7 +1757,7 @@ class Orchestrator:
             atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
             _write_submitted_output(
                 self.task_dir(run_id, task_id),
-                self.task_definitions[task["type"]],
+                context.definition,
                 output,
             )
             _set_task_state(
@@ -1796,7 +1804,8 @@ class Orchestrator:
         updates: Mapping[str, Any] | None = None,
     ) -> None:
         """Reject defective bounds before creating any of the added task directories."""
-        if not any(self.task_definitions[spec.type].get("range") for spec in specs):
+        if not any(self.task_definitions[spec.type].get("range") or spec.type == "S4.fact"
+                   for spec in specs):
             return
         values = {**manifest, **(updates or {})}
         run_input = _read_run_input(self.run_dir(run_id))
@@ -1809,13 +1818,26 @@ class Orchestrator:
             prospective["tasks"][key]["state"] = "done"
         for spec in specs:
             definition = self.task_definitions[spec.type]
-            if not definition.get("range"):
+            fact_inputs = spec.type == "S4.fact" and "shape" in definition.get("inputs", {})
+            if not definition.get("range") and not fact_inputs:
                 continue
-            task = {"deps": list(spec.deps), "index": list(spec.index)}
+            task = {"type": spec.type, "deps": list(spec.deps), "index": list(spec.index)}
+            # The field shape and bounds are in the new S3 assignment.  Other
+            # required inputs (such as the calendar name) do not exist yet.
+            range_definition = definition
+            if fact_inputs:
+                range_definition = {**definition, "inputs": {
+                    name: slot for name, slot in definition["inputs"].items()
+                    if name in {"shape", "bounds"}
+                }}
             dependencies = _read_dependency_outputs(self.run_dir(run_id), prospective, task)
             dependencies.update({key: value for key, value in (pending_outputs or {}).items()
                                  if key in spec.deps})
-            sources = _source_outputs(prospective, task, definition, dependencies)
+            sources = _source_outputs(prospective, task, range_definition, dependencies)
+            if fact_inputs:
+                from .world_facts import specialize_fact_definition
+                inputs = resolve_inputs(range_definition, sources, run_input, index=spec.index)
+                definition = specialize_fact_definition(definition, inputs)
             limits = preflight_range(definition, values, run_input=run_input,
                                      outputs=sources, index=spec.index)
             fixed_range_value(definition, limits)
@@ -3169,24 +3191,11 @@ def _source_outputs(
             source_value = _summarize_world_items(source_value)
         if slot_name == "prerequisite_sections" and slot == "S4.section":
             source_value = _summarize_world_sections(source_value)
-        if slot_name == "world_facts" and slot == "S4.facts":
-            from .character_facts import world_context
-            source_value = world_context({dependency: dependency_outputs[dependency]
-                                          for dependency in matching})
-        if slot_name == "prerequisite_facts" and slot == "S4.facts":
-            # Whole sheets can be removed by the existing list truncation;
-            # the surviving sheets keep their numeric values and units intact.
-            source_value = [
-                {"id": key.rsplit("-", 1)[0], "facts": value["facts"]}
-                for key, value in source_value.items()
-            ]
-        if slot_name == "facts" and slot == "S4.facts":
-            from .world_facts import facts_for_card
-            source_value = {
-                _dependency_index_key(dependency, manifest["tasks"][dependency]):
-                    facts_for_card(dependency, dependency_outputs[dependency])
-                for dependency in matching
-            }
+        if slot == "S4.fact":
+            from .world_facts import fact_source_context
+            source_value = fact_source_context(
+                dependency_outputs.get("S3.assign", {}), dependency_outputs, task,
+            )
         if task.get("type") == "S7.event":
             from .story_s7 import event_source_for_card
             source_value = event_source_for_card(task, slot, source_value)

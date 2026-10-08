@@ -41,6 +41,10 @@ def _context(tmp_path: Path, outputs: dict[str, object], run_input: object) -> S
 
 def _base_outputs(events: dict[str, dict[str, object]]) -> dict[str, object]:
     assignment = _assignment()
+    assignment["world_fact_tasks"] = [{"id": "place.location_name", "section_id": "place",
+        "section": {"name": "場の描写"}, "element": "name", "label": "主要地点の名前",
+        "viewpoint": "場所"}]
+    assignment["calendar"] = {"current_year": 300}
     slots = {
         "slots": [
             {"id": event_id, "thread": "t001", "stage": {"id": "start", "name": "始まり"}}
@@ -49,8 +53,10 @@ def _base_outputs(events: dict[str, dict[str, object]]) -> dict[str, object]:
     }
     outputs: dict[str, object] = {
         "S3.assign": assignment,
+        "S4.calendar_name": {"name": "カナ暦", "reading": "カナ"},
+        "S4.calendar_epoch": "共同体が水路を開いた。",
         "S5.facts-c1": _facts(),
-        "S4.facts-place-1": _world_output(),
+        "S4.fact-place.location_name": {"name": "カナ", "reading": "カナ"},
         "S6.expand": slots,
         "S4.section-place": {"body": "水路の町の描写", "sources": ["place:t1"]},
     }

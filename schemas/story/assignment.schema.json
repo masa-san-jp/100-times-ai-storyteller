@@ -4,7 +4,7 @@
   "title": "Story pipeline S3 assignment",
   "type": "object",
   "additionalProperties": false,
-  "required": ["r", "threads", "cast", "absent_roles", "world", "world_sections", "world_tasks", "world_fact_tasks"],
+  "required": ["r", "threads", "cast", "absent_roles", "world", "world_sections", "world_tasks", "world_fact_tasks", "calendar"],
   "properties": {
     "r": {
       "type": "number"
@@ -28,6 +28,7 @@
       }
     },
     "world": {"$ref": "#/$defs/world"},
+    "calendar": {"type": "object", "additionalProperties": false, "required": ["current_year", "name_sound"], "properties": {"current_year": {"type": "integer", "minimum": 1}, "name_sound": {"$ref": "#/$defs/name-sound"}}},
     "world_sections": {
       "type": "array",
       "minItems": 1,
@@ -174,7 +175,7 @@
     "world-section": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "definition", "viewpoints", "level", "kind", "max_chars", "prerequisites", "fact_schema"],
+      "required": ["id", "name", "definition", "viewpoints", "level", "kind", "max_chars", "prerequisites"],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
         "name": {"type": "string", "minLength": 1},
@@ -187,7 +188,6 @@
         "level": {"type": "integer", "minimum": 0, "maximum": 4},
         "kind": {"type": "string", "enum": ["single", "list"]},
         "max_chars": {"type": "integer", "minimum": 1},
-        "fact_schema": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "object"}},
         "prerequisites": {
           "type": "array",
           "maxItems": 2,
@@ -200,33 +200,102 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id",
+        "key",
+        "label",
+        "element",
         "section_id",
-        "section",
         "viewpoint",
-        "fact_schema",
-        "name_sound"
+        "id",
+        "item_id",
+        "section"
       ],
       "properties": {
-        "id": {
-          "type": "string", "pattern": "^[a-z][a-z0-9_-]*-[0-9]+$"
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "element": {
+          "enum": [
+            "number",
+            "integer",
+            "year",
+            "name",
+            "text"
+          ]
         },
         "section_id": {
-          "type": "string", "pattern": "^[a-z][a-z0-9_-]*$"
+          "type": "string",
+          "minLength": 1
+        },
+        "viewpoint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "range": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            }
+          }
+        },
+        "refers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "item_id": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "section": {
           "$ref": "#/$defs/world-task/properties/section"
         },
-        "viewpoint": {
-          "type": "string", "minLength": 1
-        },
-        "fact_schema": {
-          "type": "object"
-        },
         "name_sound": {
           "$ref": "#/$defs/name-sound"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "element": {
+                "enum": [
+                  "number",
+                  "integer"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "unit"
+            ]
+          }
+        }
+      ]
     },
     "world-task": {
       "type": "object",

@@ -22,6 +22,7 @@ from storyteller.story_s9 import _validate_references
 from storyteller.validation import validate_document
 from storyteller.cli import main as cli_main
 from storyteller.new_run import create_story_orchestrator
+from storyteller.world_facts import specialize_fact_definition
 from storyteller.story_quality import body_texts
 
 
@@ -205,18 +206,21 @@ def _fake_output(
         marker = "-".join(index)
         return f"{marker}から生まれる具体的な要素"
 
-    if task_type == "S4.item_name":
+    if task_type in {"S4.item_name", "S4.calendar_name"}:
         reading = "".join(inputs["name_sound"]["sounds"][:2])
         return {"name": reading, "reading": reading}
 
-    if task_type == "S4.facts":
-        reading = "".join(inputs["name_sound"]["sounds"][:2])
-        row = {"name": reading, "value": 200, "unit": "m", "year": 12,
-               "calendar": "開拓暦", "count": 1}
-        properties = inputs["fact_schema"]["properties"]["facts"]["items"]["properties"]
-        row.update({field: "共同体の記録。" for field in properties if field not in row})
-        return {"facts": [row], "glossary": [{"name": reading, "reading": reading,
-                 "kind": "地名", "definition": "観測の基準となる地点。"}]}
+    if task_type == "S4.calendar_epoch":
+        return "共同体が水路の通行を開始した。"
+
+    if task_type == "S4.fact":
+        if inputs["shape"] == "name":
+            reading = "".join(inputs["name_sound"]["sounds"][:2])
+            return {"name": reading, "reading": reading}
+        if inputs["shape"] in {"number", "integer", "year"}:
+            bounds = inputs.get("bounds", {})
+            return str(max(bounds.get("min", 0), min(20, bounds.get("max", 20))))
+        return "共有の水路を点検する"
 
     if task_type in {"S4.section", "S4.item"}:
         body = _filler_text(task_id, "世界の本文", 900 if task_type == "S4.item" else 1150)
@@ -335,7 +339,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     rewritten_s4 = False
     quality_rejections: set[str] = set()
     rejected_tasks: set[str] = set()
-    for _ in range(1000):
+    for _ in range(2000):
         claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
         if claimed is None:
             break
@@ -348,7 +352,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             inputs,
             send_comparison_yes=is_comparison and not sent_comparison_yes,
         )
-        definition = harness.task_definitions[task["type"]]
+        definition = specialize_fact_definition(harness.task_definitions[task["type"]], inputs)
         assert input_char_count(definition, inputs) <= definition.get("max_input_chars", 3000)
         # Conservative Japanese estimate: 2 tokens per card character, plus
         # the model's full output allowance. Includes retries and scene tails.
@@ -404,7 +408,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         # Mix normal outputs with overlong outputs for each long task type.
         # Two section facets reproduce the observed f1/f2 failures.
         if trim_counts.get(task["type"], 0) < (2 if task["type"] == "S4.section" else 1):
-            definition = harness.task_definitions[task["type"]]
+            definition = specialize_fact_definition(harness.task_definitions[task["type"]], inputs)
             for check in definition.get("validate", {}).get("checks", []):
                 arguments = check.get("max_chars", {}) if isinstance(check, dict) else {}
                 if arguments.get("fix") != "trim":
@@ -420,7 +424,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
                     output = long_text
                 trimmed_tasks.add(task_id)
                 trim_counts[task["type"]] = trim_counts.get(task["type"], 0) + 1
-        definition = harness.task_definitions[task["type"]]
+        definition = specialize_fact_definition(harness.task_definitions[task["type"]], inputs)
         if definition.get("extend_to_min"):
             if task_id in continuation_outputs:
                 assert "既出の文章を繰り返さず、同じ内容をさらに具体的に書き足す" in claimed["card"]
@@ -469,7 +473,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     final_manifest = _manifest(data_dir, run_id)
     assert final_manifest["status"] == "completed"
     fact_tasks = {name: task for name, task in final_manifest["tasks"].items()
-                  if task["type"] == "S4.facts"}
+                  if task["type"] == "S4.fact"}
     assert fact_tasks and all(task["state"] == "done" for task in fact_tasks.values())
     assert quality_rejections == {"meta", "copy", "noun"}
     if long_inputs:
@@ -526,18 +530,19 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     glossary_markdown = glossary_path.read_text(encoding="utf-8")
     assert "| ID | 名前 | 読み | 種類 | 定義 | 登録したタスク |" in glossary_markdown
     world_facts = (run_dir / "story" / "world_facts.md").read_text(encoding="utf-8")
-    assert "| 開拓暦 | 12 |" in world_facts
-    assert "200 | m | 12 | 開拓暦 | 1" in world_facts
+    assignment = json.loads((run_dir / "tasks/S3.assign/output.json").read_text(encoding="utf-8"))
+    calendar_name = json.loads((run_dir / "tasks/S4.calendar_name/output.json").read_text(encoding="utf-8"))["name"]
+    current_year = assignment["calendar"]["current_year"]
+    assert f"暦：{calendar_name}" in world_facts
+    assert f"現在の年：{current_year}年" in world_facts
+    assert "| 最高地点の標高 | 20.0 | m |" in world_facts
     for task_id, task in final_manifest["tasks"].items():
         if task["type"] in {"S4.section", "S4.item"}:
             card_input = _task_input(data_dir, run_id, task_id)
-            assert len(card_input["facts"]) == 1
-            sheet = next(iter(card_input["facts"].values()))
-            assert sheet["facts"][0]["value"] == 200
-            assert sheet["facts"][0]["unit"] == "m"
-            term = sheet["glossary"][0]
-            assert term["id"] in glossary_markdown
-            assert term["name"] in glossary_markdown
+            assert len(card_input["facts"]) >= 2
+            assert all(set(row) == {"id", "text"} and "：" in row["text"] for row in card_input["facts"])
+            assert card_input["calendar"] == calendar_name
+            assert card_input["current_year"] == current_year
     characters_markdown = (run_dir / "story" / "characters.md").read_text(encoding="utf-8")
     character_facts = {task_id: task for task_id, task in final_manifest["tasks"].items()
                        if task["type"] == "S5.facts"}
@@ -549,7 +554,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             card_input = _task_input(data_dir, run_id, task_id)
             assert card_input["facts"]["age"] == 30
             assert card_input["facts"]["height_cm"] == 170
-            assert card_input["facts"]["calendar"] == "開拓暦"
+            assert card_input["facts"]["calendar"] == calendar_name
             assert any(entry["id"] == card_input["facts"]["birthplace"]
                        for entry in card_input["facts"]["glossary"])
     story = json.loads(story_path.read_text(encoding="utf-8"))

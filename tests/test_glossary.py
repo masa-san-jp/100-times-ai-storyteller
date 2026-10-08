@@ -24,14 +24,15 @@ def _outputs():
             "cast": [{"id": "c1", "role": "protagonist"}, {"id": "c2", "role": "adversary"}],
             "world_sections": [{"id": "groups", "name": "社会集団"}, {"id": "place", "name": "場の描写"}],
             "world_tasks": [{"id": "groups-001", "section_id": "groups"}],
+            "world_fact_tasks": [{"id": f"place.name{n}", "section_id": "place",
+                "section": {"name": "場の描写"}, "element": "name", "label": label}
+                for n, label in [(1, "地名"), (2, "用語"), (0, "地名")]],
         },
         "S5.name-c1": {"name": "カナリ", "reading": "カナリ", "sources": ["sound-01"]},
         "S5.name-c2": {"name": "トセラ", "reading": "トセラ", "sources": ["sound-01"]},
         "S4.item_name-groups-001": {"name": "ルミナ", "reading": "ルミナ"},
-        "S4.facts-place-1": {"glossary": [
-            {"name": "セトナ", "reading": "セトナ", "kind": "地名", "definition": "丘の名前。"},
-            {"name": "リオナ", "reading": "リオナ", "kind": "用語", "definition": "風の呼称。"},
-        ]},
+        "S4.fact-place.name1": {"name": "セトナ", "reading": "セトナ"},
+        "S4.fact-place.name2": {"name": "リオナ", "reading": "リオナ"},
     }
 
 
@@ -47,10 +48,10 @@ def test_registration_metadata_and_ids_are_stable():
     }
     item = next(entry for entry in glossary if entry["name"] == "ルミナ")
     assert (item["kind"], item["definition"]) == ("社会集団", "社会集団の項目")
-    facts = [entry for entry in glossary if entry["registered_task"] == "S4.facts-place-1"]
-    assert [entry["id"] for entry in facts] == [glossary_id("S4.facts-place-1", i) for i in (1, 2)]
-    assert [{key: entry[key] for key in ("name", "reading", "kind", "definition")} for entry in facts] == outputs["S4.facts-place-1"]["glossary"]
-    outputs["S4.facts-place-0"] = {"glossary": [{"name": "ナカセ", "reading": "ナカセ", "kind": "地名", "definition": "海の名前。"}]}
+    facts = [entry for entry in glossary if entry["registered_task"].startswith("S4.fact-")]
+    assert [entry["id"] for entry in facts] == [glossary_id(f"S4.fact-place.name{i}", 0) for i in (1, 2)]
+    assert [entry["definition"] for entry in facts] == ["場の描写の地名", "場の描写の用語"]
+    outputs["S4.fact-place.name0"] = {"name": "ナカセ", "reading": "ナカセ"}
     assert all(entry in build_glossary(outputs) for entry in glossary)
     assert build_glossary(dict(reversed(list(outputs.items())))) == build_glossary(outputs)
 
@@ -74,6 +75,20 @@ def test_only_done_registration_outputs_are_used(tmp_path):
     assert not (tmp_path / "glossary.json").exists()
 
 
+def test_registration_does_not_read_scalar_fact_files(tmp_path):
+    outputs = _outputs()
+    outputs["S3.assign"]["world_fact_tasks"].append({"id": "place.height", "element": "number"})
+    manifest = {"tasks": {"S4.fact-place.height": {"type": "S4.fact", "state": "done"}}}
+    for task_id, output in outputs.items():
+        directory = tmp_path / "tasks" / task_id
+        directory.mkdir(parents=True)
+        (directory / "output.json").write_text(json.dumps(output, ensure_ascii=False), encoding="utf-8")
+        manifest["tasks"][task_id] = {"type": task_id.split("-", 1)[0], "state": "done"}
+    registrations = registration_outputs(tmp_path, manifest)
+    assert "S4.fact-place.height" not in registrations
+    assert len(build_glossary(registrations)) == 5
+
+
 def test_collision_is_an_error(monkeypatch):
     monkeypatch.setattr("storyteller.glossary.glossary_id", lambda *_: "g000000")
     with pytest.raises(ValueError, match="ID が衝突"):
@@ -87,7 +102,7 @@ def test_collision_is_recorded_as_a_failed_code_task(tmp_path, monkeypatch):
     from tests.test_story_s9 import _base_outputs, _event
 
     outputs = _base_outputs({"e001": _event()})
-    outputs["S4.facts-place-1"] = _outputs()["S4.facts-place-1"]
+    outputs["S4.fact-place.location_name"] = {"name": "セトナ", "reading": "セトナ"}
     monkeypatch.setattr("storyteller.story_s9._all_outputs", lambda _: outputs)
     monkeypatch.setattr("storyteller.glossary.glossary_id", lambda *_: "g000000")
     definition = {"id": "S9.assemble", "version": 1, "kind": "code", "handler": "story_s9_assemble"}

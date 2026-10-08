@@ -14,7 +14,10 @@ from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 from .tables import element_rows, load_table
 from .validation import validate_document
 from .volume import apply_volume_update, compute_character_volume, compute_initial_volume
-from .world_facts import assign_world_fact_tasks, fact_key
+from .world_facts import (
+    assign_world_fact_tasks, assign_calendar, build_world_fact_specs,
+    description_entries, fact_ids_by_section,
+)
 from .character_facts import CHARACTER_WORLD_SECTIONS
 
 
@@ -92,9 +95,12 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         r,
         repository_root,
     )
+    name_sets = load_table("name_sounds", repository_root=repository_root)["sets"]
+    assignment["calendar"] = assign_calendar(context.random, name_sets, repository_root)
     assignment["world_fact_tasks"] = assign_world_fact_tasks(
         assignment["world_sections"], assignment["world_tasks"],
-        load_table("name_sounds", repository_root=repository_root)["sets"], context.random,
+        name_sets, context.random,
+        current_year=assignment["calendar"]["current_year"], repository_root=repository_root,
     )
     validate_document(assignment, repository_root / "schemas" / "story" / "assignment.schema.json")
 
@@ -725,22 +731,8 @@ def _build_downstream_tasks(
 
     # Build dependencies only after every selected section has an ID.  The
     # catalog order is not guaranteed to be a topological order.
-    fact_ids_by_section = {
-        section_id: [f"S4.facts-{entry['id']}" for entry in assignment["world_fact_tasks"]
-                     if entry["section_id"] == section_id]
-        for section_id in selected_ids
-    }
-    for entry in assignment["world_fact_tasks"]:
-        section = section_by_id[entry["section_id"]]
-        name_deps = (f"S4.item_name-{entry['id']}",) if section["kind"] == "list" else ()
-        additions.append(TaskSpec(
-            f"S4.facts-{entry['id']}", "S4.facts",
-            deps=_unique_dependencies((parent_task_id, *name_deps, *(
-                task_id for prerequisite in section["prerequisites"]
-                for task_id in fact_ids_by_section.get(prerequisite, [])
-            ))),
-            index=(entry["id"],),
-        ))
+    facts_by_section = fact_ids_by_section(assignment)
+    additions.extend(build_world_fact_specs(parent_task_id, assignment))
     for section_id, section, section_tasks in section_specs:
         prerequisite_ids = [
             task_id
@@ -750,7 +742,11 @@ def _build_downstream_tasks(
         deps = _unique_dependencies((parent_task_id, *prerequisite_ids))
         task_type = "S4.section" if section["kind"] == "single" else "S4.item"
         for world_task in section_tasks:
-            item_deps = (*deps, f"S4.facts-{fact_key(world_task)}")
+            item_deps = (*deps, "S4.calendar_name", *(
+                f"S4.fact-{entry['id']}" for entry in description_entries(
+                    world_task, assignment["world_fact_tasks"]
+                )
+            ))
             if task_type == "S4.item":
                 name_id = f"S4.item_name-{world_task['id']}"
                 additions.append(
@@ -863,9 +859,9 @@ def _build_downstream_tasks(
                 TaskSpec(name_id, "S5.name", deps=(parent_task_id,), index=(person_id,)),
                 TaskSpec(
                     facts_id, "S5.facts",
-                    deps=_unique_dependencies((parent_task_id, name_id, *protagonist_name_deps, *(
+                    deps=_unique_dependencies((parent_task_id, name_id, "S4.calendar_name", *protagonist_name_deps, *(
                         task_id for section_id in CHARACTER_WORLD_SECTIONS
-                        for task_id in fact_ids_by_section.get(section_id, [])
+                        for task_id in facts_by_section.get(section_id, [])[-1:]
                     ))),
                     index=(person_id,),
                 ),
@@ -933,7 +929,7 @@ def _build_downstream_tasks(
     s4_ids = tuple(
         addition.task_id
         for addition in additions
-        if addition.type in {"S4.section", "S4.item", "S4.diversity"}
+        if addition.type.startswith("S4.")
     )
     s5_ids = tuple(
         addition.task_id for addition in additions if addition.type.startswith("S5.")

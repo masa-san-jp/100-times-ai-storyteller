@@ -30,6 +30,7 @@ def test_all_phase_one_tables_are_loaded_and_schema_validated():
         "structures",
         "plot_types",
         "world_sections",
+        "world_facts",
         "element_axes",
         "name_sounds",
         "common_words",

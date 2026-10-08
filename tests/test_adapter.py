@@ -222,21 +222,17 @@ def test_original_schema_still_enforces_string_constraints(
         validate_document(invalid, schema)
 
 
-def test_world_fact_schemas_are_accepted_without_pattern(ollama_server: str) -> None:
+def test_world_fact_name_schema_is_accepted_without_pattern(ollama_server: str) -> None:
     root = Path(__file__).resolve().parents[1]
-    sections = load_yaml(root / "tables/world_sections.yaml")["sections"]
-    original = deepcopy(sections)
+    schema = json.loads((root / "schemas/tasks/S4.calendar_name.schema.json").read_text(encoding="utf-8"))
+    original = deepcopy(schema)
     _OllamaHandler.reject_pattern = True
-    adapter = OllamaAdapter(_model(ollama_server))
-    for section in sections:
-        for schema in section["fact_schema"].values():
-            assert "pattern" in _collect_keys(schema, {"pattern"})
-            response = adapter.complete("次のJSONだけを出力すること。", schema=schema)
-            assert response == AdapterResponse("ok", "stop")
-            sent = _OllamaHandler.requests[-1]["format"]
-            assert _collect_keys(sent, {"minLength", "maxLength", "pattern"}) == set()
-            assert sent["properties"]["facts"]["minItems"] == schema["properties"]["facts"]["minItems"]
-    assert sections == original
+    response = OllamaAdapter(_model(ollama_server)).complete("次のJSONだけを出力すること。", schema=schema)
+    assert response == AdapterResponse("ok", "stop")
+    sent = _OllamaHandler.requests[-1]["format"]
+    assert _collect_keys(sent, {"minLength", "maxLength", "pattern"}) == set()
+    assert set(sent["properties"]) == {"name", "reading"}
+    assert schema == original
 
 
 @pytest.mark.parametrize("body", [

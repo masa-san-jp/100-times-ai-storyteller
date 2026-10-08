@@ -450,8 +450,10 @@ class AutoRunner:
                 fact_inputs = (
                     json.loads((orchestrator.task_dir(claim_info["run_id"], claim_info["task_id"])
                                 / "input.json").read_text(encoding="utf-8"))
-                    if definition.get("id") == "S4.facts" else None
+                    if definition.get("id") == "S4.fact" else None
                 )
+                from .world_facts import specialize_fact_definition
+                definition = specialize_fact_definition(definition, fact_inputs or {})
                 schema = self._load_schema(definition, orchestrator, inputs=fact_inputs)
                 mode = self.state.current(self.model)["json_mode"]
                 response = adapter.complete(claim["card"], schema=schema, json_mode=mode)
@@ -562,8 +564,6 @@ class AutoRunner:
     ) -> Mapping[str, Any] | None:
         if definition.get("output") != "json" or self.state.current(self.model)["json_mode"] != "schema":
             return None
-        if definition.get("id") == "S4.facts" and inputs is not None:
-            return inputs["fact_schema"]
         schema_ref = (definition.get("validate") or {}).get("schema")
         if not isinstance(schema_ref, str):
             return None

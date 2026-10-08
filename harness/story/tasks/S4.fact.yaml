@@ -1,0 +1,98 @@
+id: S4.fact
+version: 1
+kind: llm
+element: text
+inputs:
+  label:
+    label: 今回の事実の見出し
+    from: S3.assign
+    select: world_fact_tasks[{slot}].label
+    required: true
+  shape:
+    label: 値の形
+    from: S3.assign
+    select: world_fact_tasks[{slot}].element
+    required: true
+  unit:
+    label: 単位
+    from: S3.assign
+    select: world_fact_tasks[{slot}].unit
+    required: false
+  bounds:
+    label: 値の範囲
+    from: S3.assign
+    select: world_fact_tasks[{slot}].range
+    required: false
+  section:
+    label: 世界セクションの定義
+    from: S3.assign
+    select: world_fact_tasks[{slot}].section
+    required: true
+  viewpoint:
+    label: 今回の観点
+    from: S3.assign
+    select: world_fact_tasks[{slot}].viewpoint
+    required: true
+  calendar:
+    label: 世界の暦
+    from: S4.calendar_name
+    select: name
+    required: true
+  current_year:
+    label: 現在の年
+    from: S3.assign
+    select: calendar.current_year
+    required: true
+  place:
+    label: 物語の場所
+    from: S3.assign
+    select: world.place
+    required: true
+  era:
+    label: 物語の時代
+    from: S3.assign
+    select: world.era
+    required: true
+  name:
+    label: 一覧項目の名前
+    from: S4.item_name
+    select: output
+    required: false
+  name_sound:
+    label: 名前の響き
+    from: S3.assign
+    select: world_fact_tasks[{slot}].name_sound
+    required: false
+  referred_facts:
+    label: 参照する事実
+    from: S4.fact
+    select: referred
+    required: false
+  previous_facts:
+    label: 先に決まった同じセクション・前提セクションの事実
+    from: S4.fact
+    select: previous
+    required: false
+    truncate: tail
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
+output: text
+continuation: false
+card:
+  role: 今回の見出しに対応する客観的な事実の値を1つだけ定める。
+  steps:
+  - 今回の見出しと観点だけを扱い、場所・時代と先に決まった事実・参照する事実に矛盾させない。
+  - 暦は与えられたものを使い、年は指定された範囲に収める。別の暦を作らない。
+  - 見出しの値1つだけを書く。見出し・単位・測定年・出典・説明を出力に加えない。
+validate:
+  checks:
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - max_chars:
+      n: 40
+max_input_chars: 3000
