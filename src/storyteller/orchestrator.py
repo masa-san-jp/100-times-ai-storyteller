@@ -1804,7 +1804,8 @@ class Orchestrator:
         updates: Mapping[str, Any] | None = None,
     ) -> None:
         """Reject defective bounds before creating any of the added task directories."""
-        if not any(self.task_definitions[spec.type].get("range") for spec in specs):
+        if not any(self.task_definitions[spec.type].get("range") or spec.type == "S4.fact"
+                   for spec in specs):
             return
         values = {**manifest, **(updates or {})}
         run_input = _read_run_input(self.run_dir(run_id))
@@ -1817,13 +1818,26 @@ class Orchestrator:
             prospective["tasks"][key]["state"] = "done"
         for spec in specs:
             definition = self.task_definitions[spec.type]
-            if not definition.get("range"):
+            fact_inputs = spec.type == "S4.fact" and "shape" in definition.get("inputs", {})
+            if not definition.get("range") and not fact_inputs:
                 continue
-            task = {"deps": list(spec.deps), "index": list(spec.index)}
+            task = {"type": spec.type, "deps": list(spec.deps), "index": list(spec.index)}
+            # The field shape and bounds are in the new S3 assignment.  Other
+            # required inputs (such as the calendar name) do not exist yet.
+            range_definition = definition
+            if fact_inputs:
+                range_definition = {**definition, "inputs": {
+                    name: slot for name, slot in definition["inputs"].items()
+                    if name in {"shape", "bounds"}
+                }}
             dependencies = _read_dependency_outputs(self.run_dir(run_id), prospective, task)
             dependencies.update({key: value for key, value in (pending_outputs or {}).items()
                                  if key in spec.deps})
-            sources = _source_outputs(prospective, task, definition, dependencies)
+            sources = _source_outputs(prospective, task, range_definition, dependencies)
+            if fact_inputs:
+                from .world_facts import specialize_fact_definition
+                inputs = resolve_inputs(range_definition, sources, run_input, index=spec.index)
+                definition = specialize_fact_definition(definition, inputs)
             limits = preflight_range(definition, values, run_input=run_input,
                                      outputs=sources, index=spec.index)
             fixed_range_value(definition, limits)

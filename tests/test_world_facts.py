@@ -203,6 +203,103 @@ def test_future_year_ranges_and_cross_section_references(tmp_path):
     assert "S4.fact-place.highest_elevation" in tasks["S4.fact-social_structure.forest_area"]["deps"]
 
 
+def _fact_range_harness(tmp_path, shape, limits):
+    from storyteller.new_run import create_story_orchestrator
+    from storyteller.orchestrator import CodeTaskResult, TaskSpec
+    from storyteller.world_facts import build_world_fact_specs
+
+    assignment, _ = _assembled()
+    sound = {"set_id": "sound-01", "sounds": ["カ", "ナ", "リ", "オ", "セ", "ト"]}
+    assignment["calendar"]["name_sound"] = sound
+    assignment["world"] = {"place": {"id": "place:t1", "text": "水路の町"},
+                           "era": {"id": "era:t1", "text": "開拓の後"}}
+    assignment["world_fact_tasks"] = assignment["world_fact_tasks"][:2]
+    for field in assignment["world_fact_tasks"]:
+        field["section"] = {"id": "place", "name": "場", "definition": "水路の町"}
+        field["name_sound"] = sound
+    field = assignment["world_fact_tasks"][1]
+    field.update(element=shape, range=limits)
+    harness = create_story_orchestrator(tmp_path)
+
+    def assign(context):
+        return CodeTaskResult(assignment, add_tasks=build_world_fact_specs(context.task_id, assignment))
+
+    harness.code_handlers["story_s3_assign"] = assign
+    run_id = harness.create_run(seed=9, task_specs=[
+        TaskSpec("S2.merge", "S2.merge"), TaskSpec("S3.assign", "S3.assign", deps=("S2.merge",)),
+    ])
+    harness._complete_task(run_id, "S2.merge", {"pools": {}})
+    return harness, run_id
+
+
+@pytest.mark.parametrize("shape,limits", [
+    ("number", {"min": 10, "max": 5}),
+    ("integer", {"min": 10, "max": 5}),
+    ("year", {"min": 301, "max": 300}),
+    ("integer", {"min": 1.5, "max": 1.5}),
+])
+def test_fact_bounds_are_checked_before_any_dynamic_task_is_created(tmp_path, shape, limits):
+    harness, run_id = _fact_range_harness(tmp_path, shape, limits)
+    manifest = harness.advance(run_id)
+    assert manifest["tasks"]["S3.assign"]["state"] == "failed"
+    assert "range:" in manifest["tasks"]["S3.assign"]["error"]
+    assert not any(task_id.startswith("S4.") for task_id in manifest["tasks"])
+    assert not any(path.name.startswith("S4.") for path in (harness.run_dir(run_id) / "tasks").iterdir())
+    assert not (harness.task_dir(run_id, "S3.assign") / "output.json").exists()
+    report = (harness.task_dir(run_id, "S3.assign") / "failure.md").read_text(encoding="utf-8")
+    assert "range:" in report and "コードタスクのためカードはありません" in report
+
+
+@pytest.mark.parametrize("shape,value", [("number", 42.5), ("integer", 42), ("year", 300)])
+def test_fixed_fact_is_recorded_without_claim_and_keeps_sources(tmp_path, shape, value):
+    from storyteller.task_outputs import read_task_output, task_sources
+
+    harness, run_id = _fact_range_harness(tmp_path, shape, {"min": value, "max": value})
+    harness.advance(run_id)
+    for task_id in ("S4.calendar_name", "S4.fact-place.location_name"):
+        claim = harness.claim_task(run_id, task_id, executor_id="test")
+        assert harness.submit(claim["ticket"], '{"name":"カナ","reading":"カナ"}').accepted
+    harness.advance(run_id)
+    task = harness.load_run(run_id)["tasks"]["S4.fact-place.height"]
+    assert task["state"] == "done" and task["tries"] == task["attempt"] == 0
+    directory = harness.task_dir(run_id, "S4.fact-place.height")
+    assert read_task_output(directory, "S4.fact") == str(value)
+    assert glossary_id("S4.fact-place.location_name", 0) in task_sources(directory)
+    assert not (directory / "claim.json").exists()
+    assert not (directory / "attempts").exists()
+
+
+@pytest.mark.parametrize("task_id", [
+    "S4.calendar_name", "S4.calendar_epoch", "S4.fact-place.location_name", "S4.fact-place.height",
+])
+@pytest.mark.parametrize("before_claim", [False, True])
+def test_calendar_and_specialized_fact_failures_have_redacted_cards(tmp_path, task_id, before_claim):
+    harness, run_id = _fact_range_harness(tmp_path, "number", {"min": 1, "max": 300})
+    if before_claim:
+        task_type = task_id.split("-", 1)[0]
+        harness.task_definitions[task_type]["max_input_chars"] = 1
+    harness.advance(run_id)
+    # Complete prerequisites directly so each failure path is tested in isolation.
+    if task_id != "S4.calendar_name":
+        harness._complete_task(run_id, "S4.calendar_name", {"name": "カナ暦", "reading": "カナ"})
+    if task_id == "S4.fact-place.height":
+        harness._complete_task(run_id, "S4.fact-place.location_name", {"name": "カナ", "reading": "カナ"})
+    if before_claim:
+        harness.advance(run_id)
+    else:
+        claim = harness.claim_task(run_id, task_id, executor_id="test-model")
+        harness.record_executor_failure(claim["ticket"], "HTTP status 400: rejected", fatal=True)
+    task = harness.load_run(run_id)["tasks"][task_id]
+    assert task["state"] == "failed" and task["tries"] == int(not before_claim)
+    report = (harness.task_dir(run_id, task_id) / "failure.md").read_text(encoding="utf-8")
+    assert "[入力本文を伏せました:" in report
+    assert "水路の町" not in report and "開拓の後" not in report and "カナ暦" not in report
+    if task_id in {"S4.calendar_name", "S4.fact-place.location_name"}:
+        assert '"reading"' in report and "次のJSONだけを出力" in report
+    elif task_id == "S4.fact-place.height":
+        assert "値だけを書く" in report
+
+
 def test_real_harness_retry_preserves_prior_fact_and_other_work_after_restart(tmp_path):
     from storyteller.new_run import create_story_orchestrator
     from storyteller.orchestrator import TaskSpec
@@ -225,11 +322,11 @@ def test_real_harness_retry_preserves_prior_fact_and_other_work_after_restart(tm
     harness = create_story_orchestrator(tmp_path)
     run_id = harness.create_run(seed=9, task_specs=[
         TaskSpec("S2.merge", "S2.merge"), TaskSpec("S3.assign", "S3.assign", deps=("S2.merge",)),
-        *build_world_fact_specs("S3.assign", assignment),
         TaskSpec("S5.name-c1", "S5.name", deps=("S3.assign",), index=("c1",)),
     ])
     harness._complete_task(run_id, "S2.merge", {"pools": {}})
     harness._complete_task(run_id, "S3.assign", assignment)
+    harness._add_tasks(run_id, "S3.assign", build_world_fact_specs("S3.assign", assignment))
     claim = harness.claim_task(run_id, "S4.calendar_name", executor_id="test")
     assert harness.submit(claim["ticket"], '{"name":"カナ暦","reading":"カナ"}').accepted
     name_id = "S4.fact-place.location_name"

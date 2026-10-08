@@ -19,18 +19,42 @@ ROOT = Path(__file__).parents[1]
 def _context(tmp_path: Path, bodies: list[str], counts: list[int] | None = None):
     harness = create_story_orchestrator(tmp_path / "data")
     facet_ids = [f"S4.section-place-1-f{number}" for number in range(1, len(bodies) + 1)]
+    assignment = {
+        "calendar": {"current_year": 300},
+        "world_fact_tasks": [{"id": "place.height", "key": "place.height", "section_id": "place",
+            "element": "number", "label": "標高", "viewpoint": "境界", "item_id": None, "unit": "m"}],
+        "threads": [{"plot_type_name": "旅"}],
+        "world": {
+            "place": {"id": "place:t1", "text": "風が皮膚を撫でる丘"},
+            "era": {"id": "era:t1", "text": "夜明けの時代"},
+        },
+        "world_tasks": [
+            {
+                "id": task_id.removeprefix("S4.section-"),
+                "section_id": "place", "kind": "single",
+                "section": {"id": "place", "definition": "場の描写"},
+                "viewpoint": "境界",
+                "element": {"id": "object:t1", "text": "門の石"},
+            }
+            for task_id in facet_ids
+        ],
+    }
     run_id = harness.create_run(
         seed=22,
         task_specs=[
             TaskSpec("S2.merge", "S2.merge"),
             TaskSpec("S3.assign", "S3.assign", deps=("S2.merge",)),
-            TaskSpec("S4.calendar_name", "S4.calendar_name", deps=("S3.assign",)),
-            TaskSpec("S4.fact-place.height", "S4.fact", deps=("S3.assign", "S4.calendar_name"), index=("place.height",)),
-        ] + [
-            TaskSpec(task_id, "S4.section", deps=("S3.assign", "S4.calendar_name", "S4.fact-place.height"), index=(task_id.removeprefix("S4.section-"),))
-            for task_id in facet_ids
-        ] + [TaskSpec("S4.diversity-place", "S4.diversity", deps=tuple(facet_ids), index=("place",))],
+        ],
     )
+    harness._complete_task(run_id, "S2.merge", {"pools": {}})
+    harness._complete_task(run_id, "S3.assign", assignment)
+    harness._add_tasks(run_id, "S3.assign", [
+        TaskSpec("S4.calendar_name", "S4.calendar_name", deps=("S3.assign",)),
+        TaskSpec("S4.fact-place.height", "S4.fact", deps=("S3.assign", "S4.calendar_name"), index=("place.height",)),
+    ] + [
+        TaskSpec(task_id, "S4.section", deps=("S3.assign", "S4.calendar_name", "S4.fact-place.height"), index=(task_id.removeprefix("S4.section-"),))
+        for task_id in facet_ids
+    ] + [TaskSpec("S4.diversity-place", "S4.diversity", deps=("S3.assign", *facet_ids), index=("place",))])
     manifest = harness.load_run(run_id)
     for task_id, count in zip(facet_ids, counts or [0] * len(bodies)):
         manifest["tasks"][task_id]["invalidations"] = count
@@ -145,30 +169,6 @@ def test_real_harness_adopts_similar_output_at_limit_after_restarts(tmp_path: Pa
     body = "丘の頂上に立つと、風が皮膚に触れる。" * 50
     context, ids = _context(tmp_path, [body, body])
     harness = context.harness
-    # Supply just the S3 inputs for this focused integration test; use the
-    # real S4 cards, submit validation, handler, and invalidation machinery.
-    harness._complete_task(context.run_id, "S2.merge", {"pools": {}})
-    assignment = {
-        "calendar": {"current_year": 300},
-        "world_fact_tasks": [{"id": "place.height", "key": "place.height", "section_id": "place",
-            "element": "number", "label": "標高", "viewpoint": "境界", "item_id": None, "unit": "m"}],
-        "threads": [{"plot_type_name": "旅"}],
-        "world": {
-            "place": {"id": "place:t1", "text": "風が皮膚を撫でる丘"},
-            "era": {"id": "era:t1", "text": "夜明けの時代"},
-        },
-        "world_tasks": [
-            {
-                "id": task_id.removeprefix("S4.section-"),
-                "section_id": "place", "kind": "single",
-                "section": {"id": "place", "definition": "場の描写"},
-                "viewpoint": "境界",
-                "element": {"id": "object:t1", "text": "門の石"},
-            }
-            for task_id in ids
-        ],
-    }
-    harness._complete_task(context.run_id, "S3.assign", assignment)
     harness._complete_task(context.run_id, "S4.calendar_name", {"name": "カナ暦", "reading": "カナ"})
     harness._complete_task(context.run_id, "S4.fact-place.height", "200")
     submitted_ids: list[str] = []
