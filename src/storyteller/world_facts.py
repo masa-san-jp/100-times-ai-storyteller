@@ -111,7 +111,7 @@ def supplement_fact_outputs(run_dir: Path, manifest: Mapping[str, Any],
     from .task_outputs import read_task_output
 
     result = dict(outputs)
-    if task["type"] not in {"S4.fact", "S5.facts"}:
+    if task["type"] not in {"S4.fact", "S5.fact", "S5.fact_plan"}:
         return result
     pending = list(task["deps"])
     seen = set()
@@ -121,6 +121,9 @@ def supplement_fact_outputs(run_dir: Path, manifest: Mapping[str, Any],
             continue
         seen.add(task_id)
         record = manifest["tasks"][task_id]
+        if record["type"] in {"S5.fact", "S5.fact_plan"} and record["state"] == "done":
+            pending.extend(record["deps"])
+            continue
         if record["type"] == "S4.item_name":
             continue
         if record["type"] != "S4.fact" or record["state"] != "done":
@@ -173,9 +176,21 @@ def _bounded_prior_entries(entries: Sequence[Mapping[str, Any]], budget: int) ->
     return entries
 
 
+def over_budget_fact_tail(rows: list[Mapping[str, Any]], budget: int) -> list[Mapping[str, Any]]:
+    """Keep an overflowing suffix so fitting and glossary removal stay identical."""
+    length = 0
+    for offset, row in enumerate(reversed(rows), 1):
+        length += len(f"[{row['id']}] {unicodedata.normalize('NFC', str(row['text']))}")
+        if offset > 1:
+            length += 1
+        if length > budget:
+            return rows[-offset:]
+    return rows
+
+
 def specialize_fact_definition(definition: Mapping[str, Any], inputs: Mapping[str, Any]) -> Mapping[str, Any]:
     """Use one catalog field's shape with the P1-30 element contracts."""
-    if definition.get("id") != "S4.fact" or "shape" not in inputs:
+    if definition.get("id") not in {"S4.fact", "S5.fact"} or "shape" not in inputs:
         return definition
     result = deepcopy(definition)
     common_checks = ["no_copy_from_inputs", {"avoid_listed": {"table": "tables/meta_terms.yaml"}}]
@@ -190,13 +205,16 @@ def specialize_fact_definition(definition: Mapping[str, Any], inputs: Mapping[st
             result["card"]["steps"].append(step)
         result["validate"] = {"schema": "schemas/tasks/S4.calendar_name.schema.json", "checks": [*common_checks, {"min_chars": {"field": "name", "n": 1}},
             {"uses_given": {"field": "reading", "slot": "name_sound", "n": 2}}]}
+    elif shape == "choice":
+        result["choice_max"] = 1
+        result["validate"] = {"checks": common_checks}
     elif shape in {"number", "integer", "year"}:
         result["range"] = inputs.get("bounds", {})
         result["validate"] = {"checks": common_checks}
     else:
-        result["validate"] = {"checks": [*common_checks, {"min_chars": {"n": 1}}, {"max_chars": {"n": 40}},
+        result["validate"] = {"checks": [*common_checks, {"min_chars": {"n": 1}}, {"max_chars": {"n": inputs.get("max_chars", 40)}},
                                           {"no_new_proper_nouns": {"mode": "fail"}}]}
-        step = "40字以内の1句で、具体的な種類・行為・条文・手続だけを書く。曖昧な程度語で埋めない。"
+        step = f"{inputs.get('max_chars', 40)}字以内の1句で、具体的な種類・行為・条文・手続だけを書く。曖昧な程度語で埋めない。"
         if step not in result["card"]["steps"]:
             result["card"]["steps"].append(step)
     return result
@@ -250,40 +268,11 @@ def fact_source_context(assignment: Mapping[str, Any], outputs: Mapping[str, Any
     if task["type"] in {"S4.section", "S4.item"}:
         world_task = next(entry for entry in assignment["world_tasks"] if entry["id"] == index[0])
         return {"own": fact_lines(assignment, outputs, description_entries(world_task, entries))}
-    if task["type"] == "S5.facts":
-        return {"world": legacy_character_world_context(assignment, outputs)}
+    if task["type"] == "S5.fact":
+        from .character_facts import CHARACTER_WORLD_SECTIONS
+        return {"world": fact_lines(assignment, outputs, [entry for entry in entries
+                        if entry["section_id"] in CHARACTER_WORLD_SECTIONS], include_items=True)}
     return {}
-
-
-def legacy_character_world_context(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Adapt new facts to S5.facts until P1-33 replaces that task."""
-    from .character_facts import CHARACTER_WORLD_SECTIONS
-    from .glossary import build_glossary
-    from itertools import zip_longest
-
-    glossary = build_glossary({"S3.assign": assignment, **outputs})
-    terms = [{key: value for key, value in term.items() if key != "registered_task"}
-             for term in glossary]
-    calendar = outputs["S4.calendar_name"]["name"]
-    year = assignment["calendar"]["current_year"]
-    groups = []
-    for section in CHARACTER_WORLD_SECTIONS:
-        rows = []
-        for entry in assignment["world_fact_tasks"]:
-            task_id = f"S4.fact-{entry['id']}"
-            if entry["section_id"] != section or task_id not in outputs:
-                continue
-            rows.append({"id": section, "facts": [{"name": entry["label"],
-                         "value": fact_value(entry, outputs[task_id]), "unit": entry.get("unit", ""),
-                         "year": year, "calendar": calendar}],
-                         "glossary": [term for term in terms if term["name"] == str(fact_value(entry, outputs[task_id]))]})
-        groups.append(rows)
-    rows = [row for group in zip_longest(*groups) for row in group if row is not None]
-    # Put calendar and the available named locations/institutions first so the
-    # old task's head truncation retains a usable reference.
-    return [{"id": "calendar", "facts": [{"name": "現在の年", "value": year, "unit": "年",
-             "year": year, "calendar": calendar}], "glossary": [term for term in terms
-             if term["kind"] == "主要地点の名前"][:1]}] + rows
 
 
 def render_world_facts_markdown(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -> str:

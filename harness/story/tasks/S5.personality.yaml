@@ -1,17 +1,17 @@
 id: S5.personality
-version: 8
+version: 9
 kind: llm
 element: text
 inputs:
   facts:
     label: 人物の事実のシート
-    from: S5.facts
+    from: S5.fact
     select: "[{slot}]"
     required: true
   character:
     label: 割り当てられた人物
     from: S3.assign
-    select: cast[{slot}]
+    select: character
     required: true
   profile:
     label: プロフィール

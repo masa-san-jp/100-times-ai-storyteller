@@ -4,7 +4,7 @@
   "title": "Story pipeline S3 assignment",
   "type": "object",
   "additionalProperties": false,
-  "required": ["r", "threads", "cast", "absent_roles", "world", "world_sections", "world_tasks", "world_fact_tasks", "calendar"],
+  "required": ["r", "threads", "cast", "absent_roles", "world", "world_sections", "world_tasks", "world_fact_tasks", "calendar", "character_fact_tasks"],
   "properties": {
     "r": {
       "type": "number"
@@ -34,6 +34,7 @@
       "minItems": 1,
       "items": {"$ref": "#/$defs/world-section"}
     },
+    "character_fact_tasks": {"type": "array", "items": {"$ref": "#/$defs/character-fact-task"}},
     "world_fact_tasks": {"type": "array", "items": {"$ref": "#/$defs/world-fact-task"}},
     "world_tasks": {
       "type": "array",
@@ -42,6 +43,7 @@
     }
   },
   "$defs": {
+    "character-fact-task": {"type": "object", "additionalProperties": false, "required": ["key", "label", "element", "id", "person_id"], "properties": {"key": {"type": "string", "pattern": "^[a-z][a-z0-9_.]*$"}, "label": {"type": "string", "minLength": 1}, "element": {"enum": ["number", "integer", "name", "text", "choice"]}, "unit": {"type": "string", "minLength": 1}, "range": {"type": "object", "minProperties": 1, "additionalProperties": false, "properties": {"min": {"type": "number"}, "max": {"type": "number"}}}, "max_chars": {"type": "integer", "minimum": 1}, "id": {"type": "string", "pattern": "^c[1-9][0-9]*-[a-z][a-z0-9_.]*$"}, "person_id": {"type": "string", "pattern": "^c[1-9][0-9]*$"}, "name_sound": {"$ref": "#/$defs/name-sound"}}, "allOf": [{"if": {"properties": {"element": {"enum": ["number", "integer"]}}}, "then": {"required": ["unit"]}}]},
     "element": {
       "type": "object",
       "additionalProperties": false,

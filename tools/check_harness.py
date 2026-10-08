@@ -17,9 +17,7 @@ from storyteller.validation import load_and_validate_yaml
 
 
 # Only these existing multi-element tasks remain until their assigned migrations.
-MIGRATION_EXCEPTIONS = {
-    "S5.facts": "P1-33",
-}
+MIGRATION_EXCEPTIONS = {}
 
 
 def _has_sources(value: Any) -> bool:
@@ -51,11 +49,11 @@ def check_harness(root: Path = ROOT) -> list[str]:
                     errors.append(f"{path}: カードに sources があります")
                 if definition["id"] not in MIGRATION_EXCEPTIONS:
                     errors.extend(f"{path}: {error}" for error in element_contract_errors(definition, schema))
-                if definition["id"] == "S4.fact":
+                if definition["id"] in {"S4.fact", "S5.fact"}:
                     from storyteller.tables import load_table
                     from storyteller.world_facts import specialize_fact_definition
-                    catalog = load_table("world_facts", repository_root=root)
-                    for field in [*catalog["facts"], *catalog["item_facts"]]:
+                    catalog = load_table("world_facts" if definition["id"] == "S4.fact" else "character_facts", repository_root=root)
+                    for field in [*catalog["facts"], *catalog.get("item_facts", [])]:
                         variant = specialize_fact_definition(definition, {
                             "shape": field["element"], "bounds": field.get("range", {}),
                         })

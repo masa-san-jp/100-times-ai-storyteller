@@ -1,0 +1,48 @@
+timeline_count: 4
+facts:
+- key: age
+  label: 年齢
+  element: integer
+  unit: 歳
+  range:
+    min: 0
+    max: 1000
+- key: height_cm
+  label: 身長
+  element: number
+  unit: cm
+  range:
+    min: 0
+- key: build
+  label: 体格
+  element: text
+- key: occupation
+  label: 職業
+  element: text
+- key: birthplace
+  label: 出身地
+  element: choice
+- key: residence
+  label: 居住地
+  element: choice
+- key: affiliation
+  label: 所属
+  element: choice
+- key: family.relationship
+  label: 続柄
+  element: text
+  max_chars: 10
+- key: family.name
+  label: 家族の名前
+  element: name
+- key: timeline.year
+  label: 年表の年
+  element: integer
+  unit: 年
+- key: timeline.event
+  label: 年表の出来事
+  element: text
+  max_chars: 60
+- key: skills
+  label: 技能
+  element: text

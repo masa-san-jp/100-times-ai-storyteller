@@ -31,6 +31,10 @@ def build_glossary(outputs: Mapping[str, Any]) -> list[dict[str, str]]:
     world_tasks = {task["id"]: task for task in assignment.get("world_tasks", [])}
     sections = {section["id"]: section for section in assignment.get("world_sections", [])}
     fact_tasks = {entry["id"]: entry for entry in assignment.get("world_fact_tasks", [])}
+    character_facts = {entry["id"]: entry for entry in assignment.get("character_fact_tasks", [])}
+    for task_id, output in outputs.items():
+        if task_id.startswith("S5.fact_plan-"):
+            character_facts.update({entry["id"]: entry for entry in output.get("facts", [])})
     result: list[dict[str, str]] = []
     seen: set[str] = set()
     for task_id, output in sorted(outputs.items()):
@@ -52,6 +56,11 @@ def build_glossary(outputs: Mapping[str, Any]) -> list[dict[str, str]]:
             if field and field["element"] == "name":
                 entries = [{**output, "kind": field["label"],
                             "definition": f"{field['section']['name']}の{field['label']}"}]
+        elif task_id.startswith("S5.fact-"):
+            field = character_facts.get(task_id.removeprefix("S5.fact-"))
+            if field and field["element"] == "name":
+                entries = [{**output, "kind": "人物" if field["key"].startswith("family.") else "地名",
+                            "definition": f"{field['person_id']}の{field['label']}"}]
         for ordinal, entry in enumerate(entries):
             identifier = glossary_id(task_id, ordinal)
             if identifier in seen:
@@ -78,6 +87,14 @@ def registration_outputs(run_dir: Path, manifest: Mapping[str, Any]) -> dict[str
         if task["state"] == "done"
         and task["type"] in {"S3.assign", "S5.name", "S4.item_name", "S4.calendar_name"}
     }
+    for task_id, task in manifest["tasks"].items():
+        if task["type"] == "S5.fact_plan" and task["state"] == "done":
+            plan = read_task_output(run_dir / "tasks" / task_id, "S5.fact_plan")
+            result[task_id] = plan
+            for entry in plan["facts"]:
+                name_id = f"S5.fact-{entry['id']}"
+                if entry["element"] == "name" and manifest["tasks"].get(name_id, {}).get("state") == "done":
+                    result[name_id] = read_task_output(run_dir / "tasks" / name_id, "S5.fact")
     for entry in result.get("S3.assign", {}).get("world_fact_tasks", []):
         task_id = f"S4.fact-{entry['id']}"
         if entry["element"] == "name" and manifest["tasks"].get(task_id, {}).get("state") == "done":
