@@ -364,7 +364,9 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
         "S3.assign": _code_definition("S3.assign", "assign"),
         "S4.section": _llm_definition("S4.section"),
         "S4.item": _llm_definition("S4.item"),
-        "S4.facts": _llm_definition("S4.facts"),
+        "S4.fact": _llm_definition("S4.fact"),
+        "S4.calendar_name": _llm_definition("S4.calendar_name"),
+        "S4.calendar_epoch": _llm_definition("S4.calendar_epoch"),
         "S4.diversity": _code_definition("S4.diversity", "diversity"),
         "S6.expand": _code_definition("S6.expand", "expand"),
         "S7.assemble": {**_code_definition("S7.assemble", "event_assemble"), "inputs": {"slot": {"from": "S6.expand", "select": "slots[{slot}]", "label": "スロット"}}},
@@ -486,7 +488,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
     for task_id, task in list(manifest["tasks"].items()):
         if task["state"] != "ready" or task_id == "S6.expand":
             continue
-        if task_id.startswith("S4.facts-"):
+        if task_id.startswith("S4.fact-"):
             output = {"facts": [], "glossary": []}
         elif task_id.startswith("S4."):
             output = {"body": "水路の音が境界を知らせる場所。"}

@@ -1,0 +1,31 @@
+id: S4.calendar_name
+version: 1
+kind: llm
+element: name
+inputs:
+  name_sound:
+    label: 暦名の響き
+    from: S3.assign
+    select: calendar.name_sound
+    required: true
+output: json
+card:
+  role: 与えられた響きの音から、暦の名前を1つ組み立てる。
+  steps:
+  - 与えられた音のうち2個以上を使って、項目の名前を組み立てる。
+  - 名前と、カタカナの読みだけを出力する。
+  output_example: '{"name": "...", "reading": "..."}'
+validate:
+  schema: schemas/tasks/S4.calendar_name.schema.json
+  checks:
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - min_chars:
+      field: name
+      n: 1
+  - uses_given:
+      field: reading
+      slot: name_sound
+      n: 2
+max_input_chars: 3000

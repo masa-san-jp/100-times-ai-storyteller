@@ -24,9 +24,10 @@ def _context(tmp_path: Path, bodies: list[str], counts: list[int] | None = None)
         task_specs=[
             TaskSpec("S2.merge", "S2.merge"),
             TaskSpec("S3.assign", "S3.assign", deps=("S2.merge",)),
-            TaskSpec("S4.facts-place-1", "S4.facts", deps=("S3.assign",), index=("place-1",)),
+            TaskSpec("S4.calendar_name", "S4.calendar_name", deps=("S3.assign",)),
+            TaskSpec("S4.fact-place.height", "S4.fact", deps=("S3.assign", "S4.calendar_name"), index=("place.height",)),
         ] + [
-            TaskSpec(task_id, "S4.section", deps=("S3.assign", "S4.facts-place-1"), index=(task_id.removeprefix("S4.section-"),))
+            TaskSpec(task_id, "S4.section", deps=("S3.assign", "S4.calendar_name", "S4.fact-place.height"), index=(task_id.removeprefix("S4.section-"),))
             for task_id in facet_ids
         ] + [TaskSpec("S4.diversity-place", "S4.diversity", deps=tuple(facet_ids), index=("place",))],
     )
@@ -148,6 +149,9 @@ def test_real_harness_adopts_similar_output_at_limit_after_restarts(tmp_path: Pa
     # real S4 cards, submit validation, handler, and invalidation machinery.
     harness._complete_task(context.run_id, "S2.merge", {"pools": {}})
     assignment = {
+        "calendar": {"current_year": 300},
+        "world_fact_tasks": [{"id": "place.height", "key": "place.height", "section_id": "place",
+            "element": "number", "label": "標高", "viewpoint": "境界", "item_id": None, "unit": "m"}],
         "threads": [{"plot_type_name": "旅"}],
         "world": {
             "place": {"id": "place:t1", "text": "風が皮膚を撫でる丘"},
@@ -156,6 +160,7 @@ def test_real_harness_adopts_similar_output_at_limit_after_restarts(tmp_path: Pa
         "world_tasks": [
             {
                 "id": task_id.removeprefix("S4.section-"),
+                "section_id": "place", "kind": "single",
                 "section": {"id": "place", "definition": "場の描写"},
                 "viewpoint": "境界",
                 "element": {"id": "object:t1", "text": "門の石"},
@@ -164,7 +169,8 @@ def test_real_harness_adopts_similar_output_at_limit_after_restarts(tmp_path: Pa
         ],
     }
     harness._complete_task(context.run_id, "S3.assign", assignment)
-    harness._complete_task(context.run_id, "S4.facts-place-1", {"facts": [], "glossary": []})
+    harness._complete_task(context.run_id, "S4.calendar_name", {"name": "カナ暦", "reading": "カナ"})
+    harness._complete_task(context.run_id, "S4.fact-place.height", "200")
     submitted_ids: list[str] = []
     for _ in range(5):
         harness = create_story_orchestrator(tmp_path / "data")

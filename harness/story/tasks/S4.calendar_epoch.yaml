@@ -1,0 +1,39 @@
+id: S4.calendar_epoch
+version: 1
+kind: llm
+element: text
+inputs:
+  calendar:
+    label: 世界の暦
+    from: S4.calendar_name
+    select: name
+    required: true
+  current_year:
+    label: 現在の年
+    from: S3.assign
+    select: calendar.current_year
+    required: true
+  era:
+    label: 物語の時代
+    from: S3.assign
+    select: world.era
+    required: true
+output: text
+continuation: false
+card:
+  role: 与えられた暦の紀元となった出来事を1文で書く。
+  steps:
+  - 元年の出来事だけを書く。現在の年と時代に矛盾させない。
+  - 新しい固有名詞を加えない。
+validate:
+  checks:
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - min_chars:
+      n: 1
+  - max_chars:
+      n: 120
+  - no_new_proper_nouns:
+      mode: fail
+max_input_chars: 1200

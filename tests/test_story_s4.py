@@ -22,6 +22,8 @@ def _load_definition(name: str) -> dict[str, object]:
 
 def _assignment() -> dict[str, object]:
     return {
+        "calendar": {"current_year": 300},
+        "world_fact_tasks": [],
         "threads": [{"plot_type": "quest", "plot_type_name": "旅（クエスト）"}],
         "world": {
             "place": {"id": "place:t1", "text": "水路の町"},
@@ -116,7 +118,7 @@ def test_s4_card_contains_only_the_current_section_viewpoints() -> None:
     card = generate_task_card(
         definition,
         "ticket",
-        outputs={"S3.assign": _assignment(), "S4.facts": {"place-1": {"facts": []}}},
+        outputs={"S3.assign": _assignment(), "S4.fact": {"own": []}, "S4.calendar_name": {"name": "カナ暦"}},
         index=("place-1-f1",),
     )
 
@@ -131,18 +133,21 @@ def test_s4_list_prerequisites_are_name_and_one_line_summaries() -> None:
     manifest = {
         "tasks": {
             "S3.assign": {"type": "S3.assign", "state": "done"},
+            "S4.calendar_name": {"type": "S4.calendar_name", "state": "done"},
             "S4.item-people-001": {"type": "S4.item", "state": "done"},
             "S4.item_name-future-001": {"type": "S4.item_name", "state": "done"},
-            "S4.facts-future-001": {"type": "S4.facts", "state": "done"},
+            "S4.fact-future-001-future.year": {"type": "S4.fact", "state": "done"},
         }
     }
     task = {
-        "deps": ["S3.assign", "S4.item-people-001", "S4.item_name-future-001", "S4.facts-future-001"],
+        "type": "S4.item",
+        "deps": ["S3.assign", "S4.calendar_name", "S4.item-people-001", "S4.item_name-future-001", "S4.fact-future-001-future.year"],
         "index": ["future-001"],
     }
     dependency_outputs = {
         "S3.assign": assignment,
-        "S4.facts-future-001": {"facts": []},
+        "S4.calendar_name": {"name": "カナ暦"},
+        "S4.fact-future-001-future.year": "301",
         "S4.item_name-future-001": {"name": "カナ", "reading": "カナ"},
         "S4.item-people-001": {
             "name": "記録係",
