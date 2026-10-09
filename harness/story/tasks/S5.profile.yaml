@@ -1,5 +1,5 @@
 id: S5.profile
-version: 9
+version: 10
 kind: llm
 element: text
 inputs:
@@ -59,7 +59,7 @@ card:
 validate:
   checks:
     - no_new_proper_nouns:
-        mode: fail
+        mode: warn
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml

@@ -144,20 +144,28 @@ def test_related_entries_do_not_expose_registration_tasks():
     "S5.catchphrase", "S5.personality", "S5.values", "S5.backstory", "S5.relationship",
     "S5.voice", "S5.inner_conflict", "S7.event", "S7.detail",
 ])
-def test_descriptive_tasks_reject_unregistered_names(task_type):
+@pytest.mark.parametrize("mode", ["warn", "fail"])
+def test_descriptive_tasks_check_unregistered_names(task_type, mode):
     definition = yaml.safe_load((ROOT / "harness/story/tasks" / f"{task_type}.yaml").read_text(encoding="utf-8"))
     check = next(check for check in definition["validate"]["checks"] if "no_new_proper_nouns" in check)
-    assert check["no_new_proper_nouns"]["mode"] == "fail"
+    assert check["no_new_proper_nouns"]["mode"] == "warn"
     # Isolate the proper noun check from unrelated length/schema constraints.
+    # Exercise fail explicitly without depending on the harness default.
+    check["no_new_proper_nouns"]["mode"] = mode
     definition = {"output": "text", "validate": {"checks": [check]}}
     glossary = build_glossary(_outputs())
     assert validate_output(definition, "「カナリ」とセトナを訪ねた。", registered_names=registered_names(glossary)).passed
     assert validate_output(definition, "『カナリ』を訪ねた。", registered_names=registered_names(glossary)).passed
     assert validate_output(definition, "ゼラフィナを訪ねた。", {"place": "ゼラフィナ"}).passed
     result = validate_output(definition, "ゼラフィナを訪ねた。", registered_names=registered_names(glossary))
-    assert not result.passed and "未登録" in result.errors[0]
+    assert result.passed == (mode == "warn")
+    messages = result.warnings if mode == "warn" else result.errors
+    assert "未登録" in messages[0]
     assert validate_output(definition, "希望の水を汲む。", {"glossary": [{"name": "希望の水"}]}).passed
-    assert not validate_output(definition, "「希望の水」を汲む。").passed
+    result = validate_output(definition, "「希望の水」を汲む。")
+    assert result.passed == (mode == "warn")
+    messages = result.warnings if mode == "warn" else result.errors
+    assert "希望の水" in messages[0]
 
 
 def test_glossary_export_escapes_table_cells():

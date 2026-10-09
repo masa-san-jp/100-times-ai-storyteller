@@ -1,5 +1,5 @@
 id: S7.event
-version: 7
+version: 8
 kind: llm
 element: text
 inputs:
@@ -100,7 +100,7 @@ validate:
   - max_chars:
       n: 120
   - no_new_proper_nouns:
-      mode: fail
+      mode: warn
 max_input_chars: 2800
 max_invalidations: 2
 continuation: false

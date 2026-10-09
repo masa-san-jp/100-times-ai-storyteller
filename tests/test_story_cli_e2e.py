@@ -406,6 +406,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     rewritten_s4 = False
     quality_rejections: set[str] = set()
     rejected_tasks: set[str] = set()
+    noun_warning_task: str | None = None
     for _ in range(2000):
         claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
         if claimed is None:
@@ -426,15 +427,12 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         assert 2 * len(claimed["card"]) + model["max_tokens"] <= model["context_length"], task_id
         assert "### 物語の素材" in claimed["card"] or "### 作り方の指示" in claimed["card"]
         assert "作り方の指示は本文に書かず" in claimed["card"]
-        if task["type"] == "S5.intro" and "noun" not in quality_rejections:
+        if task["type"] == "S5.intro" and noun_warning_task is None:
             terms = [*inputs["glossary"], *inputs["facts"]["glossary"]]
             assert terms
             assert all("registered_task" not in entry for entry in terms)
-            rejected = harness.submit(claimed["ticket"], "ゼラフィナを訪ねる人物。")
-            assert not rejected.accepted and any("未登録の固有名詞" in error for error in rejected.errors)
-            quality_rejections.add("noun")
-            rejected_tasks.add(task_id)
-            continue
+            output = "ゼラフィナを訪ねる人物。"
+            noun_warning_task = task_id
         if task["type"] == "S5.profile" and "meta" not in quality_rejections:
             rejected = harness.submit(claimed["ticket"], "名前の響き" + output)
             assert not rejected.accepted and any("avoid_listed" in error for error in rejected.errors)
@@ -517,6 +515,9 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         )
         submitted = harness.submit(claimed["ticket"], submitted_output)
         assert submitted.accepted, (task_id, submitted.errors)
+        if task_id == noun_warning_task:
+            assert any("未登録の固有名詞" in warning and "ゼラフィナ" in warning
+                       for warning in submitted.warnings)
         if task_id in trimmed_tasks:
             assert f"{task_id}: 字数の上限で切り詰め" in submitted.warnings
             task_dir = data_dir / "runs" / run_id / "tasks" / task_id
@@ -542,7 +543,11 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
     fact_tasks = {name: task for name, task in final_manifest["tasks"].items()
                   if task["type"] == "S4.fact"}
     assert fact_tasks and all(task["state"] == "done" for task in fact_tasks.values())
-    assert quality_rejections == {"meta", "copy", "noun"}
+    assert quality_rejections == {"meta", "copy"}
+    assert noun_warning_task is not None
+    assert final_manifest["tasks"][noun_warning_task]["tries"] == 0
+    assert any(warning.startswith(f"{noun_warning_task}: no_new_proper_nouns:")
+               and "ゼラフィナ" in warning for warning in final_manifest["warnings"])
     if long_inputs:
         assert len([name for name in final_manifest["tasks"] if name.startswith("S4.section-place-")]) >= 10
     assert sent_comparison_yes

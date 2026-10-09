@@ -1,5 +1,5 @@
 id: S5.catchphrase
-version: 8
+version: 9
 kind: llm
 element: text
 inputs:
@@ -63,7 +63,7 @@ card:
 validate:
   checks:
     - no_new_proper_nouns:
-        mode: fail
+        mode: warn
     - no_copy_from_inputs
     - avoid_listed:
         table: tables/meta_terms.yaml
