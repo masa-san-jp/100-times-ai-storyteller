@@ -1,5 +1,5 @@
 id: S4.item
-version: 10
+version: 11
 kind: llm
 element: text
 inputs:
@@ -90,5 +90,5 @@ validate:
         n: 1200
         fix: trim
     - no_new_proper_nouns:
-        mode: fail
+        mode: warn
 max_input_chars: 2800

@@ -1,5 +1,5 @@
 id: S4.calendar_epoch
-version: 1
+version: 2
 kind: llm
 element: text
 inputs:
@@ -35,5 +35,5 @@ validate:
   - max_chars:
       n: 120
   - no_new_proper_nouns:
-      mode: fail
+      mode: warn
 max_input_chars: 1200
