@@ -14,6 +14,7 @@ import re
 import sys
 import threading
 import time
+from datetime import datetime
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -29,7 +30,7 @@ from urllib.request import Request, urlopen
 import yaml
 
 from .manifest import load_manifest, write_manifest
-from .orchestrator import Orchestrator
+from .orchestrator import ClaimError, Orchestrator
 from .storage import acquire_lock, atomic_write_json, manifest_lock
 from .validation import YamlValidationError, parse_json_object, validate_document
 
@@ -274,6 +275,7 @@ class OllamaAdapter:
         *,
         schema: Mapping[str, Any] | None = None,
         json_mode: str | None = None,
+        retry_budget: float = 1800.0,
     ) -> AdapterResponse:
         mode = json_mode or self.model.json_mode
         if mode not in _JSON_MODES:
@@ -326,7 +328,7 @@ class OllamaAdapter:
             except (json.JSONDecodeError, UnicodeError) as error:
                 raise AdapterError(f"Ollama の応答を解析できません: {error}") from error
 
-        return retry_transport(send, timeout=self.timeout)
+        return retry_transport(send, timeout=self.timeout, budget=retry_budget)
 
     @staticmethod
     def _decode_response(document: Any) -> AdapterResponse:
@@ -456,7 +458,14 @@ class AutoRunner:
                 definition = specialize_fact_definition(definition, fact_inputs or {})
                 schema = self._load_schema(definition, orchestrator, inputs=fact_inputs)
                 mode = self.state.current(self.model)["json_mode"]
-                response = adapter.complete(claim["card"], schema=schema, json_mode=mode)
+                lease_left = (
+                    datetime.fromisoformat(claim_info["claim"]["lease_expires_at"][:-1] + "+00:00")
+                    - datetime.fromisoformat(orchestrator._now()[:-1] + "+00:00")
+                ).total_seconds()
+                response = adapter.complete(
+                    claim["card"], schema=schema, json_mode=mode,
+                    retry_budget=lease_left - 300,
+                )
                 empty_response = not response.content.strip()
                 invalid = empty_response or (
                     _card_requests_json(claim["card"])
@@ -492,6 +501,12 @@ class AutoRunner:
                 )
                 print(f"警告: {error}", file=sys.stderr)
                 return
+            except ClaimError as error:
+                print(
+                    "警告: lease 切れまたは claim の取り消しで提出が拒否されたため、"
+                    f"このタスクの結果を捨てて次に進みます: {error}",
+                    file=sys.stderr,
+                )
             except RequestRejected as error:
                 try:
                     orchestrator.record_executor_failure(claim["ticket"], str(error), fatal=True)
