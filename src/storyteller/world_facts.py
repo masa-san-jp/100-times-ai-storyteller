@@ -213,7 +213,7 @@ def specialize_fact_definition(definition: Mapping[str, Any], inputs: Mapping[st
         result["validate"] = {"checks": common_checks}
     else:
         result["validate"] = {"checks": [*common_checks, {"min_chars": {"n": 1}}, {"max_chars": {"n": inputs.get("max_chars", 40)}},
-                                          {"no_new_proper_nouns": {"mode": "fail"}}]}
+                                          {"no_new_proper_nouns": {"mode": "warn"}}]}
         step = f"{inputs.get('max_chars', 40)}字以内の1句で、具体的な種類・行為・条文・手続だけを書く。曖昧な程度語で埋めない。"
         if step not in result["card"]["steps"]:
             result["card"]["steps"].append(step)
