@@ -1,7 +1,7 @@
 # ドキュメント索引と運用規則
 
-このディレクトリは、100 TIMES AI STORYTELLER の**唯一の原本（SSOT）**である。
-仕様・計画・判断は、ここに書かれていることが正しい。コード・テスト・会話・Issue の記述と食い違った場合は、ここを正とし、食い違いを Issue として起票する。
+このディレクトリは、100 TIMES AI STORYTELLER の**仕様・契約・設計判断の原本（SSOT）**である。
+仕様・契約・設計判断がコード・テスト・会話・Issue の記述と食い違った場合は、ここを正とし、食い違いを Issue として起票する。開発計画・依存関係・進捗の管理場所は §2.2 に従う。
 
 ## 1. 読む順番
 
@@ -9,7 +9,7 @@
 |---|---|
 | 何を作るのかを知る | [VISION.md](VISION.md) → [GLOSSARY.md](GLOSSARY.md) |
 | 先行リポジトリとの関係を知る | [LINEAGE.md](LINEAGE.md) |
-| 実装・改修する | [spec/architecture.md](spec/architecture.md) → 担当箇所の spec → [plan/ROADMAP.md](plan/ROADMAP.md) → 担当フェーズの計画書 |
+| 実装・改修する | [spec/architecture.md](spec/architecture.md) → 担当箇所の spec → §2.2で管理場所を確認 → 作業Issue、または未移行の [plan/ROADMAP.md](plan/ROADMAP.md) と担当フェーズの計画書 |
 | なぜそう決めたのかを知る | [adr/](adr/) |
 | 文書・コードの変更手順を知る | [../CONTRIBUTING.md](../CONTRIBUTING.md)、[process/implementation.md](process/implementation.md) |
 
@@ -37,8 +37,9 @@
 | 実行者が従うプロトコル | [spec/executor-protocol.md](spec/executor-protocol.md) |
 | バッチの傾向分析 | [spec/report.md](spec/report.md) |
 | 無人運転の運用手順（ユーザー向け） | `guides/operations.md`（P4-06 で作成） |
-| 開発フェーズと完了条件 | [plan/ROADMAP.md](plan/ROADMAP.md) |
-| 各フェーズの作業項目 | `plan/phase-N.md` |
+| 既存フェーズの計画・完了条件・状態（未移行範囲） | [plan/ROADMAP.md](plan/ROADMAP.md) |
+| 既存フェーズの作業項目（未移行範囲） | `plan/phase-N.md` |
+| #53の開発計画・依存関係・進捗 | [親Issue #53](https://github.com/masa-san-jp/100-times-ai-storyteller/issues/53) と各作業Issue（§2.2） |
 | 設計判断とその理由 | `adr/NNNN-*.md` |
 | 実装の役割・受け渡し・レビューの基準 | [process/implementation.md](process/implementation.md) |
 
@@ -58,6 +59,15 @@
 | 正本の形式 | `schemas/story.schema.json` | Phase 1 |
 
 移行するときは、spec 側の値を削除し、ファイルへのリンクに置き換える。値が spec とファイルの両方に残っている状態を作らない。ファイルを作成する作業項目は、この置き換えを受け入れ条件に含む（各フェーズ計画書の「共通の受け入れ条件」）。
+
+### 2.2 開発計画・依存関係・進捗の原本
+
+[ハッカソン向け開発の親Issue #53](https://github.com/masa-san-jp/100-times-ai-storyteller/issues/53) と、そこから参照する作業Issueを、この開発の計画・依存関係・進捗の原本とする。親Issueは全体の順序と関連作業への入口、各作業Issueはその作業の範囲・依存・受け入れ条件・進捗を管理する。仕様・契約は本文へ複写せず、担当する spec・ADR・機械可読な原本へリンクする。
+
+- 作業Issueには、対象範囲、対象外、参照仕様、依存する作業、検証できる完了条件、未決事項を記す。受け入れ条件は仕様への適合を検証するためのものであり、Issueだけで仕様を追加・変更しない。
+- 未決事項は「決定待ち」とし、何を誰が決める必要があるか、どの後続作業が止まるかを記す。決定後は担当する原本へ反映し、そのリンクをIssueに残す。未決の契約を実装の根拠にしない。
+- 既存の [plan/ROADMAP.md](plan/ROADMAP.md) と `plan/phase-N.md` は、未移行の既存フェーズの計画・進捗を引き続き管理する。#53を理由に既存フェーズの受け入れ条件や状態を変更しない。
+- 既存の作業項目をIssueへ移す場合は、項目単位で移行先へのリンクと移行範囲を計画書に記す。移行した範囲の依存・進捗はIssueだけを更新し、計画書に同じ情報を重ねて管理しない。未移行の項目は従来の管理を続ける。
 
 ## 3. 変更の権限
 
