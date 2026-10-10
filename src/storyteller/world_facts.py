@@ -93,14 +93,15 @@ def build_world_fact_specs(parent_task_id: str, assignment: Mapping[str, Any]) -
         dependencies = [parent_task_id, "S4.calendar_name"]
         dependencies.extend(task_id for prerequisite in sections[section_id]["prerequisites"]
                             for task_id in by_section.get(prerequisite, [])[-1:])
-        if section_id in previous:
-            dependencies.append(previous[section_id])
+        chain = (section_id, entry.get("item_id"))
+        if chain in previous:
+            dependencies.append(previous[chain])
         dependencies.extend(f"S4.fact-{other['id']}" for other in referred_entries(entry, entries))
         if entry.get("item_id"):
             dependencies.append(f"S4.item_name-{entry['item_id']}")
         task_id = f"S4.fact-{entry['id']}"
         specs.append(TaskSpec(task_id, "S4.fact", deps=tuple(dict.fromkeys(dependencies)), index=(entry["id"],)))
-        previous[section_id] = task_id
+        previous[chain] = task_id
     return specs
 
 
@@ -134,7 +135,8 @@ def supplement_fact_outputs(run_dir: Path, manifest: Mapping[str, Any],
         current = next(entry for entry in entries if entry["id"] == task["index"][0])
         section = next(section for section in result["S3.assign"]["world_sections"] if section["id"] == current["section_id"])
         prior = [entry for entry in entries if f"S4.fact-{entry['id']}" in seen
-                 and entry["section_id"] in [current["section_id"], *section["prerequisites"]]]
+                 and entry["section_id"] in [current["section_id"], *section["prerequisites"]]
+                 and (entry["section_id"] != current["section_id"] or entry.get("item_id") == current.get("item_id"))]
         entries = _bounded_prior_entries(prior, definition.get("max_input_chars", 3000))
         wanted = {f"S4.fact-{entry['id']}" for entry in entries}
     else:
@@ -261,7 +263,8 @@ def fact_source_context(assignment: Mapping[str, Any], outputs: Mapping[str, Any
         entry = next(entry for entry in entries if entry["id"] == index[0])
         sections = {s["id"]: s for s in assignment["world_sections"]}
         prerequisites = sections[entry["section_id"]]["prerequisites"]
-        previous = [other for other in entries if other["section_id"] == entry["section_id"]
+        previous = [other for other in entries
+                    if (other["section_id"] == entry["section_id"] and other.get("item_id") == entry.get("item_id"))
                     or other["section_id"] in prerequisites]
         return {"previous": fact_lines(assignment, outputs, previous, include_items=True),
                 "referred": fact_lines(assignment, outputs, referred_entries(entry, entries), include_items=True)}
