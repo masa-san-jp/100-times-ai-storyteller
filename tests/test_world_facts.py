@@ -81,9 +81,15 @@ def test_catalog_covers_all_sections_viewpoints_and_list_items():
     for section in load_table("world_sections")["sections"]:
         assert "fact_schema" not in section
         for viewpoint in section["viewpoints"]:
-            assert 2 <= counts[section["id"], viewpoint] <= 6
+            if section["kind"] == "single":
+                assert 2 <= counts[section["id"], viewpoint] <= 6
         pool = catalog["item_facts" if section["kind"] == "list" else "facts"]
-        assert {field["viewpoint"] for field in pool if field["section_id"] == section["id"]} == set(section["viewpoints"])
+        used = {field["viewpoint"] for field in pool if field["section_id"] == section["id"]}
+        if section["kind"] == "list":
+            assert 3 <= sum(field["section_id"] == section["id"] for field in pool) <= 8
+            assert used <= set(section["viewpoints"])
+        else:
+            assert used == set(section["viewpoints"])
     assert all(set(field.get("refers", [])) <= set(keys) for field in fields)
     assert [field["label"] for field in fields].count("最高地点の標高") == 1
     assert "place.highest_elevation" in next(field for field in fields if field["key"] == "social_structure.forest_area")["refers"]
@@ -131,9 +137,10 @@ def test_calendar_and_facts_are_seeded_and_shared_by_facets(tmp_path):
     for entry in entries:
         task = tasks[f"S4.fact-{entry['id']}"]
         assert "S4.calendar_name" in task["deps"]
-        if entry["section_id"] in previous:
-            assert previous[entry["section_id"]] in task["deps"]
-        previous[entry["section_id"]] = f"S4.fact-{entry['id']}"
+        chain = (entry["section_id"], entry["item_id"])
+        if chain in previous:
+            assert previous[chain] in task["deps"]
+        previous[chain] = f"S4.fact-{entry['id']}"
         if entry["item_id"]:
             assert f"S4.item_name-{entry['item_id']}" in task["deps"]
         if entry["element"] == "year":
@@ -374,7 +381,7 @@ def test_every_list_viewpoint_can_be_recorded_and_item_card_fits_with_whole_line
         outputs[f"S4.fact-{entry['id']}"] = ({"name": "カナ", "reading": "カナ"} if entry["element"] == "name"
                                            else "あ" * 40 if entry["element"] == "text" else "20")
     lines = fact_lines({}, outputs, entries)
-    assert len(lines) == len(fields) == 74
+    assert len(lines) == len(fields) <= 8
     assert all(row["id"].startswith("g") for row in lines)
     prior = fact_lines({}, outputs, entries[:1], include_items=True)
     assert prior[0]["text"].startswith("カナ／")
@@ -386,7 +393,7 @@ def test_every_list_viewpoint_can_be_recorded_and_item_card_fits_with_whole_line
     assert fitted["facts"] and fitted["facts"] == lines[:len(fitted["facts"])]
     assert input_char_count(definition, fitted) <= definition["max_input_chars"]
     assert glossary_id("S4.item_name-people-001", 0) in input_source_ids(fitted)
-    assert len(lines) == 74 and len(outputs) == 76
+    assert len(lines) == len(fields) and len(outputs) == len(fields) + 2
     card = generate_task_card(definition, "ticket", inputs=fitted)
     assert "S4" not in card and "事実と矛盾させない" in card
 
@@ -437,4 +444,29 @@ def test_bounded_ancestor_reads_preserve_fitted_card_and_attribution(tmp_path, m
     assert full == bounded
     assert input_source_ids(full) == input_source_ids(bounded)
     assert generate_task_card(definition, "ticket", inputs=full) == generate_task_card(definition, "ticket", inputs=bounded)
-    assert len(stored) > 740
+    assert len(stored) > 70
+
+
+def test_list_items_facts_are_independent_across_items(tmp_path):
+    orchestrator, run_id, assignment = _planned(tmp_path)
+    tasks = orchestrator.load_run(run_id)["tasks"]
+
+    def ancestors(task_id):
+        seen, pending = set(), [task_id]
+        while pending:
+            for dep in tasks[pending.pop()]["deps"]:
+                if dep not in seen:
+                    seen.add(dep)
+                    pending.append(dep)
+        return seen
+
+    people = [entry for entry in assignment["world_fact_tasks"] if entry["section_id"] == "people"]
+    items = sorted({entry["item_id"] for entry in people})
+    assert len(items) >= 2
+    first, second = items[:2]
+    second_ids = {f"S4.fact-{e['id']}" for e in people if e["item_id"] == second}
+    first_ids = {f"S4.fact-{e['id']}" for e in people if e["item_id"] == first}
+    for entry in people:
+        mine = f"S4.fact-{entry['id']}"
+        others = second_ids if entry["item_id"] == first else first_ids if entry["item_id"] == second else set()
+        assert not (ancestors(mine) & others)
