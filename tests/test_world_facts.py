@@ -51,6 +51,16 @@ def test_fact_uses_shared_parser_and_output_contract(shape, raw, expected):
     assert result.value == expected
 
 
+def test_assembled_text_fact_reports_unregistered_names_as_warning():
+    definition = specialize_fact_definition(_definition(), _inputs("text"))
+    modes = [check["no_new_proper_nouns"]["mode"] for check in definition["validate"]["checks"]
+             if isinstance(check, dict) and "no_new_proper_nouns" in check]
+    assert modes == ["warn"]
+    result = validate_output(_definition(), "ゼラフィナの水路で点検を行う。", _inputs("text"), harness_root=ROOT)
+    assert result.passed, result.errors
+    assert any("未登録の固有名詞候補" in warning and "ゼラフィナ" in warning for warning in result.warnings)
+
+
 def test_name_fact_and_calendar_use_one_name_and_assigned_sounds():
     inputs = _inputs("name")
     for definition in (_definition(), _definition("S4.calendar_name")):
