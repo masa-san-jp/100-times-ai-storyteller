@@ -615,6 +615,15 @@ class AutoRunner:
                 manifest = load_manifest(run_dir / "manifest.json")
             except (OSError, ValueError):
                 continue
+            if manifest["status"] != "active":
+                # claim_next does not reconcile claims of non-active runs.
+                try:
+                    self._orchestrator_for_run(run_dir.name).release_expired_claims(
+                        run_dir.name
+                    )
+                    manifest = load_manifest(run_dir / "manifest.json")
+                except (OSError, ValueError, ClaimError):
+                    continue
             if any(task.get("state") == "claimed" for task in manifest["tasks"].values()):
                 return True
         return False

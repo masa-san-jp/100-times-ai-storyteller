@@ -428,6 +428,21 @@ class Orchestrator:
                 _update_run_status(manifest)
                 self._persist_manifest(run_dir, manifest)
 
+    def release_expired_claims(self, run_id: str) -> None:
+        """Reclaim lease-expired claims of a run whatever its status is.
+
+        ``claim_next`` only reconciles claims of active runs; this lets a
+        waiting caller clear expired claims of ``stalled`` runs too.
+        """
+
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            now = self._now()
+            if _refresh_claims(manifest, run_dir, now, self._clock):
+                _touch_manifest(manifest, now)
+                self._persist_manifest(run_dir, manifest)
+
     def claim_next(
         self,
         run_id: str | None = None,

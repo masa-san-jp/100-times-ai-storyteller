@@ -104,7 +104,7 @@ st auto --provider ollama|openai-compatible --model MODEL [--endpoint URL]
 
 - `st next` → アダプタ呼び出し → `st submit` を繰り返す。`--workers N` で N 並列にする。
 - `--endpoint` は localhost に限る（[architecture.md](architecture.md) §5）。
-- `--until-empty` のとき、`ready` のタスクがなく、`claimed` のタスクもなくなったら終了する。
+- `--until-empty` のとき、`ready` のタスクがなく、lease の切れていない `claimed` のタスクもなくなったら終了する。lease の切れた claim は、run の状態（`active`・`stalled`）によらず片付けて（[task-model.md](task-model.md) §5 の無効な claim の扱い）、待つ対象に数えない。run が `stalled` で取れるタスクがない場合も、他の実行者の claim の終わりを待たずに終了する。
 
 ### `st workspace init`
 
