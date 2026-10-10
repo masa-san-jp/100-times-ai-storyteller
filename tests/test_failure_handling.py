@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
 from pathlib import Path
@@ -42,8 +43,8 @@ class Clock:
 
 
 def virtual_retry(monkeypatch, clock):
-    def retry(request, *, timeout):
-        return retry_transport(request, timeout=timeout, clock=clock, sleep=clock.sleep)
+    def retry(request, *, timeout, budget):
+        return retry_transport(request, timeout=timeout, clock=clock, sleep=clock.sleep, budget=budget)
     monkeypatch.setattr("storyteller.adapter.retry_transport", retry)
 
 
@@ -74,10 +75,75 @@ def test_transport_retries_identical_request_without_attempt(tmp_path, monkeypat
     assert not (harness.task_dir(run, "D1.value") / "attempts").exists()
 
 
-def test_thirty_minutes_releases_claim_and_stops_auto(tmp_path, monkeypatch):
-    harness = Orchestrator(tmp_path, {"D1.value": definition()})
-    run = harness.create_run(seed=1, input_data={"material": "素材"})
+def lease_orchestrator(tmp_path, clock, definitions):
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return Orchestrator(tmp_path, definitions, clock=lambda: base + timedelta(seconds=clock.now))
+
+
+def test_retry_budget_is_lease_remaining_minus_five_minutes(tmp_path, monkeypatch):
     clock = Clock()
+    harness = lease_orchestrator(tmp_path, clock, {"D1.value": definition()})
+    run = harness.create_run(seed=1, input_data={"material": "素材"})
+    virtual_retry(monkeypatch, clock)
+
+    def send(request, *, timeout):
+        assert 0 < timeout <= 600
+        raise URLError("offline")
+
+    monkeypatch.setattr("storyteller.adapter.urlopen", send)
+    AutoRunner(tmp_path, model(), harness).run(run_id=run, workers=1, until_empty=True)
+    assert clock.now == 1500
+    assert clock.waits == [30, 60, 120, 240, 300, 300, 300, 150]
+    task = harness.load_run(run)["tasks"]["D1.value"]
+    assert task["state"] == "ready" and task["claim"] is None
+    assert task["tries"] == task["attempt"] == 0
+
+
+def test_no_retry_when_lease_has_five_minutes_or_less(tmp_path, monkeypatch):
+    clock = Clock()
+    harness = lease_orchestrator(tmp_path, clock, {"D1.value": definition(lease_minutes=5)})
+    run = harness.create_run(seed=1, input_data={"material": "素材"})
+    virtual_retry(monkeypatch, clock)
+    calls = []
+
+    def send(request, *, timeout):
+        calls.append(timeout)
+        raise URLError("offline")
+
+    monkeypatch.setattr("storyteller.adapter.urlopen", send)
+    AutoRunner(tmp_path, model(), harness).run(run_id=run, workers=1, until_empty=True)
+    assert clock.waits == [] and len(calls) == 1
+    task = harness.load_run(run)["tasks"]["D1.value"]
+    assert task["state"] == "ready" and task["claim"] is None
+
+
+def test_auto_continues_after_submission_rejected_by_expired_lease(tmp_path, monkeypatch, capsys):
+    clock = Clock()
+    harness = lease_orchestrator(tmp_path, clock, {
+        "D1.a": definition(id="D1.a", lease_minutes=1),
+        "D1.b": definition(id="D1.b", lease_minutes=1),
+    })
+    run = harness.create_run(seed=1, input_data={"material": "素材"})
+    calls = []
+
+    def send(request, *, timeout):
+        calls.append(request)
+        if len(calls) == 1:
+            clock.now += 120  # inference outlives the lease
+        return BytesIO(b'{"message":{"content":"42"}}')
+
+    monkeypatch.setattr("storyteller.adapter.urlopen", send)
+    AutoRunner(tmp_path, model(), harness).run(run_id=run, workers=1, until_empty=True)
+    assert len(calls) >= 2
+    assert "lease" in capsys.readouterr().err
+    states = {t["state"] for t in harness.load_run(run)["tasks"].values()}
+    assert "done" in states
+
+
+def test_thirty_minutes_releases_claim_and_stops_auto(tmp_path, monkeypatch):
+    clock = Clock()
+    harness = lease_orchestrator(tmp_path, clock, {"D1.value": definition(lease_minutes=35)})
+    run = harness.create_run(seed=1, input_data={"material": "素材"})
     virtual_retry(monkeypatch, clock)
 
     def send(request, *, timeout):
