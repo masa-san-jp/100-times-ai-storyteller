@@ -507,3 +507,79 @@ def test_auto_uses_the_manifest_harness_for_mixed_runs(tmp_path: Path) -> None:
 
     assert story_orchestrator.load_run(story_run_id)["status"] == "completed"
     assert dummy_orchestrator.load_run(dummy_run_id)["status"] == "completed"
+
+
+class _Reclaimed(BaseException):
+    pass
+
+
+def _claimed_run(tmp_path: Path):
+    from datetime import datetime, timedelta, timezone
+
+    from storyteller.manifest import load_manifest, write_manifest
+    from storyteller.orchestrator import Orchestrator
+
+    state = {"now": datetime(2026, 9, 27, 3, 15, tzinfo=timezone.utc)}
+    definition = {
+        "id": "D1.echo", "version": 1, "kind": "llm", "element": "text",
+        "output": "json", "lease_minutes": 30,
+        "card": {"role": "確認する。", "steps": ["JSONを出力する。"],
+                 "output_example": '{"value": "..."}'},
+    }
+    other = Orchestrator(tmp_path, {"D1.echo": definition}, clock=lambda: state["now"])
+    run_id = other.create_run(seed=1)
+    assert other.claim_next(run_id, executor_id="other") is not None
+
+    def set_status(status: str) -> None:
+        path = tmp_path / "runs" / run_id / "manifest.json"
+        manifest = load_manifest(path)
+        manifest["status"] = status
+        write_manifest(path, manifest)
+
+    return other, run_id, state, set_status, timedelta
+
+
+def test_until_empty_ignores_expired_claim_of_stalled_run(tmp_path: Path, monkeypatch) -> None:
+    other, run_id, state, set_status, timedelta = _claimed_run(tmp_path)
+    set_status("stalled")
+    state["now"] += timedelta(minutes=31)
+    monkeypatch.setattr("storyteller.adapter.time.sleep", lambda _d: pytest.fail("waited"))
+
+    AutoRunner(tmp_path, _model("http://127.0.0.1:11434"), other).run(
+        run_id=run_id, workers=1, until_empty=True
+    )
+
+    task = other.load_run(run_id)["tasks"]["D1.echo"]
+    assert task["state"] == "ready"
+    assert task["claim"] is None
+
+
+def test_until_empty_waits_for_live_claim_of_active_run(tmp_path: Path, monkeypatch) -> None:
+    other, run_id, state, _set_status, timedelta = _claimed_run(tmp_path)
+    sleeps: list[float] = []
+
+    def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+        state["now"] += timedelta(minutes=10)
+        if len(sleeps) > 20:
+            pytest.fail("never stopped waiting")
+
+    monkeypatch.setattr("storyteller.adapter.time.sleep", fake_sleep)
+    # Stop once the other executor's lease has lapsed and the task is ready again.
+    runner = AutoRunner(tmp_path, _model("http://127.0.0.1:11434"), other)
+    claims: list[object] = []
+    original = runner._claim_next
+
+    def claim_next(rid):
+        result = original(rid)
+        claims.append(result[0])
+        if result[0] is not None:
+            raise _Reclaimed
+        return result
+
+    monkeypatch.setattr(runner, "_claim_next", claim_next)
+    with pytest.raises(_Reclaimed):
+        runner.run(run_id=run_id, workers=1, until_empty=True)
+
+    assert len(sleeps) >= 2  # waited while the lease was live
+    assert claims[0] is None and claims[-1] is not None
