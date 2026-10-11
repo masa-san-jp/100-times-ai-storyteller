@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .format_units import UNIT_MAPPERS
+from . import reference_book
 from .orchestrator import CodeTaskContext, CodeTaskResult, Orchestrator, TaskSpec
 from .storage import atomic_write_text
 from .tables import load_table
@@ -36,7 +37,7 @@ FORMAT_SINGLE_SOURCES = frozenset({"F0.select", "F1.split", "F2.write", "F2.writ
 # Syntax checks (Fountain, Marp ...) for ``checks.code``.  A check takes the
 # text of one F2 task and its part record, and returns error messages.
 SyntaxCheck = Callable[[str, Mapping[str, Any]], list[str]]
-SYNTAX_CHECKS: dict[str, SyntaxCheck] = {}
+SYNTAX_CHECKS: dict[str, SyntaxCheck] = {"contains_names": reference_book.check_contains_names}
 
 
 def default_formats_root() -> Path:
@@ -97,7 +98,7 @@ def load_profile(
     low, high = profile["chars_per_event"]
     if low > high:
         raise ValueError("chars_per_event の下限が上限を超えています")
-    if profile["unit_mapping"] not in UNIT_MAPPERS:
+    if profile["unit_mapping"] not in UNIT_MAPPERS and profile["unit_mapping"] != reference_book.UNIT_MAPPING:
         raise ValueError(f"unit_mapping が未対応です: {profile['unit_mapping']}")
     unknown = [
         check for check in profile["checks"]["code"]
@@ -288,6 +289,8 @@ def build_plan(
 ) -> dict[str, Any]:
     """F1: units, parts, and the per-part range of characters."""
 
+    if profile["unit_mapping"] == reference_book.UNIT_MAPPING:
+        return reference_book.build_reference_plan(story, profile, _role_names(repository_root))
     low, high = profile["chars_per_event"]
     events = {event["id"]: event for event in story["events"]}
     order = {event_id: position for position, event_id in enumerate(events)}
