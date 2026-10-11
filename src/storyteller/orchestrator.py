@@ -1641,9 +1641,9 @@ class Orchestrator:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
-            if manifest["status"] != "completed":
+            if manifest["status"] not in {"completed", "active"}:
                 raise InvalidTransition(
-                    f"completed の run だけにタスクを追加できます（現在: {manifest['status']}）"
+                    f"completed または active の run だけにタスクを追加できます（現在: {manifest['status']}）"
                 )
             additions = _normalise_task_specs(tasks, self.task_definitions)
             duplicates = {spec.task_id for spec in additions} & set(manifest["tasks"])

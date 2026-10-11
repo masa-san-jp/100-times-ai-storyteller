@@ -292,6 +292,8 @@ def build_plan(
     events = {event["id"]: event for event in story["events"]}
     order = {event_id: position for position, event_id in enumerate(events)}
     units = UNIT_MAPPERS[profile["unit_mapping"]](story, profile, repository_root)
+    if any(not unit.event_ids for unit in units):
+        raise ValueError("出来事のない単位があります")
     assigned = [event_id for unit in units for event_id in unit.event_ids]
     if sorted(assigned) != sorted(events) or len(set(assigned)) != len(assigned):
         raise ValueError("unit_mapping がすべての出来事をちょうど1回ずつ割り付けていません")
@@ -451,8 +453,16 @@ def start_formatting(
     manifest = orchestrator.load_run(run_id)
     if manifest["harness_kind"] != "story":
         raise ValueError("様式化できるのは物語の run だけです")
-    if manifest["status"] != "completed":
-        raise ValueError(f"様式化できるのは completed の run だけです（現在: {manifest['status']}）")
+    if manifest["status"] not in {"completed", "active"}:
+        raise ValueError(
+            f"様式化できるのは completed または active の run だけです（現在: {manifest['status']}）"
+        )
+    unfinished = [
+        task_id for task_id, task in manifest["tasks"].items()
+        if not task["type"].startswith("F") and task["state"] not in {"done", "skipped"}
+    ]
+    if unfinished:
+        raise ValueError("物語の生成が終わっていない run は様式化できません")
     load_profile(
         name, formats_root=formats_root, repository_root=orchestrator.repository_root
     )

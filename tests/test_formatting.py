@@ -203,7 +203,7 @@ def test_start_formatting_returns_the_run_to_active(tmp_path: Path, dummy_format
     assert manifest["status"] == "active"
     assert manifest["tasks"]["F0.select-dummy"]["state"] == "ready"
     assert manifest["tasks"]["S1.extract-p001-1"]["state"] == "done"
-    with pytest.raises(ValueError, match="completed"):
+    with pytest.raises(ValueError, match="作成済み"):
         formatting.start_formatting(orchestrator, run_id, "dummy", formats_root=dummy_format)
 
 
@@ -454,7 +454,7 @@ def test_st_format_cli(tmp_path: Path, dummy_format: Path, monkeypatch, capsys) 
     assert status["status"] == "active"
     assert any(task["task_id"] == "F0.select-dummy" for task in status["tasks"])
     # Not completed any more, an unknown run, an unknown format and a missing option.
-    assert cli_main(["format", "--run", run_id, "--as", "dummy"]) == 1
+    assert cli_main(["format", "--run", run_id, "--as", "dummy"]) == 1  # already started
     assert cli_main(["format", "--run", "20260101-000000-abcdef", "--as", "dummy"]) == 1
     assert cli_main(["format", "--run", run_id, "--as", "absent"]) == 1
     assert cli_main(["format", "--run", run_id]) == 1
@@ -470,6 +470,9 @@ def test_st_format_rejects_unknown_format_without_changing_the_run(tmp_path: Pat
 
 def test_add_tasks_to_completed_run_rejects_other_statuses(tmp_path: Path, dummy_format: Path) -> None:
     data_dir, run_id, orchestrator = _start(tmp_path, dummy_format)
+    manifest = orchestrator.load_run(run_id)
+    manifest["status"] = "stalled"
+    write_manifest(orchestrator.run_dir(run_id) / "manifest.json", manifest)
     with pytest.raises(InvalidTransition):
         orchestrator.add_tasks_to_completed_run(run_id, [TaskSpec("F0.select-x", "F0.select", index=("x",))])
 
@@ -501,3 +504,35 @@ def test_format_definitions_are_checked_by_the_harness_tool() -> None:
             for name, slot in definition["inputs"].items()
         }
     assert regular == once
+
+
+def test_second_format_can_start_while_the_first_is_running(tmp_path: Path, dummy_format: Path) -> None:
+    other = {**PROFILE, "name": "other", "chars_per_event": [5, 40]}
+    (dummy_format / "other").mkdir()
+    (dummy_format / "other" / "profile.yaml").write_text(yaml.safe_dump(other, allow_unicode=True), encoding="utf-8")
+    (dummy_format / "other" / "template.md").write_text(TEMPLATE, encoding="utf-8")
+    data_dir, run_id, orchestrator = _start(tmp_path, dummy_format)
+    assert orchestrator.load_run(run_id)["status"] == "active"
+    formatting.start_formatting(orchestrator, run_id, "other", formats_root=dummy_format)
+    _drive(orchestrator, run_id, _good_responder(orchestrator, run_id))
+    manifest = orchestrator.load_run(run_id)
+    assert manifest["status"] == "completed"
+    for name in ("dummy", "other"):
+        assert (orchestrator.run_dir(run_id) / "formats" / name / f"{name}.md").is_file()
+
+
+def test_unfinished_story_stalled_and_empty_units_are_rejected(tmp_path: Path, dummy_format: Path, monkeypatch) -> None:
+    data_dir, run_id, orchestrator = _start(tmp_path, dummy_format)
+    manifest = orchestrator.load_run(run_id)
+    manifest["tasks"]["S1.extract-p001-1"]["state"] = "ready"
+    write_manifest(orchestrator.run_dir(run_id) / "manifest.json", manifest)
+    with pytest.raises(ValueError, match="終わっていない"):
+        formatting.start_formatting(orchestrator, run_id, "dummy", formats_root=dummy_format)
+    manifest["status"] = "stalled"
+    write_manifest(orchestrator.run_dir(run_id) / "manifest.json", manifest)
+    with pytest.raises(ValueError, match="completed または active"):
+        formatting.start_formatting(orchestrator, run_id, "dummy", formats_root=dummy_format)
+    story = formatting.read_story(orchestrator.run_dir(run_id))
+    monkeypatch.setitem(format_units.UNIT_MAPPERS, "scene", lambda s, p, r: [Unit("u01", "x", ())])
+    with pytest.raises(ValueError, match="出来事のない"):
+        formatting.build_plan(story, PROFILE, ROOT)
