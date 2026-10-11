@@ -36,6 +36,7 @@
 | 様式化ハーネス F0〜F4 と様式プロファイル | [spec/format-pipeline.md](spec/format-pipeline.md) |
 | 実行者が従うプロトコル | [spec/executor-protocol.md](spec/executor-protocol.md) |
 | バッチの傾向分析 | [spec/report.md](spec/report.md) |
+| 生成物の評価の観点・手順・評価の原則 | [spec/evaluation.md](spec/evaluation.md) |
 | 無人運転の運用手順（ユーザー向け） | `guides/operations.md`（P4-06 で作成） |
 | 開発フェーズと完了条件 | [plan/ROADMAP.md](plan/ROADMAP.md) |
 | 各フェーズの作業項目 | `plan/phase-N.md` |

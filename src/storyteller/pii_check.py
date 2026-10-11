@@ -26,7 +26,7 @@ _DATE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "具体的な年月日",
         re.compile(
-            r"(?<!\d)(?:\d{4}|" + _ERA + r"\s*(?:\d{1,2}|元))\s*年(?:\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?)?"
+            r"(?<!\d)(?:\d{4}|" + _ERA + r"\s*(?:\d{1,2}|元))\s*年(?!代)(?:\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?)?"
             r"|(?<!\d)\d{4}\s*[-/.／]\s*\d{1,2}\s*[-/.／]\s*\d{1,2}(?!\d)"
         ),
     ),
@@ -42,7 +42,9 @@ def detect_narrative_pii(items: dict[str, str]) -> list[PiiFinding]:
     for key, text in items.items():
         if not isinstance(text, str) or not text:
             continue
-        name = NARRATIVE_ITEMS[key][0] if key in NARRATIVE_ITEMS else key
+        if key not in NARRATIVE_ITEMS:
+            continue
+        name = NARRATIVE_ITEMS[key][0]
         findings.extend(find_pii(text, f"項目 {key}（{name}）", _DATE_PATTERNS))
     return findings
 
@@ -64,6 +66,11 @@ def check_input_file(path: str | Path) -> list[PiiFinding]:
             raise InputError(f"ナラティブが JSON として読めません: {error.msg}") from error
         if not isinstance(value, dict):
             raise InputError("ナラティブは13項目の JSON オブジェクトでなければなりません")
+        from .narrative import NARRATIVE_ITEMS
+
+        if any(key not in NARRATIVE_ITEMS for key in value):
+            # Never echo the unknown key or its value.
+            raise InputError("ナラティブの形式が不正です: 未知の項目があります")
         items = {
             key: normalize_text(text) for key, text in value.items() if isinstance(text, str)
         }

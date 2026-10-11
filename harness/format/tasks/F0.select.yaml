@@ -1,0 +1,4 @@
+id: F0.select
+version: 1
+kind: code
+handler: format_f0_select

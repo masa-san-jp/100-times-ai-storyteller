@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/tasks/F4.judge.schema.json",
+  "title": "Format text judgement",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "answer",
+    "reason"
+  ],
+  "properties": {
+    "answer": {
+      "type": "string",
+      "enum": [
+        "yes",
+        "no"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    }
+  }
+}

@@ -35,6 +35,22 @@ NOT_DETECTED = [
     "いつも何かを恐れている",
     "3月5日ごろ",
     "家族のメールを読む",
+    "メールアドレスは書かない",
+    "a@b",
+    "http の話",
+    "www の話",
+    "https:// だけ",
+    "メールで@を使う",
+    "東京都に憧れる",
+    "渋谷区の空気",
+    "三丁目の夕日",
+    "〒マーク",
+    "123-45",
+    "090-12",
+    "電話が鳴る",
+    "1990年代",
+    "90年代の空気",
+    "2020年代",
 ]
 
 
@@ -93,3 +109,19 @@ def test_check_input_clean_narrative_and_bad_file(tmp_path: Path) -> None:
     ok.write_text(json.dumps(_narrative(), ensure_ascii=False), encoding="utf-8")
     assert main(["check-input", str(ok)]) == 0
     assert main(["check-input", str(tmp_path / "missing.md")]) == 1
+
+
+def test_narrative_year_alone_is_detected_but_decade_is_not() -> None:
+    assert [f.kind for f in detect_narrative_pii(_narrative(desire="2024年"))] == ["具体的な年月日"]
+    assert detect_narrative_pii(_narrative(desire="1990年代と90年代")) == []
+
+
+def test_check_input_unknown_key_is_format_error_without_echo(tmp_path: Path, capsys) -> None:
+    path = tmp_path / "n.json"
+    value = _narrative()
+    value["secret_key_name"] = "a@b.example"
+    path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+    assert main(["check-input", str(path)]) == 1
+    captured = capsys.readouterr()
+    output = captured.out + captured.err
+    assert "secret_key_name" not in output and "a@b.example" not in output
