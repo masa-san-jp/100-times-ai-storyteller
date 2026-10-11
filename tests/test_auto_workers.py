@@ -65,11 +65,14 @@ def test_supervisor_fails_when_every_worker_keeps_dying() -> None:
 
 def test_surviving_worker_keeps_going_when_another_gives_up() -> None:
     done = threading.Event()
-    first = threading.Event()
+    guard = threading.Lock()
+    calls = {"n": 0}
 
     def worker() -> None:
-        if not first.is_set():
-            first.set()
+        with guard:
+            calls["n"] += 1
+            first = calls["n"] == 1
+        if first:
             raise RuntimeError("dies")  # restarted, then gives up (max_restarts=0)
         done.set()
 
@@ -162,3 +165,39 @@ def test_killed_worker_process_is_taken_over_after_lease_expiry(tmp_path: Path) 
     tasks = live.load_run(run_id)["tasks"]
     assert {t["state"] for t in tasks.values()} == {"done"}
     assert list(live.task_dir(run_id, killed_id).glob("claim.expired.*.json"))
+
+
+def test_until_empty_does_not_wait_for_live_claim_of_stalled_run(tmp_path: Path, monkeypatch) -> None:
+    from storyteller.manifest import load_manifest, write_manifest
+
+    harness = Orchestrator(tmp_path, DEFINITIONS)
+    run_id = harness.create_run(seed=1)
+    assert harness.claim_next(run_id, executor_id="other") is not None
+    path = tmp_path / "runs" / run_id / "manifest.json"
+    manifest = load_manifest(path)
+    manifest["status"] = "stalled"
+    write_manifest(path, manifest)
+    monkeypatch.setattr("storyteller.adapter.time.sleep", lambda _d: pytest.fail("waited"))
+
+    AutoRunner(tmp_path, _model(), harness, adapter_factory=_Adapter).run(
+        run_id=run_id, workers=1, until_empty=True
+    )
+    claimed = [t for t in harness.load_run(run_id)["tasks"].values() if t["state"] == "claimed"]
+    assert len(claimed) == 1  # the live claim was left alone
+
+
+def test_single_worker_is_also_restarted(tmp_path: Path) -> None:
+    harness = Orchestrator(tmp_path, DEFINITIONS)
+    run_id = harness.create_run(seed=1)
+    made = {"n": 0}
+
+    class FailsOnFirstStart(_Adapter):
+        def __init__(self, model: ModelConfig) -> None:
+            made["n"] += 1
+            if made["n"] == 1:
+                raise RuntimeError("cannot start")
+
+    AutoRunner(tmp_path, _model(), harness, adapter_factory=FailsOnFirstStart).run(
+        run_id=run_id, workers=1, until_empty=True
+    )
+    assert {t["state"] for t in harness.load_run(run_id)["tasks"].values()} == {"done"}

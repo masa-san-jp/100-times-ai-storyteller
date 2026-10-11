@@ -54,6 +54,11 @@ def run_supervised(
                 finished += 1
             return
 
+    if workers == 1:
+        # Run in the caller's thread so that its exceptions and interrupts propagate.
+        slot(0)
+        _finish(finished, given_up)
+        return
     threads = [
         threading.Thread(target=slot, args=(index,), name=f"st-auto-{index + 1}")
         for index in range(workers)
@@ -62,6 +67,10 @@ def run_supervised(
         thread.start()
     for thread in threads:
         thread.join()
+    _finish(finished, given_up)
+
+
+def _finish(finished: int, given_up: list[BaseException]) -> None:
     if given_up and finished == 0:
         raise WorkersFailed(f"すべてのワーカーが異常終了しました: {given_up[-1]}") from given_up[-1]
     if given_up:
