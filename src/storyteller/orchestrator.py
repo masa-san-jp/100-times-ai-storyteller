@@ -447,6 +447,27 @@ class Orchestrator:
                 _touch_manifest(manifest, now)
                 self._persist_manifest(run_dir, manifest)
 
+    def _no_code_task_pending(self, run_id: str) -> bool:
+        """Tell, without the manifest lock, that ``advance`` has no code task to run.
+
+        ``advance`` takes the lock even when it changes nothing, which makes
+        every claim queue behind the other executors.  When no code task is
+        ready or blocked there is nothing for it to execute; the locked part
+        of ``claim_next`` still reconciles claims and cached tasks.  Any doubt
+        answers ``False`` so the caller takes the normal path.
+        """
+
+        try:
+            manifest = self.load_run(run_id)
+            if manifest["status"] != "active" or self._harness_changed(manifest):
+                return False
+            return not any(
+                task["kind"] == "code" and task["state"] in {"ready", "blocked"}
+                for task in manifest["tasks"].values()
+            )
+        except Exception:
+            return False
+
     def may_have_claimable_work(self, run_id: str) -> bool:
         """Cheaply tell, without the manifest lock, whether a claim could succeed.
 
@@ -517,7 +538,9 @@ class Orchestrator:
                 status = statuses.get(candidate_run_id)
                 if status is None:
                     status = self.load_run(candidate_run_id)["status"]
-                if status == "active":
+                if status == "active" and not self._no_code_task_pending(
+                    candidate_run_id
+                ):
                     statuses[candidate_run_id] = self.advance(candidate_run_id)[
                         "status"
                     ]
