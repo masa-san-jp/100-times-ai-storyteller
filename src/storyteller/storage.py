@@ -335,9 +335,9 @@ def acquire_lock(
         else:
             try:
                 with os.fdopen(descriptor, "wb", closefd=True) as stream:
+                    # The lock is its existence, not its contents; an fsync
+                    # here only lengthens the hold (slow on Windows).
                     stream.write(_lock_contents(token))
-                    stream.flush()
-                    os.fsync(stream.fileno())
             except BaseException:
                 _remove_lock_if_owned(lock_path, token)
                 raise

@@ -264,10 +264,15 @@ def _next(args: argparse.Namespace) -> int:
         args.executor_id if args.executor_id is not None else configured_executor
     )
     deadline = time.monotonic() + args.wait
+    polling = False
     while True:
         run_ids = [args.run_id] if args.run_id is not None else _candidate_run_ids(data_dir)
         for run_id in run_ids:
             orchestrator = _orchestrator(data_dir, run_id)
+            if polling and not orchestrator.may_have_claimable_work(run_id):
+                # 待機中の再確認はロックを取らない。進められる作業が無ければ
+                # claim_next（ロックを取る）を呼ばずに次の周期まで待つ。
+                continue
             result = orchestrator.claim_next(
                 run_id,
                 executor_id=executor_id,
@@ -282,6 +287,7 @@ def _next(args: argparse.Namespace) -> int:
             return EXIT_OK
         if args.wait == 0 or time.monotonic() >= deadline:
             return EXIT_NO_TASK
+        polling = True
         time.sleep(min(5.0, max(0.0, deadline - time.monotonic())))
 
 

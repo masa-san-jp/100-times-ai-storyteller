@@ -3,19 +3,39 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from stat import S_ISREG
 from typing import Any
 
 from .validation import input_source_ids
 
 
+_SOURCES_CACHE: dict[str, tuple[tuple[int, int, int, int], list[str]]] = {}
+
+
 def task_sources(task_dir: Path) -> list[str]:
-    """Use the saved, fitted card inputs, never the unbounded dependencies."""
+    """Use the saved, fitted card inputs, never the unbounded dependencies.
+
+    The result is reused while input.json keeps the same stat signature: the
+    same task's sources are read many times as its dependents are built.
+    """
     path = task_dir / "input.json"
-    if not path.is_file():
+    try:
+        stat = os.stat(path)
+    except OSError:
         return []
+    if not S_ISREG(stat.st_mode):
+        return []
+    signature = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
+    key = str(path)
+    cached = _SOURCES_CACHE.get(key)
+    if cached is not None and cached[0] == signature:
+        return list(cached[1])
     inputs = json.loads(path.read_text(encoding="utf-8"))
-    return input_source_ids(inputs)
+    sources = input_source_ids(inputs)
+    _SOURCES_CACHE[key] = (signature, list(sources))
+    return sources
 
 
 def read_task_output(task_dir: Path, task_type: str) -> Any:
