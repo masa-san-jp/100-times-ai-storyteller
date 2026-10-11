@@ -1,0 +1,10 @@
+id: F1.split
+version: 1
+kind: code
+handler: format_f1_split
+inputs:
+  selection:
+    label: 様式の選択
+    from: F0.select
+    select: output
+    required: true

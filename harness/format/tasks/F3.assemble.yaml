@@ -1,0 +1,15 @@
+id: F3.assemble
+version: 1
+kind: code
+handler: format_f3_assemble
+inputs:
+  selection:
+    label: 様式の選択
+    from: F0.select
+    select: output
+    required: true
+  plan:
+    label: 単位の割付
+    from: F1.split
+    select: output
+    required: true
