@@ -105,7 +105,7 @@ def test_s2_plan_sequential_expansion_counter_and_merge(tmp_path: Path) -> None:
         for number in range(1, 6):
             inputs = json.loads((harness.task_dir(run_id, f"S2.expand-m001-{axis}-{number}") / "input.json").read_text(encoding="utf-8"))
             assert inputs["previous_elements"] == [_element(axis, earlier) for earlier in range(1, number)]
-    assert not (tmp_path / "data/tables").exists()
+    assert (tmp_path / "data/tables/want.json").exists()  # P2-04: counters are appended
 
 
 @pytest.mark.parametrize("failed_id", ["S2.expand-m001-want-2", "S2.counter-m001-want"])

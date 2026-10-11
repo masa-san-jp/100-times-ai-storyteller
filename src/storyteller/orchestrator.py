@@ -1008,6 +1008,13 @@ class Orchestrator:
                     definition,
                     stored_value,
                 )
+                if task["type"] == "S2.counter":
+                    from .table_append import append_counter_element
+                    _, append_warning = append_counter_element(
+                        self.data_dir, run_id, task_id, card_inputs, stored_value
+                    )
+                    if append_warning:
+                        recorded_warnings = (*recorded_warnings, append_warning)
                 task["cache_key"] = key
                 _release_claim(run_dir, task_id, task)
                 _set_task_state(
