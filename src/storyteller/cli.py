@@ -482,8 +482,8 @@ def _format(args: argparse.Namespace) -> int:
 
 
 def _new(args: argparse.Namespace) -> int:
-    if args.scale not in {"vignette", "short"}:
-        raise CliArgumentError("この規模プリセットは Phase 2 で対応します")
+    if args.scale not in {"vignette", "short", "novella", "novel", "saga"}:
+        raise CliArgumentError("未知の規模プリセットです")
     if args.count not in {None, 1}:
         raise CliArgumentError("--count は Phase 2 で対応します")
     overrides: dict[str, str] = {}

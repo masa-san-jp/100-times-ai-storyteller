@@ -346,7 +346,17 @@ def _build_threads(
         manifest["scale"].get("axes"), Mapping
     ) and manifest["scale"]["axes"].get("threads") == "parts"
     if is_parts:
-        event_counts = _split_part_events(total_events, derived_threads, context.random)
+        per_part = manifest["scale"]["derived"].get("part_events")
+        if per_part is None:
+            event_counts = _split_part_events(total_events, derived_threads, context.random)
+        elif (
+            not isinstance(per_part, list)
+            or len(per_part) != derived_threads
+            or any(isinstance(n, bool) or not isinstance(n, int) or n < 3 for n in per_part)
+        ):
+            raise ValueError("manifest の derived.part_events が不正です")
+        else:
+            event_counts = list(per_part)
     else:
         subthread_range = scales.get("subthread_events")
         if (
@@ -573,11 +583,20 @@ def _assign_world_tasks(
         entry.get("id"): entry for entry in allocations if isinstance(entry, Mapping)
     }
     name_sets = load_table("name_sounds", repository_root=repository_root)["sets"]
-    used: dict[str, set[str]] = {axis: set() for axis in _WORLD_AXES}
+    # The story's own place/era/object stay out of the cuts when possible.
+    # Cuts are distinct within a viewpoint (single) or a section (list); a
+    # larger scale needs more cuts than the pools hold, so scopes are
+    # independent (story-pipeline S4).
+    story_elements: dict[str, set[str]] = {axis: set() for axis in _WORLD_AXES}
     for axis in _WORLD_AXES:
         selected = world.get(axis)
         if isinstance(selected, Mapping) and isinstance(selected.get("id"), str):
-            used[axis].add(selected["id"])
+            story_elements[axis].add(selected["id"])
+
+    def new_scope() -> dict[str, set[str]]:
+        return {axis: set(ids) for axis, ids in story_elements.items()}
+
+    used = new_scope()
 
     result: list[dict[str, Any]] = []
     for section in sections:
@@ -605,6 +624,7 @@ def _assign_world_tasks(
             ):
                 if not isinstance(viewpoint, str) or not isinstance(viewpoint_allocation, Mapping):
                     raise ValueError(f"世界セクションの観点が不正です: {section_id}")
+                used = new_scope()
                 facet_count = viewpoint_allocation.get("facet_count")
                 if isinstance(facet_count, bool) or not isinstance(facet_count, int) or facet_count < 1:
                     raise ValueError(f"世界セクションの面数が不正です: {section_id}")
@@ -629,6 +649,7 @@ def _assign_world_tasks(
             item_count = allocation.get("item_count")
             if isinstance(item_count, bool) or not isinstance(item_count, int) or item_count < 1:
                 raise ValueError(f"世界セクションの項目数が不正です: {section_id}")
+            used = new_scope()
             for ordinal in range(1, item_count + 1):
                 task_key = f"{section_id}-{ordinal:03d}"
                 element_axis, element = _choose_world_cut(
@@ -673,6 +694,13 @@ def _choose_world_cut(
             return axis, _choose_element(
                 context, axis, ratio, input_pools, table_pools, used[axis]
             )
+    # Every pool is exhausted inside this scope: start the scope over.
+    # Only the story's own elements are then excluded, and only if possible.
+    for axis in axes:
+        if input_pools.get(axis) or table_pools.get(axis):
+            for ids in used.values():
+                ids.clear()
+            return axis, _choose_element(context, axis, ratio, input_pools, table_pools, used[axis])
     raise ValueError("S4 の切り口に使える要素がありません")
 
 
