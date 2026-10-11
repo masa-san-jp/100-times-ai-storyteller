@@ -132,19 +132,30 @@ def detect_free_pii(paragraphs: list[str] | tuple[dict[str, str], ...]) -> list[
     findings: list[PiiFinding] = []
     for index, paragraph_value in enumerate(paragraphs, start=1):
         paragraph = paragraph_value if isinstance(paragraph_value, str) else paragraph_value["text"]
-        location = f"段落 p{index:03d}"
-        occupied: list[tuple[int, int]] = []
-        matches: list[tuple[int, int, str]] = []
-        for kind, pattern in _PATTERNS:
-            for match in pattern.finditer(paragraph):
-                start, end = match.span()
-                if any(start < occupied_end and end > occupied_start for occupied_start, occupied_end in occupied):
-                    continue
-                matches.append((start, end, kind))
-                occupied.append((start, end))
-        for start, _end, kind in sorted(matches, key=lambda item: (item[0], item[1], item[2])):
-            findings.append(PiiFinding(location, start + 1, kind))
+        findings.extend(find_pii(paragraph, f"段落 p{index:03d}"))
     return findings
+
+
+def find_pii(
+    text: str,
+    location: str,
+    extra_patterns: tuple[tuple[str, re.Pattern[str]], ...] = (),
+) -> list[PiiFinding]:
+    """Detect PII in one text; extra patterns are tried after the common ones."""
+
+    occupied: list[tuple[int, int]] = []
+    matches: list[tuple[int, int, str]] = []
+    for kind, pattern in _PATTERNS + extra_patterns:
+        for match in pattern.finditer(text):
+            start, end = match.span()
+            if any(start < occupied_end and end > occupied_start for occupied_start, occupied_end in occupied):
+                continue
+            matches.append((start, end, kind))
+            occupied.append((start, end))
+    return [
+        PiiFinding(location, start + 1, kind)
+        for start, _end, kind in sorted(matches, key=lambda item: (item[0], item[1], item[2]))
+    ]
 
 
 def _split_long_paragraph(paragraph: str) -> list[str]:

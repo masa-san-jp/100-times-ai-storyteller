@@ -9,8 +9,9 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from .input_data import InputError, normalize_text
+from .input_data import InputError, PersonalInformationError, normalize_text
 from .new_run import create_run_from_paragraphs
+from .pii_check import detect_narrative_pii
 
 MIN_FILLED_ITEMS = 3
 MAX_ITEM_CHARS = 300
@@ -91,6 +92,10 @@ def read_narrative(path: str | Path) -> NarrativeInput:
     if errors:
         # Report item keys and the rule only; never echo the user's text.
         raise InputError("ナラティブの形式が不正です: " + "、".join(_describe(error) for error in errors))
+
+    findings = detect_narrative_pii(items)
+    if findings:
+        raise PersonalInformationError(findings)
 
     filled = sum(1 for text in items.values() if text)
     if filled < MIN_FILLED_ITEMS:
