@@ -41,6 +41,35 @@ def create_free_run(
     """Validate free input, derive S0, and create the initial S1 DAG."""
 
     free_input = read_free_input(input_path)
+    return create_run_from_paragraphs(
+        data_dir,
+        free_input.as_document(),
+        free_input.paragraphs,
+        input_type="free",
+        preset=preset,
+        axis_overrides=axis_overrides,
+        seed=seed,
+        parts=parts,
+        plot_type=plot_type,
+        repository_root=repository_root,
+    )
+
+
+def create_run_from_paragraphs(
+    data_dir: str | Path,
+    input_document: dict[str, Any],
+    paragraphs: Any,
+    *,
+    input_type: str,
+    preset: str,
+    axis_overrides: dict[str, str] | None,
+    seed: int | None,
+    parts: int | None,
+    plot_type: str | None,
+    repository_root: str | Path,
+) -> str:
+    """Derive S0 from a normalized input and create the initial S1 DAG."""
+
     resolved_seed = seed if seed is not None else generated_seed()
     scale = derive_scale(
         preset,
@@ -65,7 +94,7 @@ def create_free_run(
             deps=tuple(f"S1.extract-{paragraph['id']}-{earlier}" for earlier in range(1, number)),
             index=(paragraph["id"], str(number)),
         )
-        for paragraph in free_input.paragraphs
+        for paragraph in paragraphs
         for number in range(1, 6)
     ]
     s1_task_ids = tuple(spec.task_id for spec in task_specs)
@@ -86,8 +115,8 @@ def create_free_run(
     run_id = orchestrator.create_run(
         task_specs=task_specs,
         seed=resolved_seed,
-        input_data=free_input.as_document(),
-        input_type="free",
+        input_data=input_document,
+        input_type=input_type,
         plot_type=plot_type,
         scale=scale_value,
         table_snapshot={axis: 0 for axis in _element_axes(repository_root)},
