@@ -8,7 +8,7 @@
 1. [docs/README.md](docs/README.md) を読み、原本の所有範囲と規則を確認する。
 2. [docs/process/implementation.md](docs/process/implementation.md) を読み、自分の役割（オーケストレータ／実装者）と、作業の受け渡し・報告の形式を確認する。
 3. [docs/VISION.md](docs/VISION.md) の設計原則 P1〜P8 を確認する。すべての変更はこれに従う。
-4. 依頼された作業項目を `docs/plan/phase-N.md` で確認し、その「根拠」の spec と「共通の受け入れ条件」を読んでから実装する。
+4. 依頼された作業項目の管理場所を [docs/README.md §2.2](docs/README.md#22-開発計画依存関係進捗の原本) で確認する。#53の開発は作業Issue、既存フェーズの未移行項目は `docs/plan/phase-N.md` を読み、参照する spec と適用する受け入れ条件を確認してから実装する。
 
 ## 実装者が守ること
 
