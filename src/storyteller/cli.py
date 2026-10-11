@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .adapter import register_auto_command
+from .cache_prune import register_cli_commands as register_cache_commands
 from .dev.dummy import create_dummy_orchestrator
 from .input_data import PersonalInformationError
 from .new_run import create_free_run, create_story_orchestrator
@@ -107,6 +108,7 @@ def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
     format_parser.add_argument("--as", dest="format_name", required=True)
 
     register_cli_commands(subparsers)
+    register_cache_commands(subparsers)
 
     new_parser = subparsers.add_parser("new", help="create a story run")
     input_group = new_parser.add_mutually_exclusive_group(required=True)
