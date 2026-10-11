@@ -25,8 +25,8 @@ from .orchestrator import (
     InvalidTransition,
     OrchestrationError,
 )
-from .table_edit import register_cli_commands as register_table_commands
 from .storage import DataDirectoryError, LockTimeoutError, resolve_data_dir
+from .table_edit import register_cli_commands as register_table_commands
 from .workspace import register_cli_commands
 
 

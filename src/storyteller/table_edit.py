@@ -44,8 +44,10 @@ def supplement_path(data_dir: Path, axis: str) -> Path:
 def row_problem(row: Any) -> str | None:
     """Return why ``row`` is not a valid element row, or None."""
 
+    if isinstance(row, str):
+        return None if row else "text must be a non-empty string"
     if not isinstance(row, Mapping):
-        return "row must be an object"
+        return "row must be an object or a string"
     extra = set(row) - {"text", "source"}
     if extra:
         return f"unknown field: {sorted(extra)[0]}"
@@ -55,6 +57,12 @@ def row_problem(row: Any) -> str | None:
     if "source" in row and (not isinstance(row["source"], str) or not row["source"]):
         return "source must be a non-empty string"
     return None
+
+
+def row_text(row: Any) -> str:
+    """Return the text of a valid row (a bare string row is its own text)."""
+
+    return row if isinstance(row, str) else row["text"]
 
 
 def _read_supplement(path: Path) -> tuple[Any, list[Any]]:
@@ -98,7 +106,7 @@ def check_axis(data_dir: Path, axis: str) -> list[str]:
         if reason:
             problems.append(f"{axis}:x{number}: {reason}")
             continue
-        text = normalize_text(row["text"])
+        text = normalize_text(row_text(row))
         if not text:
             problems.append(f"{axis}:x{number}: text is empty after normalization")
         elif text in defaults:
@@ -135,7 +143,7 @@ def add_row(data_dir: Path, axis: str, text: str, source: str | None) -> str:
             raise TableEditError("duplicates a default table row")
         document, rows = _read_supplement(path)
         for existing in rows:
-            if normalize_text(existing["text"]) == normalized:
+            if normalize_text(row_text(existing)) == normalized:
                 raise TableEditError("duplicates a supplemental table row")
         if document is None:
             document = {"items": rows}
@@ -150,7 +158,7 @@ def _list_axis(data_dir: Path, axis: str) -> int:
     default_texts = {normalize_text(row["text"]) for row in defaults}
     duplicates = 0
     for number, row in enumerate(rows, start=1):
-        text = row["text"] if isinstance(row, Mapping) and isinstance(row.get("text"), str) else str(row)
+        text = row if isinstance(row, str) else row.get("text", "") if isinstance(row, Mapping) else str(row)
         mark = ""
         if normalize_text(text) in default_texts:
             mark = "  [既定と重複]"

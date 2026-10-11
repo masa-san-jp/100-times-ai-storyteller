@@ -62,7 +62,7 @@ def test_add_refuses_invalid_supplement_and_keeps_it(home):
 def test_check_reports_invalid_rows_and_duplicates(home, capsys):
     default = load_element_table("place")["items"][0]["text"]
     (home / "tables").mkdir()
-    rows = [{"text": "a"}, {"text": "a"}, {"text": default}, {"text": "b", "x": 1}, "str"]
+    rows = [{"text": "a"}, {"text": "a"}, {"text": default}, {"text": "b", "x": 1}, ""]
     _path(home).write_text(json.dumps(rows), encoding="utf-8")
     assert main(["table", "check", "place"]) == 1
     err = capsys.readouterr().err
@@ -88,3 +88,14 @@ def test_list(home, capsys):
     out = capsys.readouterr().out
     assert "place:x1" in out and "既定と重複" in out and "duplicates with default: 1" in out
     assert main(["table", "list", "nosuch"]) == 1
+
+
+def test_bare_string_rows_are_valid(home, capsys):
+    (home / "tables").mkdir()
+    _path(home).write_text(json.dumps(["裸の行", {"text": "もう一行"}]), encoding="utf-8")
+    assert main(["table", "check", "place"]) == 0
+    assert main(["table", "add", "place", "裸の　行"]) == 1
+    assert main(["table", "add", "place", "三行目"]) == 0
+    assert capsys.readouterr().out.strip().endswith("place:x3")
+    assert main(["table", "list", "place"]) == 0
+    assert "裸の行" in capsys.readouterr().out
