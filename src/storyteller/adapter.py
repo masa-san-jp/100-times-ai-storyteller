@@ -97,10 +97,6 @@ def run_auto_command(args: argparse.Namespace) -> int:
         provider=args.provider,
         endpoint=args.endpoint,
     )
-    if model.provider != "ollama":
-        raise AdapterError(
-            f"provider {model.provider!r} は Phase 1 では未対応です（ollama のみ）"
-        )
     _validate_local_endpoint(model.endpoint)
     from .cli import _orchestrator
 
@@ -341,6 +337,16 @@ class OllamaAdapter:
         return AdapterResponse(message["content"], done_reason)
 
 
+def _default_adapter_factory(model: ModelConfig) -> Any:
+    """Pick the adapter class for the model's provider (architecture §5)."""
+
+    if model.provider == "openai-compatible":
+        from .openai_adapter import OpenAICompatibleAdapter
+
+        return OpenAICompatibleAdapter(model)
+    return OllamaAdapter(model)
+
+
 def _card_requests_json(card: str) -> bool:
     return "次のJSONだけを出力すること。" in card
 
@@ -406,14 +412,14 @@ class AutoRunner:
         orchestrator: Orchestrator | None,
         *,
         orchestrator_factory: Callable[[str], Orchestrator] | None = None,
-        adapter_factory: Callable[[ModelConfig], OllamaAdapter] | None = None,
+        adapter_factory: Callable[[ModelConfig], Any] | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve(strict=False)
         self.model = model
         self.orchestrator = orchestrator
         self.orchestrator_factory = orchestrator_factory
         self.state = _StateStore(self.data_dir)
-        self.adapter_factory = adapter_factory or OllamaAdapter
+        self.adapter_factory = adapter_factory or _default_adapter_factory
         self._stop = threading.Event()
 
     def run(self, *, run_id: str | None, workers: int, until_empty: bool) -> None:
