@@ -412,12 +412,16 @@ class Orchestrator:
                     _touch_manifest(manifest, self._now())
                     self._persist_manifest(run_dir, manifest)
                     return manifest
+                loaded = json.dumps(manifest, sort_keys=True)
                 _refresh_blocked_tasks(manifest, self._now())
                 self._complete_ready_cached_tasks(manifest, run_id)
                 _refresh_blocked_tasks(manifest, self._now())
                 task_id = _next_ready_code_task(manifest)
                 if task_id is None:
                     _update_run_status(manifest)
+                    if json.dumps(manifest, sort_keys=True) == loaded:
+                        # 何も変わらなかった。manifest を書き直さない。
+                        return manifest
                     _touch_manifest(manifest, self._now())
                     self._persist_manifest(run_dir, manifest)
                     return manifest
@@ -443,6 +447,48 @@ class Orchestrator:
                 _touch_manifest(manifest, now)
                 self._persist_manifest(run_dir, manifest)
 
+    def may_have_claimable_work(self, run_id: str) -> bool:
+        """Cheaply tell, without the manifest lock, whether a claim could succeed.
+
+        ``st next --wait`` polls with this so that waiting executors do not
+        queue on the lock.  Only ``False`` is meaningful: it means every
+        remaining task is done, waiting on tasks that are claimed with a live
+        lease, or otherwise cannot change in this call.  Any doubt, including
+        an unreadable manifest, answers ``True`` and the caller takes the
+        normal locked path.  The manifest is replaced atomically, so reading
+        it without the lock sees a whole document.
+        """
+
+        try:
+            manifest = self.load_run(run_id)
+            if manifest["status"] != "active" or self._harness_changed(manifest):
+                return True
+            tasks = manifest["tasks"]
+            now = _parse_utc_timestamp(self._now())
+            for task_id, task in tasks.items():
+                state = task["state"]
+                if state == "ready":
+                    return True
+                if state == "blocked" and all(
+                    dependency in tasks
+                    and tasks[dependency]["state"] in {"done", "skipped"}
+                    for dependency in task["deps"]
+                ):
+                    return True
+                if state == "claimed":
+                    claim = task.get("claim")
+                    if not isinstance(claim, Mapping) or _parse_utc_timestamp(
+                        claim["lease_expires_at"]
+                    ) <= now:
+                        return True
+                    if not os.path.exists(
+                        self.task_dir(run_id, task_id) / "claim.json"
+                    ):
+                        return True
+            return False
+        except Exception:
+            return True
+
     def claim_next(
         self,
         run_id: str | None = None,
@@ -461,20 +507,34 @@ class Orchestrator:
         resolved_executor_id = _resolve_executor_id(executor_id)
         _validate_isolation(isolation)
 
-        run_ids = self._claimable_run_ids(run_id)
+        statuses: dict[str, str] = {}
+        run_ids = self._claimable_run_ids(run_id, statuses)
         # Code tasks are synchronous.  Advancing before looking for an LLM
         # task makes a newly-unblocked task visible to this invocation.
+        advance_failed = False
         for candidate_run_id in run_ids:
             try:
-                manifest = self.load_run(candidate_run_id)
-                if manifest["status"] == "active":
-                    self.advance(candidate_run_id)
+                status = statuses.get(candidate_run_id)
+                if status is None:
+                    status = self.load_run(candidate_run_id)["status"]
+                if status == "active":
+                    statuses[candidate_run_id] = self.advance(candidate_run_id)[
+                        "status"
+                    ]
             except LockTimeoutError:
                 raise
             except (OSError, ValueError, ClaimError) as error:
+                advance_failed = True
                 _warn_skipped_run(candidate_run_id, error)
 
-        for candidate_run_id in self._claimable_run_ids(run_id):
+        if run_id is not None and run_ids and not advance_failed:
+            # 指定された run は直前に読んだばかり。読み直さずに停止だけ確かめる。
+            if statuses.get(run_id) == "halted":
+                raise HaltedRunError(f"run は停止中です: {run_id}")
+            candidate_ids = run_ids
+        else:
+            candidate_ids = self._claimable_run_ids(run_id)
+        for candidate_run_id in candidate_ids:
             retry_same_run = False
             while True:
                 run_dir = self.run_dir(candidate_run_id)
@@ -608,6 +668,9 @@ class Orchestrator:
                 raise OrchestrationError(f"run は halted ではありません: {run_id}")
             manifest["harness"] = self._current_harness(manifest)
             manifest["status"] = "active"
+            for task in manifest["tasks"].values():
+                if task["state"] == "ready":
+                    task["cache_key"] = None
             _refresh_blocked_tasks(manifest, self._now())
             _update_run_status(manifest)
             _touch_manifest(manifest, self._now())
@@ -1229,22 +1292,28 @@ class Orchestrator:
 
     _revoke_claim = revoke_claim
 
-    def _claimable_run_ids(self, run_id: str | None) -> list[str]:
+    def _claimable_run_ids(
+        self,
+        run_id: str | None,
+        statuses: dict[str, str] | None = None,
+    ) -> list[str]:
+        """List runs to claim from; *statuses* receives the status read on the way."""
         if run_id is not None:
             # Let run_dir provide the same path-safety error as other APIs,
             # then load the manifest to give callers a useful missing-run
             # error before any claim work starts.
             run_path = self.run_dir(run_id)
             try:
-                self.load_run(run_id)
+                manifest = self.load_run(run_id)
             except (OSError, ValueError) as error:
                 if run_path.exists():
                     _warn_skipped_run(run_id, error)
                     return []
                 raise
-            manifest = self.load_run(run_id)
             if manifest["status"] == "halted":
                 raise HaltedRunError(f"run は停止中です: {run_id}")
+            if statuses is not None:
+                statuses[run_id] = manifest["status"]
             return [run_id]
 
         runs_dir = self.data_dir / "runs"
@@ -1259,6 +1328,8 @@ class Orchestrator:
             except (OSError, ValueError) as error:
                 _warn_skipped_run(entry.name, error)
                 continue
+            if statuses is not None:
+                statuses[entry.name] = manifest["status"]
             if manifest["status"] in {"active", "stalled"}:
                 records.append((manifest["created_at"], entry.name))
         records.sort(key=lambda item: (item[0], item[1]))
@@ -1732,6 +1803,17 @@ class Orchestrator:
             completed = False
             for task_id, task in manifest["tasks"].items():
                 if task["kind"] != "llm" or task["state"] != "ready":
+                    continue
+                stored_key = task.get("cache_key")
+                if isinstance(stored_key, str) and not os.path.exists(
+                    os.path.join(
+                        str(self.data_dir), "cache", stored_key[:2], f"{stored_key}.json"
+                    )
+                ):
+                    # 評価済みの ready タスク（入力は完了済みの依存の出力だけで
+                    # 決まる）で、キャッシュにまだ無い。入力を作り直さない。
+                    # 入力が変わる操作（再試行・無効化・harness の受け入れ）は
+                    # cache_key を None に戻す。
                     continue
                 try:
                     context = self._build_context(manifest, run_id, task_id)
@@ -2726,9 +2808,11 @@ def _refresh_claims(
 
     del clock  # Kept in the seam so clock ownership remains explicit.
     changed = False
+    tasks_prefix = os.path.join(str(run_dir), "tasks")
     for task_id, task in manifest["tasks"].items():
         claim_path = run_dir / "tasks" / task_id / "claim.json"
-        if not claim_path.exists():
+        # 1,500 件の存在確認では Path の組み立てが支配的なので文字列で確かめる。
+        if not os.path.exists(os.path.join(tasks_prefix, task_id, "claim.json")):
             if task["state"] == "claimed":
                 executor_id = None
                 if isinstance(task.get("claim"), Mapping):
@@ -3424,7 +3508,26 @@ def _make_run_id(created_at: str, seed: int) -> str:
     return f"{compact_date}-{compact_time}-{seed_prefix}"
 
 
+_FILE_HASH_CACHE: dict[str, tuple[tuple[int, int, int, int], str]] = {}
+
+
 def _sha256_file(path: Path) -> str:
+    """Hash a file, reusing the digest while its stat signature is unchanged."""
+    key = str(path)
+    try:
+        stat = os.stat(key)
+        signature = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
+    except OSError:
+        return _sha256_file_uncached(path)
+    cached = _FILE_HASH_CACHE.get(key)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    digest = _sha256_file_uncached(path)
+    _FILE_HASH_CACHE[key] = (signature, digest)
+    return digest
+
+
+def _sha256_file_uncached(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -3464,10 +3567,18 @@ def _discover_harness_files(
     for directory in directories:
         if not directory.is_dir():
             continue
-        for path in sorted(directory.rglob("*")):
-            if path.is_file():
-                relative = path.relative_to(relative_root).as_posix()
-                files[relative] = _sha256_file(path)
+        # os.walk は pathlib の rglob より速い（毎回のロックで走る）。
+        prefix = os.path.join(str(relative_root), "")
+        for current, _, names in os.walk(directory):
+            for name in names:
+                full = os.path.join(current, name)
+                if not os.path.isfile(full):
+                    continue
+                if full.startswith(prefix):
+                    relative = full[len(prefix):].replace(os.sep, "/")
+                else:
+                    relative = Path(full).relative_to(relative_root).as_posix()
+                files[relative] = _sha256_file(Path(full))
     return files
 
 

@@ -112,3 +112,57 @@ def test_invalid_manifest_is_not_written(tmp_path: Path) -> None:
     with pytest.raises(SchemaValidationError):
         write_manifest(path, invalid)
     assert path.read_text(encoding="utf-8") == "old"
+
+
+def test_incremental_write_still_rejects_invalid_changes(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.json"
+    valid = manifest()
+    write_manifest(path, valid)
+    loaded = load_manifest(path)
+
+    loaded["tasks"]["D1.items"]["state"] = "bogus"
+    with pytest.raises(SchemaValidationError):
+        write_manifest(path, loaded)
+
+    loaded = load_manifest(path)
+    loaded["tasks"]["D1.items"]["attempt"] = "1"
+    with pytest.raises(SchemaValidationError):
+        write_manifest(path, loaded)
+
+    loaded = load_manifest(path)
+    loaded["status"] = "unknown"
+    with pytest.raises(SchemaValidationError):
+        write_manifest(path, loaded)
+
+    loaded = load_manifest(path)
+    loaded["tasks"]["D2.new"] = {"type": "D2.new"}
+    with pytest.raises(SchemaValidationError):
+        write_manifest(path, loaded)
+    assert json.loads(path.read_text(encoding="utf-8")) == valid
+
+
+def test_hand_edited_manifest_is_validated_despite_the_stamp(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.json"
+    write_manifest(path, manifest())
+    assert load_manifest(path) == manifest()
+
+    edited = manifest()
+    edited["tasks"]["D1.items"]["state"] = "bogus"
+    path.write_text(json.dumps(edited), encoding="utf-8")
+    with pytest.raises(SchemaValidationError):
+        load_manifest(path)
+
+
+def test_stamp_from_another_manifest_does_not_skip_validation(tmp_path: Path) -> None:
+    first = tmp_path / "first" / "manifest.json"
+    second = tmp_path / "second" / "manifest.json"
+    write_manifest(first, manifest())
+    second.parent.mkdir()
+    invalid = manifest()
+    invalid["status"] = "unknown"
+    second.write_text(json.dumps(invalid), encoding="utf-8")
+    (second.parent / "manifest.validated").write_bytes(
+        (first.parent / "manifest.validated").read_bytes()
+    )
+    with pytest.raises(SchemaValidationError):
+        load_manifest(second)

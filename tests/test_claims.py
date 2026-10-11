@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import multiprocessing
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -571,3 +572,61 @@ def test_two_processes_cannot_claim_the_same_task(tmp_path: Path) -> None:
     assert sum(result is not None for result in results) == 1
     manifest = orchestrator.load_run(run_id)
     assert manifest["tasks"]["D1.echo"]["state"] == "claimed"
+
+
+def _claim_and_submit_loop(data_dir: str, run_id: str, count: int, queue, start_event) -> None:
+    orchestrator = Orchestrator(data_dir, {"D1.echo": llm_definition("D1.echo")})
+    start_event.wait(30)
+    done = 0
+    try:
+        while done < count:
+            claimed = orchestrator.claim_next(run_id, executor_id=f"worker-{os.getpid()}")
+            if claimed is None:
+                break
+            result = orchestrator.submit(claimed["ticket"], '{"value": "x"}')
+            assert result.accepted
+            done += 1
+        queue.put(done)
+    except BaseException as error:  # pragma: no cover - surfaced by the parent
+        queue.put(repr(error))
+
+
+def test_eight_executors_do_not_time_out_on_the_manifest_lock(tmp_path: Path) -> None:
+    tasks = [
+        TaskSpec(f"D1.echo-{index:03d}", "D1.echo", index=(f"{index:03d}",))
+        for index in range(240)
+    ]
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition("D1.echo")})
+    run_id = orchestrator.create_run(seed=1, tasks=tasks)
+    context = multiprocessing.get_context("spawn")
+    queue = context.Queue()
+    start_event = context.Event()
+    processes = [
+        context.Process(
+            target=_claim_and_submit_loop,
+            args=(str(tmp_path), run_id, 5, queue, start_event),
+        )
+        for _ in range(8)
+    ]
+    for process in processes:
+        process.start()
+    start_event.set()
+    results = [queue.get(timeout=300) for _ in processes]
+    for process in processes:
+        process.join(timeout=60)
+    assert results == [5] * 8
+    manifest = orchestrator.load_run(run_id)
+    states = [task["state"] for task in manifest["tasks"].values()]
+    assert states.count("done") == 40
+
+
+def test_may_have_claimable_work_is_false_only_when_nothing_can_change(
+    tmp_path: Path,
+) -> None:
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition("D1.echo")})
+    run_id = orchestrator.create_run(seed=1)
+    assert orchestrator.may_have_claimable_work(run_id)
+    assert orchestrator.claim_next(run_id, executor_id="worker") is not None
+    # The only task is claimed with a live lease: a waiting poll needs no lock.
+    assert not orchestrator.may_have_claimable_work(run_id)
+    assert orchestrator.may_have_claimable_work("20000101-000000-000000")

@@ -333,6 +333,15 @@ def test_failure_report_redacts_inputs_and_uses_specialized_value_card(tmp_path,
     task_id = "S5.fact-c1-height_cm"
     if before_claim:
         harness.task_definitions["S5.fact"]["max_input_chars"] = 1
+        # A ready task whose cache_key is set was already evaluated and is not
+        # rebuilt.  Replacing the definition in place is what invalidates that
+        # in this test; a real definition change halts the run and resume
+        # clears the keys.
+        from storyteller.manifest import load_manifest, write_manifest
+        manifest_path = harness.run_dir(run_id) / "manifest.json"
+        stored = load_manifest(manifest_path)
+        stored["tasks"][task_id]["cache_key"] = None
+        write_manifest(manifest_path, stored)
         harness.advance(run_id)
     else:
         claim = harness.claim_task(run_id, task_id, executor_id="test-model")
