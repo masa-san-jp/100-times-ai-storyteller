@@ -16,7 +16,6 @@ import threading
 import time
 from datetime import datetime
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +33,7 @@ from .orchestrator import ClaimError, Orchestrator
 from .storage import acquire_lock, atomic_write_json, manifest_lock
 from .validation import YamlValidationError, parse_json_object, validate_document
 
+from .auto_workers import WorkersFailed, run_supervised
 from .adapter_retry import (
     AdapterError, AdapterRequestError, RequestRejected, TransportError,
     TransportExhausted, retry_transport,
@@ -424,13 +424,13 @@ class AutoRunner:
         if workers == 1:
             self._worker(run_id=run_id, until_empty=until_empty)
             return
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [
-                pool.submit(self._worker, run_id=run_id, until_empty=until_empty)
-                for _ in range(workers)
-            ]
-            for future in futures:
-                future.result()
+        try:
+            run_supervised(
+                workers,
+                lambda: self._worker(run_id=run_id, until_empty=until_empty),
+            )
+        except WorkersFailed as error:
+            raise AdapterError(str(error)) from error
 
     def _worker(self, *, run_id: str | None, until_empty: bool) -> None:
         adapter = self.adapter_factory(self.model)
