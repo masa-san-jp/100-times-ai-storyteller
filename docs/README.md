@@ -30,7 +30,7 @@
 | ディレクトリ構成・manifest・run とキャッシュの配置・書き込み規則 | [spec/data-layout.md](spec/data-layout.md) |
 | CLI のコマンド・引数・終了コード | [spec/cli.md](spec/cli.md) |
 | 入力（ナラティブ13項目・自由入力）と個人情報の検出規則 | [spec/input.md](spec/input.md) |
-| ナラティブの記入例（ユーザー向け。項目と規則は input.md に従う） | `guides/narrative.md`（P2-02 で作成） |
+| ナラティブの記入例（ユーザー向け。項目と規則は input.md に従う） | [guides/narrative.md](guides/narrative.md) |
 | 物語の規模（プリセット・軸・派生値） | [spec/scale.md](spec/scale.md) |
 | 物語生成ハーネス S0〜S9 と正本スキーマ | [spec/story-pipeline.md](spec/story-pipeline.md) |
 | 様式化ハーネス F0〜F4 と様式プロファイル | [spec/format-pipeline.md](spec/format-pipeline.md) |
