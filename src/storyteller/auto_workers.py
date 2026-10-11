@@ -59,8 +59,21 @@ def run_supervised(
         slot(0)
         _finish(finished, given_up)
         return
+    def thread_slot(index: int) -> None:
+        # BaseException (e.g. SystemExit) in a thread would otherwise vanish
+        # without being counted; record it as a failure and do not restart.
+        try:
+            slot(index)
+        except BaseException as error:  # noqa: BLE001
+            print(
+                f"警告: ワーカー {index + 1} が中断されました（{type(error).__name__}: {error}）",
+                file=sys.stderr,
+            )
+            with guard:
+                given_up.append(error)
+
     threads = [
-        threading.Thread(target=slot, args=(index,), name=f"st-auto-{index + 1}")
+        threading.Thread(target=thread_slot, args=(index,), name=f"st-auto-{index + 1}")
         for index in range(workers)
     ]
     for thread in threads:
@@ -71,7 +84,7 @@ def run_supervised(
 
 
 def _finish(finished: int, given_up: list[BaseException]) -> None:
-    if given_up and finished == 0:
+    if finished == 0 and given_up:
         raise WorkersFailed(f"すべてのワーカーが異常終了しました: {given_up[-1]}") from given_up[-1]
     if given_up:
         print(

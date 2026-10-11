@@ -201,3 +201,19 @@ def test_single_worker_is_also_restarted(tmp_path: Path) -> None:
         run_id=run_id, workers=1, until_empty=True
     )
     assert {t["state"] for t in harness.load_run(run_id)["tasks"].values()} == {"done"}
+
+
+def test_base_exception_in_every_thread_worker_is_a_failure() -> None:
+    def worker() -> None:
+        raise SystemExit(3)
+
+    with pytest.raises(WorkersFailed):
+        run_supervised(2, worker)
+
+
+def test_base_exception_propagates_for_single_worker() -> None:
+    def worker() -> None:
+        raise SystemExit(3)
+
+    with pytest.raises(SystemExit):
+        run_supervised(1, worker)
