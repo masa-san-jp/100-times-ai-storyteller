@@ -1,0 +1,41 @@
+id: F4.judge
+version: 1
+kind: llm
+element: judgement
+output: json
+inputs:
+  events:
+    label: 対象の出来事
+    from: F1.split
+    select: "parts[{slot}].events"
+    required: true
+  body:
+    label: 本文
+    from: F2.write
+    select: output
+    required: false
+  body_once:
+    label: 本文
+    from: F2.write_once
+    select: output
+    required: false
+  question:
+    label: 質問
+    from: F1.split
+    select: "questions[{beat}]"
+    required: true
+card:
+  role: 与えられた本文について、質問に yes か no で答える。
+  steps:
+    - 質問が、出来事と本文の内容に当てはまるかだけを判定する。
+    - 当てはまれば answer を yes、当てはまらなければ no にする。
+    - reason は判定の理由を1文で書く。
+    - 入力にないことを付け加えない。
+  output_example: '{"answer": "...", "reason": "..."}'
+validate:
+  schema: schemas/tasks/F4.judge.schema.json
+  checks:
+    - min_chars:
+        field: reason
+        n: 1
+max_input_chars: 14000
