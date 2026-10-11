@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .input_data import read_free_input
+from .narrative import read_narrative_input
 from .orchestrator import Orchestrator, TaskSpec
 from .scale import derive_scale
 from .seed import generated_seed
@@ -40,6 +41,66 @@ def create_free_run(
     """Validate free input, derive S0, and create the initial S1 DAG."""
 
     free_input = read_free_input(input_path)
+    return _create_story_run(
+        data_dir,
+        free_input.as_document(),
+        tuple(paragraph["id"] for paragraph in free_input.paragraphs),
+        input_type="free",
+        preset=preset,
+        axis_overrides=axis_overrides,
+        seed=seed,
+        parts=parts,
+        plot_type=plot_type,
+        repository_root=repository_root,
+    )
+
+
+def create_narrative_run(
+    data_dir: str | Path,
+    input_path: str | Path,
+    *,
+    preset: str,
+    axis_overrides: dict[str, str] | None,
+    seed: int | None,
+    parts: int | None,
+    plot_type: str | None,
+    repository_root: str | Path,
+) -> str:
+    """Validate a narrative, derive S0, and create the initial S1 DAG."""
+
+    narrative = read_narrative_input(input_path)
+    return _create_story_run(
+        data_dir,
+        narrative.as_document(),
+        narrative.nonempty_keys,
+        input_type="narrative",
+        preset=preset,
+        axis_overrides=axis_overrides,
+        seed=seed,
+        parts=parts,
+        plot_type=plot_type,
+        repository_root=repository_root,
+    )
+
+
+def _create_story_run(
+    data_dir: str | Path,
+    input_document: dict[str, Any],
+    source_ids: tuple[str, ...],
+    *,
+    input_type: str,
+    preset: str,
+    axis_overrides: dict[str, str] | None,
+    seed: int | None,
+    parts: int | None,
+    plot_type: str | None,
+    repository_root: str | Path,
+) -> str:
+    """Derive S0 from a normalized input and create the S1 DAG.
+
+    ``source_ids`` are the S1 units: paragraph ids (free) or item keys (narrative).
+    """
+
     resolved_seed = seed if seed is not None else generated_seed()
     scale = derive_scale(
         preset,
@@ -59,12 +120,12 @@ def create_free_run(
 
     task_specs = [
         TaskSpec(
-            task_id=f"S1.extract-{paragraph['id']}-{number}",
+            task_id=f"S1.extract-{source_id}-{number}",
             type="S1.extract",
-            deps=tuple(f"S1.extract-{paragraph['id']}-{earlier}" for earlier in range(1, number)),
-            index=(paragraph["id"], str(number)),
+            deps=tuple(f"S1.extract-{source_id}-{earlier}" for earlier in range(1, number)),
+            index=(source_id, str(number)),
         )
-        for paragraph in free_input.paragraphs
+        for source_id in source_ids
         for number in range(1, 6)
     ]
     s1_task_ids = tuple(spec.task_id for spec in task_specs)
@@ -85,8 +146,8 @@ def create_free_run(
     run_id = orchestrator.create_run(
         task_specs=task_specs,
         seed=resolved_seed,
-        input_data=free_input.as_document(),
-        input_type="free",
+        input_data=input_document,
+        input_type=input_type,
         plot_type=plot_type,
         scale=scale_value,
         table_snapshot={axis: 0 for axis in _element_axes(repository_root)},

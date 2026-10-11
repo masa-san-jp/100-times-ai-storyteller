@@ -316,14 +316,14 @@ class Orchestrator:
             if input_data is not None:
                 source_sha256 = _sha256_file(input_path)
                 if (
-                    input_type == "free"
+                    input_type in {"free", "narrative"}
                     and isinstance(input_data, Mapping)
                     and isinstance(input_data.get("source_sha256"), str)
                 ):
                     source_sha256 = input_data["source_sha256"]
-                if input_type == "free":
+                if input_type in {"free", "narrative"}:
                     input_record = {
-                        "kind": "free",
+                        "kind": input_type,
                         "source_sha256": source_sha256,
                         "plot_type": plot_type,
                     }

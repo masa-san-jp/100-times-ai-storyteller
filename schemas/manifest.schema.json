@@ -114,7 +114,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "const": "free"
+              "enum": ["free", "narrative"]
             },
             "source_sha256": {
               "$ref": "#/$defs/sha256"
