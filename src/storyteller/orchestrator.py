@@ -30,6 +30,7 @@ from .cards import (
 from .cache import cache_key, lookup_cache, save_cache
 from .task_outputs import read_task_output
 from .failure_reports import write_failure_reports
+from .repair import generate_repair_card, latest_repair_source
 from .task_ranges import preflight_range, fixed_range_value, fixed_choice_value
 from .story_quality import join_continuation
 from .glossary import build_glossary, registration_outputs, related_glossary, registered_names
@@ -271,6 +272,7 @@ class Orchestrator:
         table_snapshot: Mapping[str, Any] | None = None,
         run_id: str | None = None,
         harness_kind: str | None = None,
+        escalation: Sequence[str] | None = None,
     ) -> str:
         """Create and persist a run, returning its run ID.
 
@@ -298,6 +300,15 @@ class Orchestrator:
             raise ValueError(
                 "harness_kind must match the orchestrator's harness_kind"
             )
+
+        if escalation is not None and (
+            isinstance(escalation, (str, bytes))
+            or not all(
+                isinstance(item, str) and _EXECUTOR_ID.fullmatch(item)
+                for item in escalation
+            )
+        ):
+            raise ValueError("escalation must be a list of executor IDs")
 
         created_at = _timestamp(self._clock)
         resolved_run_id = run_id or _make_run_id(created_at, run_seed)
@@ -359,6 +370,8 @@ class Orchestrator:
                 "tasks": {},
                 "warnings": [],
             }
+            if escalation:
+                manifest["escalation"] = list(escalation)
             self._preflight_ranges(manifest, resolved_run_id, specs)
             for spec in specs:
                 record = _new_task_record(
@@ -583,7 +596,7 @@ class Orchestrator:
                             or changed
                         )
                         _refresh_blocked_tasks(manifest, now)
-                        task_id = _next_ready_llm_task(manifest)
+                        task_id = _next_ready_llm_task(manifest, resolved_executor_id)
                         if task_id is None:
                             if changed:
                                 _update_run_status(manifest)
@@ -658,7 +671,9 @@ class Orchestrator:
             cache_changed = self._complete_ready_cached_tasks(manifest, run_id)
             _refresh_blocked_tasks(manifest, now)
             task = _get_task(manifest, task_id)
-            if task["kind"] != "llm" or task["state"] != "ready":
+            if task["kind"] != "llm" or task["state"] != "ready" or not _executor_allowed(
+                task, resolved_executor_id
+            ):
                 if cache_changed:
                     _update_run_status(manifest)
                     _touch_manifest(manifest, now)
@@ -1060,9 +1075,26 @@ class Orchestrator:
             task_definition = self.task_definitions[task["type"]]
             max_attempts = int(task_definition.get("max_attempts", 5))
             exhausted = task["tries"] >= max_attempts
-            on_exhausted = task_definition.get("on_exhausted", "fail")
+            # task-model §6.3, §6.7: the default is to record and go on.
+            on_exhausted = task_definition.get("on_exhausted", "skip")
+            escalate_to = (
+                _next_escalation(manifest, task, claim["executor_id"])
+                if exhausted and not fatal
+                else None
+            )
+            if escalate_to is not None:
+                # Same card again, by the next executor, with fresh tries.
+                task["tries"] = 0
+                task["executor"] = escalate_to
+                reason = f"{reason}（実行者を {escalate_to} に格上げ）"
+                task["error"] = reason
+                manifest["warnings"].append(
+                    f"{task_id}: 試行の上限に達したため実行者を {escalate_to} に格上げ"
+                )
             if fatal:
                 next_state = "failed"
+            elif escalate_to is not None:
+                next_state = "ready"
             elif exhausted and on_exhausted == "skip":
                 next_state = "skipped"
             elif exhausted:
@@ -1082,6 +1114,13 @@ class Orchestrator:
                     f"{task_id}: 試行の上限に達したため省略: {reason}"
                 )
                 _refresh_blocked_tasks(manifest, at)
+            # §6.7 step 1: the next attempt rewrites this output when the
+            # reasons are all of a kind that rewriting clears.
+            attempt_record["repairable"] = bool(
+                getattr(validation, "repairable", False)
+                and next_state == "ready"
+                and escalate_to is None
+            )
             atomic_write_json(
                 self.task_dir(run_id, task_id)
                 / "attempts"
@@ -1471,6 +1510,18 @@ class Orchestrator:
         retry_reason = task.get("error")
         if not isinstance(retry_reason, str):
             retry_reason = None
+        repair = latest_repair_source(self.task_dir(run_id, task_id), task)
+        if repair is not None:
+            return (
+                generate_repair_card(
+                    definition,
+                    ticket,
+                    original_output=repair["output"],
+                    reason=str(repair.get("reason", retry_reason or "")),
+                    inputs=card_inputs,
+                ),
+                card_inputs,
+            )
         continuation_tail = None
         extend_to_min = False
         if int(task["continuation_step"]) > 0 and (
@@ -1776,12 +1827,21 @@ class Orchestrator:
                         glossary, assignment, base_inputs, task["index"]
                     ),
                 }
+            undecided = _undecided_slots(manifest, task, definition)
             inputs = resolve_inputs(
-                definition,
+                {**definition, "inputs": {
+                    name: slot for name, slot in definition.get("inputs", {}).items()
+                    if name not in undecided
+                }} if undecided else definition,
                 source_outputs,
                 run_input,
                 index=task["index"],
             )
+            if undecided:
+                inputs = {
+                    name: UNDECIDED if name in undecided else inputs[name]
+                    for name in definition["inputs"] if name in undecided or name in inputs
+                }
         except (KeyError, SelectorError, TypeError) as error:
             raise TaskCardError(f"入力の生成に失敗しました: {error}") from error
         from .world_facts import specialize_fact_definition
@@ -2973,12 +3033,62 @@ def _task_depths(manifest: Mapping[str, Any]) -> dict[str, int]:
     return memo
 
 
-def _next_ready_llm_task(manifest: Mapping[str, Any]) -> str | None:
+def _next_escalation(
+    manifest: Mapping[str, Any], task: Mapping[str, Any], current: str
+) -> str | None:
+    """The executor after *current* in the manifest's ``escalation`` list (§6.7).
+
+    The current executor is the one the task was raised to, or else the one
+    whose attempt just failed.  An executor that is not in the list is below
+    its first entry.
+    """
+    chain = manifest.get("escalation") or []
+    current = task.get("executor") or current
+    position = chain.index(current) + 1 if current in chain else 0
+    return chain[position] if position < len(chain) else None
+
+
+UNDECIDED: Final = "未定"
+
+
+def _undecided_slots(
+    manifest: Mapping[str, Any], task: Mapping[str, Any], definition: Mapping[str, Any]
+) -> set[str]:
+    """Slots whose source tasks were all skipped are shown as 未定 (§6.7)."""
+    slots = definition.get("inputs", {})
+    if not isinstance(slots, Mapping):
+        return set()
+    result: set[str] = set()
+    for name, slot in slots.items():
+        source = slot.get("from") if isinstance(slot, Mapping) else None
+        if not isinstance(source, str) or source == "input":
+            continue
+        states = [
+            manifest["tasks"][dependency]["state"]
+            for dependency in task["deps"]
+            if manifest["tasks"][dependency]["type"] == source
+        ]
+        if states and "skipped" in states and "done" not in states:
+            result.add(name)
+    return result
+
+
+def _executor_allowed(task: Mapping[str, Any], executor_id: str | None) -> bool:
+    """A task raised to a named executor (§6.7) is claimed only by that executor."""
+    required = task.get("executor")
+    return required is None or executor_id is None or required == executor_id
+
+
+def _next_ready_llm_task(
+    manifest: Mapping[str, Any], executor_id: str | None = None
+) -> str | None:
     depths = _task_depths(manifest)
     candidates = [
         task_id
         for task_id, task in manifest["tasks"].items()
-        if task["kind"] == "llm" and task["state"] == "ready"
+        if task["kind"] == "llm"
+        and task["state"] == "ready"
+        and _executor_allowed(task, executor_id)
     ]
     if not candidates:
         return None

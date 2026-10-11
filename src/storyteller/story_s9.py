@@ -45,6 +45,8 @@ _CHARACTER_FIELDS: tuple[tuple[str, str], ...] = (
     ("catchphrase", "決め台詞"),
 )
 
+UNDECIDED = "（未定）"
+
 # manifest.warnings に書く資料名（story-pipeline.md §8 の「資料」列、ADR-0007）。
 _VOLUME_LABELS: dict[str, str] = {"characters": "人物", "world": "世界", "story": "物語"}
 
@@ -73,7 +75,7 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
     _validate_references(story, context.run_input, outputs, assignment)
 
     details = _collect_event_details(outputs)
-    story_markdown = render_story_markdown(story, details)
+    story_markdown = render_story_markdown(story, details, generation_record(manifest))
     glossary = build_glossary(outputs)
     characters_markdown = render_characters_markdown(story, outputs, glossary)
     world_markdown = render_world_markdown(story)
@@ -211,6 +213,9 @@ def _assemble_cast(person: Any, outputs: Mapping[str, Any]) -> dict[str, Any]:
     fields: dict[str, Any] = {}
     source_ids: list[str] = []
     for field in _SINGLE_CHARACTER_FIELDS:
+        if field != "name" and f"S5.{field}-{person_id}" not in outputs:
+            fields[field] = UNDECIDED  # the task was skipped (task-model §6.7)
+            continue
         output = _mapping_output(outputs, f"S5.{field}-{person_id}")
         value = output.get(field)
         if not isinstance(value, str) or not value:
@@ -223,8 +228,8 @@ def _assemble_cast(person: Any, outputs: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(f"S5.name の reading が不正です: {person_id}")
     _extend_ids(source_ids, name_output.get("sources"))
     backstory = _collect_indexed_field(
-        outputs, _BACKSTORY_TASK, person_id, "backstory", source_ids, require_at_least_one=True
-    )
+        outputs, _BACKSTORY_TASK, person_id, "backstory", source_ids, require_at_least_one=False
+    ) or [UNDECIDED]
     relationship = _collect_indexed_field(
         outputs, _RELATIONSHIP_TASK, person_id, "relationship", source_ids, require_at_least_one=False
     )
@@ -310,8 +315,6 @@ def _assemble_world(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -
         )
         source_ids: list[str] = []
         if section.get("kind") == "single":
-            if not raw_outputs:
-                raise ValueError(f"S4 の単一セクション出力が不正です: {section_id}")
             facet_bodies: list[str] = []
             for task_id, output in raw_outputs:
                 body = output.get("body")
@@ -328,7 +331,7 @@ def _assemble_world(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -
                         )
                         continue
                 facet_bodies.append(body)
-            sections.append({"id": section_id, "name": section["name"], "kind": "single", "body": "\n\n".join(facet_bodies), "items": [], "sources": source_ids})
+            sections.append({"id": section_id, "name": section["name"], "kind": "single", "body": "\n\n".join(facet_bodies) or UNDECIDED, "items": [], "sources": source_ids})
         else:
             items: list[dict[str, Any]] = []
             for _, output in raw_outputs:
@@ -339,8 +342,7 @@ def _assemble_world(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -
                 _extend_ids(item_sources, output.get("sources"))
                 _extend_ids(source_ids, item_sources)
                 items.append({"name": name, "body": body, "sources": item_sources})
-            if not items:
-                raise ValueError(f"S4 の一覧出力がありません: {section_id}")
+            items = items or [{"name": UNDECIDED, "body": UNDECIDED, "sources": []}]
             sections.append({"id": section_id, "name": section["name"], "kind": "list", "body": None, "items": items, "sources": source_ids})
     required_world = {key: deepcopy(world.get(key)) for key in ("place", "era", "object", "theme")}
     required_world["sections"] = sections
@@ -509,7 +511,21 @@ def _validate_references(
                 raise ValueError(f"存在しない世界項目 sources を参照しています: {section['id']}")
 
 
-def render_story_markdown(story: Mapping[str, Any], details: Mapping[str, str] | None = None) -> str:
+def generation_record(manifest: Mapping[str, Any]) -> list[str]:
+    """Lines for the 生成の記録: tasks skipped after their attempts ran out."""
+    skipped = [
+        f"- {task_id}：{task['error']}"
+        for task_id, task in sorted(manifest.get("tasks", {}).items())
+        if task.get("state") == "skipped" and task.get("error")
+    ]
+    return [f"- 省略したタスク：{len(skipped)}件", *skipped]
+
+
+def render_story_markdown(
+    story: Mapping[str, Any],
+    details: Mapping[str, str] | None = None,
+    record: Sequence[str] | None = None,
+) -> str:
     """Render story.md: event summaries, each followed by its scene detail.
 
     ``details`` maps an event ID to its S7.detail text (already joined across
@@ -541,6 +557,8 @@ def render_story_markdown(story: Mapping[str, Any], details: Mapping[str, str] |
         if detail:
             lines.extend(["", detail])
         lines.append("")
+    if record is not None:
+        lines.extend(["## 生成の記録", "", *record, ""])
     return "\n".join(lines).rstrip("\n") + "\n"
 
 

@@ -78,6 +78,9 @@ class ValidationResult:
     value: Any
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    # True when every error can be cleared by rewriting the output (length,
+    # sentence ending, element spelling); task-model §6.7 step 1.
+    repairable: bool = False
 
     @property
     def passed(self) -> bool:
@@ -98,6 +101,7 @@ _PROPER_NOUN_PATTERNS = (
         r"(?:王国|帝国|教団|国|町|村|市|島|山|川|会|社|家|様|氏)"
     ),
 )
+_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete"})
 _COMPLETE_ENDINGS = frozenset("。．.！!？?」』）)】…")
 _DEFAULT_HARNESS_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA_CACHE: dict[
@@ -159,6 +163,7 @@ def validate_output(
 
     errors: list[str] = []
     warnings: list[str] = []
+    unrepairable = False
     schema_ref = validation.get("schema")
     if schema_ref is not None:
         if not isinstance(schema_ref, str) or not schema_ref:
@@ -169,6 +174,7 @@ def validate_output(
             validate_document(value, schema_path)
         except (YamlValidationError, OSError) as error:
             errors.append(f"schema: {error}")
+            unrepairable = True
 
     checks = validation.get("checks", [])
 
@@ -220,8 +226,12 @@ def validate_output(
             raise
         errors.extend(check_errors)
         warnings.extend(check_warnings)
+        if check_errors and name not in _REPAIRABLE_CHECKS:
+            unrepairable = True
 
-    return ValidationResult(value, tuple(errors), tuple(warnings))
+    return ValidationResult(
+        value, tuple(errors), tuple(warnings), repairable=bool(errors) and not unrepairable
+    )
 
 
 # The longer name is useful at orchestration call sites and keeps the public

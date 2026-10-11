@@ -321,7 +321,7 @@ def test_retry_survives_restart_and_preserves_accepted_age(tmp_path):
     assert harness.load_run(run_id)["status"] == "active"
     harness = create_story_orchestrator(tmp_path)
     claim = harness.claim_task(run_id, task_id, executor_id="test")
-    assert "前回の不合格理由" in claim["card"] and "値を1つだけ書く" in claim["card"]
+    assert "### 不合格の理由" in claim["card"] and "値を1つだけ書く" in claim["card"]
     assert harness.submit(claim["ticket"], "約１７０cm。").accepted
     assert read_task_output(harness.task_dir(run_id, task_id), "S5.fact") == "170"
     assert age_path.read_text(encoding="utf-8") == age_before

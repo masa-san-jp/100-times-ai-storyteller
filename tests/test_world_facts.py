@@ -367,7 +367,7 @@ def test_real_harness_retry_preserves_prior_fact_and_other_work_after_restart(tm
     claim = harness.claim_task(run_id, "S5.name-c1", executor_id="other")
     assert harness.submit(claim["ticket"], '{"name":"リオ","reading":"リオ"}').accepted
     claim = harness.claim_task(run_id, scalar_id, executor_id="test")
-    assert "前回の不合格理由" in claim["card"]
+    assert "### 不合格の理由" in claim["card"]  # task-model §6.7: a repair card
     assert harness.submit(claim["ticket"], "２００ m。").accepted
     assert read_task_output(harness.task_dir(run_id, scalar_id), "S4.fact") == "200"
     assert glossary_id(name_id, 0) in task_sources(harness.task_dir(run_id, scalar_id))

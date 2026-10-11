@@ -230,7 +230,7 @@ def test_s9_summary_resolves_multiple_names_and_keeps_detail_in_event_order(tmp_
     story_md = (context.run_dir / "story" / "story.md").read_text(encoding="utf-8")
     assert "- 誰が：カナ、リオ\n" in story_md
     assert "- 結果：道が開いた\n\n最初の場面。\n\n二番目の場面。\n\n## 2. 始まり" in story_md
-    assert story_md.endswith("次の出来事の場面。\n")
+    assert story_md.endswith("次の出来事の場面。\n\n## 生成の記録\n\n- 省略したタスク：0件\n")
 
 
 def test_s9_aggregates_volume_and_records_shortfall_warnings(tmp_path: Path) -> None:

@@ -1,0 +1,142 @@
+"""Repair cards: the first step of task-model §6.7 (ADR-0009).
+
+When a submission fails only for reasons that rewriting can clear (length,
+sentence ending, the spelling of a value or choice), the next attempt of the
+same task is a repair inference.  Its card carries just the original output,
+the reason, and the conditions to satisfy, and it asks for the same single
+element as the task's normal card.
+"""
+
+from __future__ import annotations
+
+import json
+import unicodedata
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+
+from .cards import TaskCardError, _render_value
+
+# The role line doubles as the marker that failure reports use to recognise a
+# repair card and hide its body.
+REPAIR_ROLE = "前回の出力を、元の内容を保ったまま、条件を満たすように書き直す。"
+REPAIR_STEP = "元の内容を保ったまま、条件を満たすように書き直す。"
+_MAX_ORIGINAL_CHARS = 6000
+
+
+def latest_repair_source(task_dir: Path, task: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return the latest attempt record when it asks for a repair, else ``None``."""
+    if not isinstance(task.get("error"), str) or int(task.get("continuation_step", 0)) > 0:
+        return None
+    attempts = task_dir / "attempts"
+    try:
+        numbers = sorted(int(path.stem) for path in attempts.glob("*.json") if path.stem.isdigit())
+        if not numbers:
+            return None
+        record = json.loads((attempts / f"{numbers[-1]}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if (
+        not isinstance(record, dict)
+        or record.get("repairable") is not True
+        or record.get("attempt") != task.get("attempt")
+        or record.get("output") in (None, "")
+    ):
+        return None
+    return record
+
+
+def repair_conditions(
+    definition: Mapping[str, Any], inputs: Mapping[str, Any]
+) -> list[str]:
+    """Describe what the rewritten output must satisfy, from the task definition."""
+    lines: list[str] = []
+    validation = definition.get("validate") or {}
+    for check in validation.get("checks", []) if isinstance(validation, Mapping) else []:
+        name, arguments = (
+            next(iter(check.items())) if isinstance(check, Mapping) and len(check) == 1
+            else (check, {})
+        )
+        if not isinstance(arguments, Mapping):
+            arguments = {}
+        where = f"（{arguments['field']}）" if "field" in arguments else ""
+        if name == "max_chars":
+            lines.append(f"{arguments.get('n')}字以内にする{where}。")
+        elif name == "min_chars":
+            lines.append(f"{arguments.get('n')}字以上にする{where}。")
+        elif name == "ends_complete":
+            lines.append(f"文末を「。」などで完結させる{where}。")
+    element = definition.get("element")
+    if element in {"number", "integer"}:
+        lines.append("値を1つだけ書く。単位・説明・範囲を書かない。")
+        bounds = inputs.get("bounds")
+        if isinstance(bounds, Mapping) and bounds:
+            lines.append(f"値の範囲：{json.dumps(dict(bounds), ensure_ascii=False)}")
+    elif element == "choice":
+        lines.append("入力の選択肢の ID だけを書く。説明を書かない。")
+    return lines or ["不合格の理由を解消する。"]
+
+
+def generate_repair_card(
+    definition: Mapping[str, Any],
+    ticket: str,
+    *,
+    original_output: Any,
+    reason: str,
+    inputs: Mapping[str, Any],
+) -> str:
+    """Render the repair card for one failed attempt."""
+    if not isinstance(ticket, str) or not ticket:
+        raise TaskCardError("ticket must be a non-empty string")
+    output = definition.get("output")
+    card = definition.get("card")
+    if output not in {"json", "text"} or not isinstance(card, Mapping):
+        raise TaskCardError("task definition is missing card output details")
+    original = (
+        original_output
+        if isinstance(original_output, str)
+        else json.dumps(original_output, ensure_ascii=False)
+    )
+    original = unicodedata.normalize("NFC", original)[:_MAX_ORIGINAL_CHARS]
+    reason = unicodedata.normalize("NFC", str(reason))
+    if len(reason) > 500:
+        reason = reason[:499] + "…"
+    lines = [
+        f"# タスク {ticket}", "", "## あなたの役割", REPAIR_ROLE, "", "## 入力",
+        "### 元の出力", original, "### 不合格の理由", reason, "### 満たすべき条件",
+        *(f"- {condition}" for condition in repair_conditions(definition, inputs)),
+    ]
+    if definition.get("element") == "choice" and "choices" in inputs:
+        lines.extend(["### 選択肢", _render_value(inputs["choices"])])
+    lines.extend(["", "## 手順", f"1. {REPAIR_STEP}",
+                  "作り方の指示は本文に書かず、指定された処理を行うためだけに使う。", "",
+                  "## 出力形式"])
+    if output == "json":
+        example = card.get("output_example")
+        if not isinstance(example, str) or not example:
+            raise TaskCardError("card.output_example must be a non-empty string")
+        lines.extend(["次のJSONだけを出力すること。前後に説明を書かないこと。", example])
+    else:
+        lines.append(
+            "値だけを書く。単位・説明を書かない。"
+            if definition.get("element") in {"number", "integer", "choice"}
+            else "本文だけを出力すること。前後に説明・見出し・注釈を書かないこと。"
+        )
+    lines.extend([
+        "", "## 守ること",
+        "- 元の出力にない内容を付け加えない。",
+        "- 出力形式以外の文章を書かない。",
+        "- 日本語で書く（ID・列挙値を除く）。",
+    ])
+    return "\n".join(lines)
+
+
+def is_repair_card(card: str) -> bool:
+    return f"## あなたの役割\n{REPAIR_ROLE}\n" in card
+
+
+def redact_repair_card(card: str) -> str:
+    """Hide the original output of a repair card in a failure report."""
+    start = card.index("## 入力\n") + len("## 入力\n")
+    end = card.index("\n\n## 手順", start)
+    return card[:start] + "[元の出力・理由・条件を伏せました]" + card[end:]
