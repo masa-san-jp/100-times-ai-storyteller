@@ -120,5 +120,42 @@ def test_st_new_narrative_prints_run_id_and_rejects_sparse_narrative(tmp_path: P
     assert (tmp_path / "home" / "runs" / ok.stdout.strip() / "input.json").is_file()
 
     bad = run(_write(tmp_path, {"author": "a"}))
-    assert bad.returncode != 0
+    assert bad.returncode == 1
     assert "空でない項目が3つ以上" in bad.stderr
+
+
+def test_narrative_run_reaches_s2_plan_with_distinct_sequential_material_ids(tmp_path: Path) -> None:
+    from storyteller.new_run import create_story_orchestrator
+
+    keys = ("author", "taboo", "desire")  # non-empty items; item order, not position among 13
+    path = _write(tmp_path, {
+        "author": "慎重で好奇心が強い", "taboo": "他人を欺くこと", "desire": "誰にも邪魔されない静けさ",
+    })
+    data_dir = tmp_path / "data"
+    run_id = create_narrative_run(
+        data_dir, path, preset="vignette", axis_overrides={}, seed=7,
+        parts=None, plot_type=None, repository_root=ROOT,
+    )
+    harness = create_story_orchestrator(data_dir)
+    words = ["朝焼け", "古い灯台", "遠い汽笛", "冷たい水面", "乾いた砂丘"]
+    for item, key in enumerate(keys):
+        for number in range(1, 6):
+            task_id = f"S1.extract-{key}-{number}"
+            claim = harness.claim_task(run_id, task_id, executor_id="dummy")
+            text = f"{words[number - 1]}にまつわる{'ABC'[item]}の感覚{number}"
+            assert harness.submit(claim["ticket"], json.dumps(
+                {"text": text, "kind": "image"}, ensure_ascii=False)).accepted
+            task_dir = harness.task_dir(run_id, task_id)
+            output = json.loads((task_dir / "output.json").read_text(encoding="utf-8"))
+            assert output["id"] == f"m{item * 5 + number:03d}"
+            inputs = json.loads((task_dir / "input.json").read_text(encoding="utf-8"))
+            assert len(inputs["previous_materials"]) == number - 1
+            assert inputs["paragraph"]["id"] == key
+    manifest = harness.advance(run_id)
+    assert manifest["tasks"]["S2.plan"]["state"] == "done"
+    ids = []
+    for key in keys:
+        for number in range(1, 6):
+            out = json.loads((harness.task_dir(run_id, f"S1.extract-{key}-{number}") / "output.json").read_text(encoding="utf-8"))
+            ids.append(out["id"])
+    assert ids == [f"m{n:03d}" for n in range(1, 16)]

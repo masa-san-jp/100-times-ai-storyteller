@@ -2,21 +2,49 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 
-def assign_material_id(task: Mapping[str, Any], value: Any) -> Any:
-    """Keep each material's ID stable across retries, skips and cache hits."""
+def assign_material_id(
+    task: Mapping[str, Any], value: Any, run_dir: str | Path | None = None
+) -> Any:
+    """Keep each material's ID stable across retries, skips and cache hits.
+
+    Free input: paragraph p<NNN> slot k -> m((NNN-1)*5+k). Narrative: the
+    position of the item among the non-empty items (input.md §2.2 order),
+    counted from 1, replaces NNN.
+    """
     if task.get("type") != "S1.extract" or not isinstance(value, Mapping):
         return value
     index = task.get("index", [])
-    if (len(index) != 2 or not re.fullmatch(r"p[0-9]{3}", index[0])
-            or index[1] not in {"1", "2", "3", "4", "5"}):
+    if len(index) != 2 or index[1] not in {"1", "2", "3", "4", "5"}:
         return value
-    number = (int(index[0][1:]) - 1) * 5 + int(index[1])
+    if re.fullmatch(r"p[0-9]{3}", index[0]):
+        position = int(index[0][1:])
+    else:
+        position = _narrative_position(index[0], run_dir)
+        if position is None:
+            return value
+    number = (position - 1) * 5 + int(index[1])
     return {**value, "id": f"m{number:03d}"}
+
+
+def _narrative_position(key: str, run_dir: str | Path | None) -> int | None:
+    if run_dir is None:
+        return None
+    try:
+        with (Path(run_dir) / "input.json").open("r", encoding="utf-8") as stream:
+            document = json.load(stream)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(document, Mapping) or document.get("kind") != "narrative":
+        return None
+    ids = [p.get("id") for p in document.get("paragraphs", []) if isinstance(p, Mapping)]
+    return ids.index(key) + 1 if key in ids else None
 
 
 def materials_from_outputs(outputs: Mapping[str, Any]) -> list[dict[str, str]]:

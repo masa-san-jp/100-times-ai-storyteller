@@ -996,7 +996,7 @@ class Orchestrator:
                 f"{task_id}: {warning}" for warning in warnings
             )
             if validation.passed:
-                stored_value = _postprocess_accepted_output(task, validation.value)
+                stored_value = _postprocess_accepted_output(task, validation.value, self.run_dir(run_id))
                 key = self._cache_key_for_task(
                     manifest,
                     task_id,
@@ -1881,7 +1881,7 @@ class Orchestrator:
                 if not hit:
                     changed = True
                     continue
-                output = _postprocess_accepted_output(task, output)
+                output = _postprocess_accepted_output(task, output, self.run_dir(run_id))
                 atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
                 _write_submitted_output(
                     self.task_dir(run_id, task_id),
@@ -2602,10 +2602,12 @@ def _write_submitted_output(
         raise OrchestrationError("task definition output must be json or text")
 
 
-def _postprocess_accepted_output(task: Mapping[str, Any], value: Any) -> Any:
+def _postprocess_accepted_output(
+    task: Mapping[str, Any], value: Any, run_dir: Path | None = None
+) -> Any:
     from .story_materials import assign_material_id
 
-    return assign_material_id(task, value)
+    return assign_material_id(task, value, run_dir)
 
 
 def _normalise_invalidation_requests(value: Any) -> list[tuple[str, str]]:
