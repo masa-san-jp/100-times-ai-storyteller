@@ -23,6 +23,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from .elements import (
     VALUE_ELEMENTS,
     choice_ids,
+    choice_names,
     clean_value,
     parse_element_value,
     resolve_range,
@@ -183,19 +184,23 @@ def validate_output(
         if not isinstance(unit, str):
             raise ValidationConfigurationError("カードの単位が文字列ではありません")
         try:
-            parse_element_value(
+            parsed = parse_element_value(
                 value, element, unit=unit,
                 choices=(
                     choice_ids(slot_values["choices"])
                     if "choices" in slot_values else input_source_ids(slot_values)
                 ),
+                names=choice_names(slot_values.get("choices")),
                 choice_max=task_definition.get("choice_max", 1), value_range=limits,
             )
-            value = clean_value(value, unit)
-            if element != "choice":
-                value = value.replace(",", "")
         except ValueError as error:
             errors.append(str(error))
+        else:
+            if element == "choice":
+                # The recorded value is the ID that was matched, not the form the executor wrote.
+                value = parsed if isinstance(parsed, str) else "\n".join(parsed)
+            else:
+                value = clean_value(value, unit).replace(",", "")
     value = _apply_ends_complete_fixes(value, checks, warnings)
     value = _apply_max_chars_fixes(value, checks, warnings)
     for check in checks:

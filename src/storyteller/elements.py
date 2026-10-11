@@ -15,6 +15,7 @@ JSON_FIELDS = {
     "judgement": {"answer", "reason"},
 }
 VALUE_ELEMENTS = frozenset({"number", "integer", "choice"})
+CHOICE_FORMAT_ERROR = "choice: 値を1つだけ書く（choice_max が2以上なら上限までの ID）。選択肢に従ってください"
 
 
 def clean_value(raw: str, unit: str = "") -> str:
@@ -29,16 +30,12 @@ def clean_value(raw: str, unit: str = "") -> str:
 def parse_element_value(
     raw: str, element: str, *, unit: str = "", choices: Sequence[str] = (),
     choice_max: int = 1, value_range: Mapping[str, int | float] | None = None,
+    names: Mapping[str, str] | None = None,
 ) -> int | float | str | list[str]:
     """Parse a scalar or ID set; reject prose, nonfinite and out-of-range values."""
     text = clean_value(raw, unit)
     if element == "choice":
-        selected = text.split()
-        if (not selected or len(selected) > choice_max
-                or len(set(selected)) != len(selected)
-                or not set(selected).issubset(choices)):
-            raise ValueError("choice: 値を1つだけ書く（choice_max が2以上なら上限までの ID）。選択肢に従ってください")
-        return selected[0] if choice_max == 1 else selected
+        return _parse_choice(text, choices, names or {}, choice_max)
     text = text.replace(",", "")
     if element == "integer":
         if not re.fullmatch(r"[+-]?[0-9]+", text):
@@ -58,6 +55,34 @@ def parse_element_value(
     return value
 
 
+def _parse_choice(
+    text: str, choices: Sequence[str], names: Mapping[str, str], choice_max: int,
+) -> str | list[str]:
+    """Resolve the written choice (or choices) to IDs, as task-model §2.5 defines."""
+    tokens = [text] if choice_max == 1 else text.split()
+    if not text or len(tokens) > choice_max:
+        raise ValueError(CHOICE_FORMAT_ERROR)
+    selected = [_choice_id(token, choices, names) for token in tokens]
+    if None in selected or len(set(selected)) != len(selected):
+        raise ValueError(CHOICE_FORMAT_ERROR)
+    return selected[0] if choice_max == 1 else selected
+
+
+def _choice_id(token: str, choices: Sequence[str], names: Mapping[str, str]) -> str | None:
+    """Return the offered ID that a token names: an ID, a bracketed ID, or a unique option name."""
+    bracketed = token[1:-1].strip() if token.startswith("[") and token.endswith("]") else None
+    for identifier in (token, bracketed):
+        if identifier in choices:
+            return identifier
+    matches = {
+        identifier for identifier in choices
+        if identifier in names and unicodedata.normalize("NFKC", names[identifier]).strip() == token
+    }
+    if len(matches) > 1:
+        raise ValueError(f"choice: 名前「{token}」が複数の選択肢に一致します。ID を書いてください")
+    return next(iter(matches), None)
+
+
 def choice_ids(value: Any) -> list[str]:
     """Read supplied ID choices, including the explicit none option."""
     if isinstance(value, str):
@@ -69,6 +94,18 @@ def choice_ids(value: Any) -> list[str]:
     if isinstance(value, list):
         return [identifier for item in value for identifier in choice_ids(item)]
     return []
+
+
+def choice_names(value: Any) -> dict[str, str]:
+    """Map each supplied choice ID to its name, for the choices that show one."""
+    if isinstance(value, Mapping):
+        if isinstance(value.get("id"), str):
+            name = value.get("name")
+            return {value["id"]: name} if isinstance(name, str) else {}
+        return {key: name for item in value.values() for key, name in choice_names(item).items()}
+    if isinstance(value, list):
+        return {key: name for item in value for key, name in choice_names(item).items()}
+    return {}
 
 
 def resolve_range(
