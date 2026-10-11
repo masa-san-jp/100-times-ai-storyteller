@@ -14,7 +14,7 @@ def _table(data_dir: Path, axis: str) -> list[dict[str, str]]:
     return json.loads(path.read_text(encoding="utf-8"))["items"] if path.exists() else []
 
 
-def _second_run(tmp_path: Path, harness, seed: int = 123) -> str:
+def _second_run(tmp_path: Path, seed: int = 1) -> str:
     return create_free_run(tmp_path / "data", tmp_path / "free.md", preset="vignette",
                            axis_overrides={}, seed=seed, parts=None, plot_type=None,
                            repository_root=ROOT)
@@ -40,9 +40,12 @@ def test_second_run_gets_s1_and_s2_from_cache_and_does_not_append(tmp_path: Path
     data_dir = tmp_path / "data"
     before = {axis: _table(data_dir, axis) for axis in axis_keys()}
 
-    second = _second_run(tmp_path, harness)
+    second = _second_run(tmp_path)  # different seed: only sharing can explain cache hits
     harness.advance(second)
     manifest = harness.load_run(second)
+    assert manifest["seed"] != harness.load_run(run_id)["seed"]
+    assert (manifest["scale"]["derived"]["pool_need"]
+            == harness.load_run(run_id)["scale"]["derived"]["pool_need"])
     shared = [task for task in manifest["tasks"].values()
               if task["type"].startswith(("S1.extract", "S2.expand", "S2.counter"))]
     assert shared
@@ -74,6 +77,6 @@ def test_existing_run_assignment_is_reproduced_after_more_rows_are_appended(tmp_
     assert _table_pools(snapshot, axes, data_dir, ROOT) == before
 
     # A run created after the append records the larger snapshot.
-    later = _second_run(tmp_path, harness)
+    later = _second_run(tmp_path)
     harness.advance(later)
     assert harness.load_run(later)["table_snapshot"] == {axis: 2 for axis in axes}
