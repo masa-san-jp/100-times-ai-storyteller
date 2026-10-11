@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/narrative.schema.json",
+  "title": "Narrative",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["author", "missing", "status", "memories", "mission", "success", "loss", "taboo", "inhibit", "daily", "change", "acceptance", "desire"],
+  "properties": {
+    "author": {"$ref": "#/$defs/item"},
+    "missing": {"$ref": "#/$defs/item"},
+    "status": {"$ref": "#/$defs/item"},
+    "memories": {"$ref": "#/$defs/item"},
+    "mission": {"$ref": "#/$defs/item"},
+    "success": {"$ref": "#/$defs/item"},
+    "loss": {"$ref": "#/$defs/item"},
+    "taboo": {"$ref": "#/$defs/item"},
+    "inhibit": {"$ref": "#/$defs/item"},
+    "daily": {"$ref": "#/$defs/item"},
+    "change": {"$ref": "#/$defs/item"},
+    "acceptance": {"$ref": "#/$defs/item"},
+    "desire": {"$ref": "#/$defs/item"}
+  },
+  "$defs": {
+    "item": {"type": "string", "maxLength": 300}
+  }
+}

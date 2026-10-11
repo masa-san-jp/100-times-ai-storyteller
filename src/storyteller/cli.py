@@ -14,6 +14,7 @@ from typing import Any
 from .adapter import register_auto_command
 from .dev.dummy import create_dummy_orchestrator
 from .input_data import PersonalInformationError
+from .narrative import create_narrative_run
 from .new_run import create_free_run, create_story_orchestrator
 from .manifest import load_manifest
 from .orchestrator import (
@@ -445,8 +446,6 @@ def _new_dummy(args: argparse.Namespace) -> int:
 
 
 def _new(args: argparse.Namespace) -> int:
-    if args.narrative is not None:
-        raise CliArgumentError("P1-02 では --free のみ対応しています")
     if args.scale not in {"vignette", "short"}:
         raise CliArgumentError("この規模プリセットは Phase 2 で対応します")
     if args.count not in {None, 1}:
@@ -460,9 +459,10 @@ def _new(args: argparse.Namespace) -> int:
             raise CliArgumentError("--axis は異なる NAME=VALUE を指定してください")
         overrides[name] = value
     repository_root = Path(__file__).resolve().parents[2]
-    run_id = create_free_run(
+    create = create_free_run if args.free is not None else create_narrative_run
+    run_id = create(
         _data_dir(),
-        args.free,
+        args.free if args.free is not None else args.narrative,
         preset=args.scale,
         axis_overrides=overrides,
         seed=args.seed,
