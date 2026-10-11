@@ -88,7 +88,7 @@ def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
     status_parser = subparsers.add_parser("status", help="show run status")
     status_scope = status_parser.add_mutually_exclusive_group()
     status_scope.add_argument("--run", dest="run_id")
-    # --batch is intentionally not registered until Phase 2.
+    status_scope.add_argument("--batch", dest="batch_id")
     status_parser.add_argument("--json", action="store_true", dest="as_json")
 
     retry_parser = subparsers.add_parser("retry", help="retry one failed task")
@@ -341,6 +341,15 @@ def _submit(args: argparse.Namespace) -> int:
 
 def _status(args: argparse.Namespace) -> int:
     data_dir = _data_dir()
+    if args.batch_id is not None:
+        from .batch_status import batch_status, print_batch_status
+
+        payload = batch_status(data_dir, args.batch_id)
+        if args.as_json:
+            _print_json(payload)
+        else:
+            print_batch_status(payload)
+        return EXIT_OK
     if args.run_id is not None:
         payload = _run_status(data_dir, args.run_id)
     else:
