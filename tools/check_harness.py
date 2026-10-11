@@ -33,6 +33,7 @@ def check_harness(root: Path = ROOT) -> list[str]:
     errors = []
     definition_schema = root / "schemas/task-definition.schema.json"
     harnesses = [(root, root / "harness/story/tasks"),
+                 (root, root / "harness/format/tasks"),
                  (root / "src/storyteller/dev/dummy", root / "src/storyteller/dev/dummy/tasks")]
     for schema_root, directory in harnesses:
         for path in sorted(directory.glob("*.yaml")):

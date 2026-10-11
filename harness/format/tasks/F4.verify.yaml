@@ -1,0 +1,10 @@
+id: F4.verify
+version: 1
+kind: code
+handler: format_f4_verify
+inputs:
+  plan:
+    label: 単位の割付
+    from: F1.split
+    select: output
+    required: true

@@ -101,6 +101,12 @@ def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
     )
     dummy_parser.add_argument("--seed", type=int)
 
+    format_parser = subparsers.add_parser(
+        "format", help="start formatting a completed story run"
+    )
+    format_parser.add_argument("--run", dest="run_id", required=True)
+    format_parser.add_argument("--as", dest="format_name", required=True)
+
     register_cli_commands(subparsers)
     register_cache_commands(subparsers)
 
@@ -180,6 +186,8 @@ def _run_command(args: argparse.Namespace) -> int:
         return _resume(args)
     if args.command == "new":
         return _new(args)
+    if args.command == "format":
+        return _format(args)
     if args.command == "dev" and args.dev_command == "new-dummy":
         return _new_dummy(args)
     raise CliArgumentError("command is required")
@@ -443,6 +451,19 @@ def _new_dummy(args: argparse.Namespace) -> int:
         seed=args.seed,
     )
     print(run_id)
+    return EXIT_OK
+
+
+def _format(args: argparse.Namespace) -> int:
+    from .formatting import default_formats_root, start_formatting
+
+    data_dir = _data_dir()
+    start_formatting(
+        _orchestrator(data_dir, args.run_id),
+        args.run_id,
+        args.format_name,
+        formats_root=default_formats_root(),
+    )
     return EXIT_OK
 
 

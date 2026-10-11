@@ -13,6 +13,7 @@ from .story_s2 import story_s2_merge, story_s2_plan
 from .story_s3 import story_s3_assign
 from .story_s4 import story_s4_diversity
 from .character_facts import story_s5_fact_plan
+from .formatting import load_format_task_definitions, make_handlers as make_format_handlers
 from .story_s5 import story_s5_relationship_context
 from .story_s6 import story_s6_expand
 from .story_s7 import story_s7_assemble
@@ -101,14 +102,24 @@ def create_free_run(
     return run_id
 
 
-def create_story_orchestrator(data_dir: str | Path) -> Orchestrator:
-    """Return the story orchestrator used by the S0/S1 hand-off."""
+def create_story_orchestrator(
+    data_dir: str | Path, *, formats_root: str | Path | None = None
+) -> Orchestrator:
+    """Return the story orchestrator used by the S0/S1 hand-off.
+
+    It also knows the formatting tasks (``st format``), which read format
+    profiles from ``formats_root`` (default: the repository's ``formats/``).
+    """
 
     repository_root = Path(__file__).resolve().parents[2]
     return Orchestrator(
         data_dir,
-        _load_story_task_definitions(repository_root),
         {
+            **_load_story_task_definitions(repository_root),
+            **load_format_task_definitions(repository_root),
+        },
+        {
+            **make_format_handlers(repository_root, formats_root),
             "story_s2_plan": story_s2_plan,
             "story_s2_merge": story_s2_merge,
             "story_s3_assign": story_s3_assign,
