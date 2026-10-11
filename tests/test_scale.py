@@ -26,7 +26,15 @@ def test_all_presets_derive_events_inside_the_table_range(
     result = derive_scale(preset, seed=7, repository_root=ROOT)
 
     events = result.value["derived"]["events"]
-    assert expected_events[0] <= events <= expected_events[1]
+    if preset == "saga":
+        # scale.md §4 step 5: each part draws its own count.
+        assert all(
+            expected_events[0] <= n <= expected_events[1]
+            for n in result.value["derived"]["part_events"]
+        )
+        assert events == sum(result.value["derived"]["part_events"])
+    else:
+        assert expected_events[0] <= events <= expected_events[1]
     assert result.value["derived"]["world_sections"]
     assert set(result.value["derived"]["pool_need"]) == {
         "want", "ability", "duty", "taboo", "place", "era", "object",
