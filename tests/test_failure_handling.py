@@ -270,6 +270,7 @@ def test_dynamic_invalid_range_creates_no_added_task(tmp_path):
     ("およそ450メートル。", "number", "メートル", 450),
     ("おおよそ 4.5", "number", "", 4.5),
     ("約 g123abc。", "choice", "", "g123abc"),
+    ("[g123abc]。", "choice", "", "g123abc"),
 ])
 def test_parser_removes_only_specified_presentation(raw, element, unit, expected):
     assert parse_element_value(raw, element, unit=unit, choices=["g123abc"]) == expected

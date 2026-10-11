@@ -56,6 +56,26 @@ def test_choice_set_membership_and_maximum():
             parse_element_value(raw, "choice", choices=choices)
 
 
+def test_choice_accepts_bracketed_bare_and_named_ids():
+    choices = ["gc60ff6", "g456def"]
+    names = {"gc60ff6": "ラオボグ", "g456def": "ホクシ"}
+    for raw in ("gc60ff6", "[gc60ff6]", " [gc60ff6]。 ", "ラオボグ", "約 ラオボグ。"):
+        assert parse_element_value(raw, "choice", choices=choices, names=names) == "gc60ff6"
+    assert parse_element_value("[g456def] ラオボグ", "choice", choices=choices, names=names,
+                               choice_max=2) == ["g456def", "gc60ff6"]
+
+
+def test_choice_name_must_match_exactly_one_option():
+    choices = ["g1", "g2", "g3"]
+    names = {"g1": "カナ", "g2": "カナ", "g3": "リオ"}
+    with pytest.raises(ValueError, match="複数の選択肢"):
+        parse_element_value("カナ", "choice", choices=choices, names=names)
+    assert parse_element_value("[g1]", "choice", choices=choices, names=names) == "g1"
+    for raw in ("セト", "[g9]", "リオ カナ", "[g1] [g2]"):
+        with pytest.raises(ValueError, match="値を1つだけ書く"):
+            parse_element_value(raw, "choice", choices=choices, names=names)
+
+
 def test_value_validation_and_cards_share_the_element_contract():
     definition = {"id": "D1.value", "version": 1, "kind": "llm", "element": "integer",
                   "output": "text", "range": {"min": 1, "max": "{current_year}"},

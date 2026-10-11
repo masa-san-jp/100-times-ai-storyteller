@@ -12,6 +12,7 @@ from storyteller.adapter import AutoRunner
 from storyteller.cards import generate_task_card, prepare_task_inputs
 from storyteller.glossary import build_glossary, glossary_id, related_glossary
 from storyteller.tables import load_table
+from storyteller.task_ranges import fixed_choice_value
 from storyteller.validation import load_and_validate_yaml, validate_output, input_source_ids
 from storyteller.world_facts import (
     description_entries, fact_source_context,
@@ -49,6 +50,15 @@ def test_fact_uses_shared_parser_and_output_contract(shape, raw, expected):
     result = validate_output(_definition(), raw, _inputs(shape), harness_root=ROOT)
     assert result.passed, result.errors
     assert result.value == expected
+
+
+def test_world_choice_fact_shares_the_single_option_rule():
+    inputs = {**_inputs("choice"), "choices": [{"id": "g123456", "name": "カナ"}]}
+    definition = specialize_fact_definition(_definition(), inputs)
+    assert definition["element"] == "choice"
+    assert fixed_choice_value(definition, inputs) == "g123456"
+    result = validate_output(_definition(), "カナ", inputs, harness_root=ROOT)
+    assert result.passed and result.value == "g123456"
 
 
 def test_assembled_text_fact_reports_unregistered_names_as_warning():

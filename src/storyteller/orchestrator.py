@@ -30,7 +30,7 @@ from .cards import (
 from .cache import cache_key, lookup_cache, save_cache
 from .task_outputs import read_task_output
 from .failure_reports import write_failure_reports
-from .task_ranges import preflight_range, fixed_range_value
+from .task_ranges import preflight_range, fixed_range_value, fixed_choice_value
 from .story_quality import join_continuation
 from .glossary import build_glossary, registration_outputs, related_glossary, registered_names
 from .manifest import load_manifest, write_manifest
@@ -1719,68 +1719,82 @@ class Orchestrator:
         manifest: dict[str, Any],
         run_id: str,
     ) -> bool:
-        """Complete ready LLM tasks whose accepted output is already cached."""
+        """Complete ready LLM tasks whose value is fixed by code or already cached.
+
+        Completing a task can unblock the next one in a chain, so the scan
+        repeats until a pass completes nothing.  Otherwise a claim could reach
+        an executor for a value that code has already determined.
+        """
 
         changed = False
-        for task_id, task in manifest["tasks"].items():
-            if task["kind"] != "llm" or task["state"] != "ready":
-                continue
-            try:
-                context = self._build_context(manifest, run_id, task_id)
-                card_inputs = _prepare_card_inputs(
-                    self.task_definitions[task["type"]],
-                    context.inputs,
-                )
-                fixed = None
-                if context.definition.get("range"):
-                    limits = preflight_range(
-                        context.definition, {**manifest, **context.inputs},
-                        run_input=context.run_input, outputs=_source_outputs(
-                            manifest, task, context.definition, context.dependency_outputs
-                        ), index=task["index"],
+        completed = True
+        while completed:
+            completed = False
+            for task_id, task in manifest["tasks"].items():
+                if task["kind"] != "llm" or task["state"] != "ready":
+                    continue
+                try:
+                    context = self._build_context(manifest, run_id, task_id)
+                    card_inputs = _prepare_card_inputs(
+                        self.task_definitions[task["type"]],
+                        context.inputs,
                     )
-                    fixed = fixed_range_value(context.definition, limits)
-                if fixed is not None:
-                    atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
-                    _write_submitted_output(self.task_dir(run_id, task_id), context.definition, fixed)
-                    _set_task_state(manifest, task_id, "done", self._now(), reason="値の範囲が1つに確定")
-                    task["error"] = None
+                    fixed = None
+                    if context.definition.get("range"):
+                        limits = preflight_range(
+                            context.definition, {**manifest, **context.inputs},
+                            run_input=context.run_input, outputs=_source_outputs(
+                                manifest, task, context.definition, context.dependency_outputs
+                            ), index=task["index"],
+                        )
+                        fixed = fixed_range_value(context.definition, limits)
+                    elif context.definition.get("element") == "choice":
+                        fixed = fixed_choice_value(context.definition, context.inputs)
+                    if fixed is not None:
+                        atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
+                        _write_submitted_output(self.task_dir(run_id, task_id), context.definition, fixed)
+                        reason = ("選択肢が1つに確定" if context.definition.get("element") == "choice"
+                                  else "値の範囲が1つに確定")
+                        _set_task_state(manifest, task_id, "done", self._now(), reason=reason)
+                        task["error"] = None
+                        changed = completed = True
+                        continue
+                    key = self._cache_key_for_task(manifest, task_id, card_inputs)
+                except Exception as error:
+                    _fail_task(
+                        manifest,
+                        task_id,
+                        self._now(),
+                        _error_text(error),
+                        run_dir=self.run_dir(run_id),
+                    )
                     changed = True
                     continue
-                key = self._cache_key_for_task(manifest, task_id, card_inputs)
-            except Exception as error:
-                _fail_task(
+
+                task["cache_key"] = key
+                hit, output = lookup_cache(self.data_dir, key)
+                if not hit:
+                    changed = True
+                    continue
+                output = _postprocess_accepted_output(task, output)
+                atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
+                _write_submitted_output(
+                    self.task_dir(run_id, task_id),
+                    context.definition,
+                    output,
+                )
+                _set_task_state(
                     manifest,
                     task_id,
+                    "done",
                     self._now(),
-                    _error_text(error),
-                    run_dir=self.run_dir(run_id),
+                    reason="キャッシュの出力を再利用",
                 )
-                changed = True
-                continue
-
-            task["cache_key"] = key
-            hit, output = lookup_cache(self.data_dir, key)
-            if not hit:
-                changed = True
-                continue
-            output = _postprocess_accepted_output(task, output)
-            atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
-            _write_submitted_output(
-                self.task_dir(run_id, task_id),
-                context.definition,
-                output,
-            )
-            _set_task_state(
-                manifest,
-                task_id,
-                "done",
-                self._now(),
-                reason="キャッシュの出力を再利用",
-            )
-            task["error"] = None
-            _remove_partial_output(self.task_dir(run_id, task_id))
-            changed = True
+                task["error"] = None
+                _remove_partial_output(self.task_dir(run_id, task_id))
+                changed = completed = True
+            if completed:
+                _refresh_blocked_tasks(manifest, self._now())
         return changed
 
     def _cache_key_for_task(

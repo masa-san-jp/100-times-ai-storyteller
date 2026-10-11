@@ -1,11 +1,11 @@
-"""Resolve numeric bounds before an executor can receive a task."""
+"""Resolve numeric bounds and choice sets before an executor can receive a task."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
 
-from .elements import parse_element_value, resolve_range
+from .elements import choice_ids, parse_element_value, resolve_range
 from .selectors import resolve_inputs
 
 
@@ -46,3 +46,11 @@ def fixed_range_value(definition: Mapping[str, Any], limits: Mapping[str, Any]) 
     text = str(value)
     parse_element_value(text, definition["element"], value_range=limits)
     return text
+
+
+def fixed_choice_value(definition: Mapping[str, Any], inputs: Mapping[str, Any]) -> str | None:
+    """Return the only offered choice ID, so code records it without asking an executor."""
+    if definition.get("element") != "choice":
+        return None
+    identifiers = list(dict.fromkeys(choice_ids(inputs.get("choices", []))))
+    return identifiers[0] if len(identifiers) == 1 else None

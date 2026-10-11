@@ -16,6 +16,7 @@ from storyteller.glossary import glossary_id, build_glossary
 from storyteller.new_run import create_story_orchestrator
 from storyteller.orchestrator import TaskSpec
 from storyteller.tables import load_table
+from storyteller.task_ranges import fixed_choice_value
 from storyteller.validation import load_and_validate_yaml, validate_output, input_source_ids
 from storyteller.world_facts import specialize_fact_definition
 from tests.test_story_s3 import _run
@@ -78,12 +79,31 @@ def test_field_text_lengths(label, limit):
 
 def test_choices_validate_ids_shown_on_card():
     inputs = _inputs("choice", choices=[{"id": "g123456", "name": "カナ"}, {"id": "none", "name": "なし"}])
-    for value in ("g123456", "none"):
-        assert validate_output(_definition(), value, inputs, harness_root=ROOT).passed
-    for value in ("カナ", "g000000", "g123456 none"):
+    for value, recorded in [("g123456", "g123456"), ("[g123456]", "g123456"), ("カナ", "g123456"),
+                            ("none", "none"), ("[none]", "none"), ("なし", "none")]:
+        result = validate_output(_definition(), value, inputs, harness_root=ROOT)
+        assert result.passed and result.value == recorded
+    for value in ("g000000", "g123456 none", "カナ なし"):
         assert not validate_output(_definition(), value, inputs, harness_root=ROOT).passed
     card = generate_task_card(_definition(), "ticket", inputs)
     assert "値だけを書く" in card and "S5" not in card
+
+
+def test_same_name_for_two_offered_choices_is_rejected():
+    inputs = _inputs("choice", choices=[{"id": "g123456", "name": "カナ"}, {"id": "g654321", "name": "カナ"}])
+    result = validate_output(_definition(), "カナ", inputs, harness_root=ROOT)
+    assert not result.passed and "複数の選択肢" in result.errors[0]
+    assert validate_output(_definition(), "[g654321]", inputs, harness_root=ROOT).value == "g654321"
+
+
+@pytest.mark.parametrize("choices,expected", [
+    ([{"id": "gc60ff6", "name": "ラオボグ"}], "gc60ff6"),
+    ([{"id": "gc60ff6", "name": "ラオボグ"}, {"id": "none", "name": "なし"}], None),
+    ([], None),
+])
+def test_only_one_offered_choice_is_fixed_by_code(choices, expected):
+    definition = specialize_fact_definition(_definition(), _inputs("choice", choices=choices))
+    assert fixed_choice_value(definition, {"choices": choices}) == expected
 
 
 @pytest.mark.parametrize("count", [8, 160])
@@ -237,6 +257,28 @@ def test_no_location_falls_back_to_one_registered_name_then_choice(tmp_path):
         assert any(entry["name"] == member["name"] and entry["kind"] == "人物" for entry in glossary)
     card = json.loads((harness.task_dir(run_id, "S5.fact-c1-residence") / "input.json").read_text(encoding="utf-8"))
     assert card["shape"] == "choice" and card["choices"][0]["name"]
+
+
+def test_single_option_choices_are_recorded_by_code_without_a_claim(tmp_path, monkeypatch):
+    from storyteller.task_outputs import read_task_output
+    harness, run_id, _ = _harness(tmp_path)
+    claimed = []
+    claim_task = harness.claim_task
+
+    def recording_claim(run, task_id, **kwargs):
+        claimed.append(task_id)
+        return claim_task(run, task_id, **kwargs)
+
+    monkeypatch.setattr(harness, "claim_task", recording_claim)
+    _finish(harness, run_id)
+    place = glossary_id("S4.fact-place.location_name", 0)
+    expected = {"birthplace": place, "residence": place, "affiliation": "none"}
+    tasks = harness.load_run(run_id)["tasks"]
+    for key, value in expected.items():
+        task_id = f"S5.fact-c1-{key}"
+        assert tasks[task_id]["state"] == "done" and tasks[task_id]["tries"] == 0
+        assert read_task_output(harness.task_dir(run_id, task_id), "S5.fact") == value
+        assert task_id not in claimed
 
 
 def test_sheet_and_referenced_terms_survive_description_budget():
