@@ -24,6 +24,7 @@ from .orchestrator import (
     InvalidTransition,
     OrchestrationError,
 )
+from .table_edit import register_cli_commands as register_table_commands
 from .storage import DataDirectoryError, LockTimeoutError, resolve_data_dir
 from .workspace import register_cli_commands
 
@@ -103,6 +104,7 @@ def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
 
     register_cli_commands(subparsers)
     register_cache_commands(subparsers)
+    register_table_commands(subparsers)
 
     new_parser = subparsers.add_parser("new", help="create a story run")
     input_group = new_parser.add_mutually_exclusive_group(required=True)
