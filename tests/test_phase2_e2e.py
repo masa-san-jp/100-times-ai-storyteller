@@ -33,20 +33,26 @@ ROOT = Path(__file__).parents[1]
 PRESETS = ["dev", *yaml.safe_load((ROOT / "tables" / "scales.yaml").read_text(encoding="utf-8"))["presets"]]
 _PLOTS = load_table("plot_types", repository_root=ROOT)["types"]
 PLOT_TYPES = [p["id"] for p in _PLOTS]
-# Two plot types with the standard structure are completed by default. The
-# seven plot types with a dedicated template are completed in
-# tests/test_dedicated_plots.py; the others are created and checked here, and
-# STORYTELLER_E2E_HEAVY=1 completes all 21 (about 1 minute each at dev scale).
-COMPLETED_PLOTS = {p["id"] for p in _PLOTS if p["structure"] == "standard"}
-COMPLETED_PLOTS = set(sorted(COMPLETED_PLOTS, key=PLOT_TYPES.index)[:2])
 # Heavy scales are run with one plot type; every plot type runs at dev scale.
 FIXED_PLOT = PLOT_TYPES[0]
+# One plot type with the standard structure is completed by default (the dev
+# run of FIXED_PLOT, which is also the dev preset's run). The seven plot types
+# with a dedicated template are completed in tests/test_dedicated_plots.py, and
+# the batch test completes dev runs with code-chosen plot types; the others are
+# created and checked here, and STORYTELLER_E2E_HEAVY=1 completes all 21
+# (about 1 minute each at dev scale).
+COMPLETED_PLOTS = {FIXED_PLOT}
 # Completing the larger scales takes minutes (short) to hours (saga) even with
 # fake output, and implementation.md runs the volume minimum once per phase.
-# So by default only the small presets are completed; the rest are created and
-# checked, and STORYTELLER_E2E_HEAVY=1 completes every preset.
+# So by default only the small presets are completed (dev by the plot type
+# test above); the rest are created and checked, and STORYTELLER_E2E_HEAVY=1
+# completes every preset.
 HEAVY = os.environ.get("STORYTELLER_E2E_HEAVY") == "1"
-COMPLETED_PRESETS = {"dev", "vignette"}
+COMPLETED_PRESETS = {"vignette"}
+# Condition 1 asks for ten stories. A dev run takes about 40 seconds with fake
+# output, so by default the same checks run on a batch of three, and
+# STORYTELLER_E2E_HEAVY=1 runs the batch of ten.
+BATCH_COUNT = 10 if HEAVY else 3
 CANONICAL_FILES = ("story.json", "story.md", "characters.md", "world.md")
 
 
@@ -122,6 +128,8 @@ def test_every_scale_preset_produces_the_canonical_files(tmp_path: Path, preset:
     manifest = _manifest(data_dir, run_id)
     assert manifest["scale"]["preset"] == preset
     assert manifest["status"] == "active" and manifest["tasks"]
+    if preset == "dev" and not HEAVY:
+        pytest.skip("the same dev run is completed by test_every_plot_type_produces_the_canonical_files")
     if not HEAVY and preset not in COMPLETED_PRESETS:
         pytest.skip(f"completing {preset} is opt-in (STORYTELLER_E2E_HEAVY=1)")
     _drive(create_story_orchestrator(data_dir), data_dir, run_id)
@@ -144,10 +152,10 @@ def test_every_plot_type_produces_the_canonical_files(tmp_path: Path, plot_id: s
     assert story["threads"][0]["plot_type"] == plot_id
 
 
-def test_ten_stories_from_one_narrative_are_distinct_and_share_s1_s2(tmp_path: Path) -> None:
+def test_stories_from_one_narrative_are_distinct_and_share_s1_s2(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     narrative = _write_narrative(tmp_path / "narrative.json")
-    created = _cli(data_dir, "new", "--narrative", str(narrative), "--scale", "dev", "--count", "10", "--seed", "209")
+    created = _cli(data_dir, "new", "--narrative", str(narrative), "--scale", "dev", "--count", str(BATCH_COUNT), "--seed", "209")
     assert created.returncode == 0, created.stderr
     batch_id = created.stdout.strip()
     harness = create_story_orchestrator(data_dir)
@@ -166,14 +174,24 @@ def test_ten_stories_from_one_narrative_are_distinct_and_share_s1_s2(tmp_path: P
 
     batch = load_batch_manifest(data_dir, batch_id)
     assert not [r for r in batch["runs"] if r["outcome"] == "pending"]
-    # Condition 1: ten distinct canonical stories (duplicates are replenished).
+    # Condition 1: no story is judged a duplicate or near duplicate.
+    assert batch["duplicates"] == 0 and len(batch["runs"]) == BATCH_COUNT, batch["duplicates"]
     accepted = [r for r in batch["runs"] if r["outcome"] == "accepted"]
-    assert batch["completed"] == len(accepted) == 10, (batch["completed"], batch["duplicates"])
+    assert batch["completed"] == len(accepted) == BATCH_COUNT
     for entry in accepted:
         _assert_canonical(data_dir, entry["run_id"])
     # Condition 2: S1 and S2 are executed once; the other runs reuse the result.
     s1_s2 = {task_id: n for task_id, n in submitted.items() if task_id.startswith(("S1.", "S2."))}
-    assert s1_s2
+    # Every S1/S2 task answered by an executor in any run (the code tasks such
+    # as S2.plan are not submitted) is answered exactly once in the batch.
+    llm_s1_s2 = {
+        task_id
+        for entry in batch["runs"]
+        for task_id, task in _manifest(data_dir, entry["run_id"])["tasks"].items()
+        if task_id.startswith(("S1.", "S2.")) and task["kind"] == "llm"
+    }
+    assert any(t.startswith("S1.") for t in llm_s1_s2)
+    assert set(s1_s2) == llm_s1_s2
     assert set(s1_s2.values()) == {1}, {t: n for t, n in s1_s2.items() if n != 1}
 
 
