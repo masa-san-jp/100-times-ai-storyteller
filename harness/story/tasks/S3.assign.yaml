@@ -1,5 +1,5 @@
 id: S3.assign
-version: 2
+version: 3
 kind: code
 handler: story_s3_assign
 inputs:
