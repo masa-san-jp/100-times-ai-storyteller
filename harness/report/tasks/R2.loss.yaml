@@ -1,0 +1,38 @@
+id: R2.loss
+version: 1
+kind: llm
+element: text
+inputs:
+  desire:
+    label: 主人公の願望
+    from: R1.aggregate
+    select: "runs[{slot}].desire"
+    required: false
+    truncate: drop
+  adversary:
+    label: 敵対者の役割
+    from: R1.aggregate
+    select: "runs[{slot}].adversary_role"
+    required: false
+    truncate: drop
+  events:
+    label: 主筋の出来事（時系列。長い場合は中間を省いてある）
+    from: R1.aggregate
+    select: "runs[{slot}].events"
+    required: true
+output: text
+continuation: false
+card:
+  role: 与えられた物語の出来事の流れから、主人公が物語の中心で失うものを短く言い表す。
+  steps:
+    - 出来事の流れを読み、主人公が最も大きく失うもの、または手放すものを1つ選ぶ。
+    - 60字以内の短い言葉で書く。断定的な診断や評価を加えない。
+    - 入力にある出来事だけを根拠にする。
+validate:
+  checks:
+    - min_chars:
+        n: 1
+    - max_chars:
+        n: 60
+max_input_chars: 4000
+on_exhausted: skip

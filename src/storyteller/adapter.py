@@ -34,6 +34,7 @@ from .adapter_retry import (
 from .auto_workers import WorkersFailed, run_supervised
 from .manifest import load_manifest, write_manifest
 from .orchestrator import ClaimError, Orchestrator
+from .report_layout import report_manifest_paths
 from .storage import acquire_lock, atomic_write_json, manifest_lock
 from .validation import YamlValidationError, parse_json_object, validate_document
 
@@ -556,14 +557,17 @@ class AutoRunner:
 
     def _candidate_run_ids(self) -> list[str]:
         runs_dir = self.data_dir / "runs"
-        if not runs_dir.is_dir():
-            return []
+        manifest_paths = (
+            [entry / "manifest.json" for entry in runs_dir.iterdir() if entry.is_dir()]
+            if runs_dir.is_dir()
+            else []
+        )
+        # バッチの傾向分析（batches/<id>/report/）のタスクも対象にする。
+        manifest_paths += report_manifest_paths(self.data_dir)
         candidates: list[tuple[str, str]] = []
-        for entry in runs_dir.iterdir():
-            if not entry.is_dir():
-                continue
+        for manifest_path in manifest_paths:
             try:
-                manifest = load_manifest(entry / "manifest.json")
+                manifest = load_manifest(manifest_path)
             except (OSError, ValueError):
                 continue
             if manifest["status"] in {"active", "stalled"}:
