@@ -1,6 +1,6 @@
 """Reference-book format (``reference-book``): world sections and characters.
 
-format-pipeline.md section 4.3.  Unlike the event-based mappings, the units
+format-pipeline.md section 4.4.  Unlike the event-based mappings, the units
 of this format are the world and the cast of the canonical story, so F1 uses
 :func:`build_reference_plan` instead of the event mapping.  The result has the
 same shape as the common plan; the "events" of a part are the source entries
@@ -49,6 +49,8 @@ def _world_units(story: Mapping[str, Any]) -> list[dict[str, Any]]:
         for number, item in enumerate(section["items"], start=1):
             entries.append((f"section.{sid}.{number}", f"{item['name']}：{item['body']}"))
             names.append(item["name"])
+        if not entries:  # a section without body or items still gets its unit
+            entries.append((f"section.{sid}", section["name"]))
         units.append({
             "key": f"section.{sid}", "title": f"世界：{section['name']}",
             "entries": entries, "names": names,

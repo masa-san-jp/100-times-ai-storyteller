@@ -18,7 +18,7 @@
 
 ```yaml
 name: novel
-unit: chapter                    # 単位：chapter | scene | slide
+unit: chapter                    # 単位：chapter | scene | slide | section
 unit_mapping: structure          # 単位への割付方法（§4）
 chars_per_event: [1500, 3000]    # 出来事1件あたりの分量（下限・上限）
 max_chars_per_task: 6000         # F2 の1タスクで書かせる分量の上限
@@ -67,7 +67,7 @@ checks:
 | 映画シナリオ | `screenplay` | シーン | `scene` | Fountain | P3-03 |
 | プレゼンテーション | `slides` | スライド | `per_event` | Marp Markdown | P3-04 |
 | 画像プロンプト | `visual-prompts` | 人物・場面 | P5-01 で定義 | Markdown | P5-01 |
-| 資料集 | `reference-book` | 世界セクション・人物 | P5-02 で定義 | Markdown | P5-02 |
+| 資料集 | `reference-book` | 世界セクション・人物 | `world_cast` | Markdown | P5-02 |
 
 ### 4.1 `unit_mapping` の定義
 
@@ -76,6 +76,7 @@ checks:
 | `structure` | 主筋の構造テンプレートの段階を章にする。副筋のスロットは、時系列でその直前にある主筋のスロットと同じ章に入れる（最初の主筋のスロットより前にある場合は第1章に入れる）。大河では部ごとに章を数え直し、部の見出しをテンプレートで加える。`tables/structures.yaml` に章への割付がある場合はそれに従う（heros-journey-12 には、heros-journey の12段階→10章の割付を P3-02 で加える） |
 | `scene` | 連続する出来事のうち、`where` が同じで、`when` が連続しているものを1シーンにまとめる。`where` が変わる、または `when` が「翌日」「数年後」など時間の飛躍を示す場合に、新しいシーンにする。時間の飛躍の判定は、`tables/time_jumps.yaml` の語句との照合で行う |
 | `per_event` | 出来事1件を1単位にする |
+| `world_cast` | 出来事ではなく、世界の概説・世界セクション・人物を1単位にする（§4.4） |
 
 ### 4.2 プレゼンテーション様式の目的
 

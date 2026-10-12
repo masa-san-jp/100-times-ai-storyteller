@@ -95,3 +95,12 @@ def test_reference_book_passes_f0_to_f4_and_includes_everything(tmp_path: Path) 
             assert item["name"] in text
     for person in story["cast"]:
         assert f"## 人物：{person['name']}" in text
+
+
+def test_empty_section_still_gets_a_unit(tmp_path: Path) -> None:
+    data_dir, run_id = _completed_story_run(tmp_path)
+    run_dir = create_story_orchestrator(data_dir).run_dir(run_id)
+    story = _story_with_world(run_dir)
+    story["world"]["sections"][1].update(items=[], body=None)
+    plan = build_plan(story, load_profile("reference-book"), ROOT)
+    assert "世界：掟" in [unit["title"] for unit in plan["units"]]
