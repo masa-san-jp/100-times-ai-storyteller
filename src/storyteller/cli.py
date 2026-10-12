@@ -443,7 +443,7 @@ def _run_status(data_dir: Path, run_id: str) -> dict[str, Any]:
                 "error": task["error"],
                 "failure_report": (
                     (Path("tasks") / task_id / "failure.md").as_posix()
-                    if task["state"] == "failed"
+                    if task["state"] in {"failed", "skipped"}
                     and (run_dir / "tasks" / task_id / "failure.md").is_file()
                     else None
                 ),
@@ -575,6 +575,9 @@ def _print_human_status(payload: dict[str, Any]) -> None:
     print(f"run\t{payload['run_id']}\t{payload['status']}")
     if payload["warnings"]:
         print("warnings\t" + " | ".join(payload["warnings"]))
+    skipped = [task for task in payload["tasks"] if task["state"] == "skipped" and task["error"]]
+    if skipped:
+        print(f"skipped\t{len(skipped)}")
     print("TASK_ID\tTYPE\tSTATE\tTRIES\tINVALIDATIONS\tEXECUTOR\tISOLATION\tERROR\tFAILURE_REPORT")
     for task in payload["tasks"]:
         print(
