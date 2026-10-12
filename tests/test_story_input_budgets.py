@@ -110,3 +110,30 @@ def test_world_excerpt_keeps_whole_leading_facets_and_paragraphs():
     assert selected[0]["body"] == facets[0]["body"]
     assert _world_excerpt("あ" * 700 + "。\n\n" + "い" * 600 + "。", 1200) == "あ" * 700 + "。"
     assert _world_excerpt("あ" * 700 + "。" + "い" * 600 + "。", 1200) == "あ" * 700 + "。"
+
+
+def test_relationship_keeps_counterpart_and_glossary_at_dev_scale_sizes():
+    """Regression: the counterpart (required) and glossary were emptied.
+
+    Indexed ``S5.relationship_context`` output is {"c2": {...}}; with a
+    realistic profile the whole input exceeds 2800 chars, and head truncation
+    in reverse slot order used to empty ``other_person`` before the profile
+    (and the optional glossary is dropped first, by design).
+    """
+    inputs = _s5_inputs("カナ", _character("protagonist", "c1", "本人"))
+    inputs["facts"] = sheet_for_card(_facts(), _glossary())
+    inputs["profile"] = "人" * 1019
+    inputs["other_person"] = {"c2": {
+        "id": "c2", "name": "カタエ", "role": "supporter",
+        "intro": "ハリソの朗読者カタエ。忘れられた名を読み上げ、朱亜理の傍らで試練と気づきをもたらす支援者。",
+    }}
+    inputs["glossary"] = [
+        {"id": f"g{number:06x}", "name": f"用語{number}", "reading": "ヨウゴ", "kind": "人物",
+         "definition": "この世界の用語の定義です"} for number in range(5)
+    ]
+    fitted = _assert_fits("S5.relationship", inputs)
+    assert [entry["name"] for entry in fitted["other_person"]] == ["カタエ"]
+    assert fitted["other_person"][0]["intro"]
+    # The optional glossary is the first thing dropped under budget (task-model
+    # §3.4); the fact sheet carries the glossary entries its own text needs.
+    assert fitted["facts"]["glossary"]
