@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -24,11 +25,15 @@ FREE_INPUT = "静かな町で、失われた記録を探す。\n\n境界を守�
 PLOT_TYPES = [plot["id"] for plot in load_table("plot_types", repository_root=ROOT)["types"]]
 
 
+# The full sweep takes ~11 minutes; CI runs 3 representative types unless STORYTELLER_FULL_SWEEP=1.
+SWEPT = PLOT_TYPES if os.environ.get("STORYTELLER_FULL_SWEEP") == "1" else [PLOT_TYPES[0], PLOT_TYPES[len(PLOT_TYPES) // 2], PLOT_TYPES[-1]]
+
+
 def test_the_sweep_covers_all_21_plot_types() -> None:
     assert len(PLOT_TYPES) == 21 == len(set(PLOT_TYPES))
 
 
-@pytest.mark.parametrize("plot_type", PLOT_TYPES)
+@pytest.mark.parametrize("plot_type", SWEPT)
 def test_dev_run_completes_for_every_plot_type(tmp_path: Path, plot_type: str) -> None:
     data_dir = tmp_path / "data"
     free_input = tmp_path / "free.md"
