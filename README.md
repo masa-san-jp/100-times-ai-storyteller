@@ -109,7 +109,7 @@ uv run st auto --provider ollama --model gpt-oss:20b --run RUN --until-empty   #
 ### 規模と動作確認
 
 - 初めて試すときは、`vignette`（掌編）か `short`（短編）から始めてください。規模が大きいほど、タスクの数も実行時間も増えます。
-- 開発用の最小規模 `dev` と、それで通し実行する `tools/dev_run.sh` は計画中で（[phase-1.md](docs/plan/phase-1.md) の P1-38）、現時点では使えません（`st new --scale dev` は拒否されます）。
+- 動作確認用の最小規模 `dev`（ユーザー向けのプリセットではありません）は `st new --scale dev` で作れます。`tools/dev_run.sh --auto ollama gpt-oss:20b`（または `--command "<実行者の起動コマンド>"`）で run を作って最後まで回し、所要時間と skipped・warnings を表示します。
 - LLMを使わずに仕組みだけを確かめたい場合は、`st dev new-dummy` でダミーのハーネスの run を作れます（開発者向け）。
 
 ### 出力の場所
