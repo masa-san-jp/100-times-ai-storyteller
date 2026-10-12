@@ -1,0 +1,22 @@
+name: visual-prompts
+unit: prompt
+unit_mapping: person_and_event
+chars_per_event: [150, 400]
+max_chars_per_task: 800
+template: template.md
+continuation: false
+
+rules:
+  - 画像生成AIに渡す指示文を、日本語の文で書く。説明や前置きを付けない。
+  - 人物の単位は、その人物の全身像を描く指示にする。外見・服装・体格・表情・姿勢を書く。
+  - 場面の単位は、その出来事の1場面を描く指示にする。構図・場所・時間帯・光・人物の位置と動き・感情を書く。
+  - 人物は名前ではなく外見で描写する。
+  - 入力にない人物・外見・場所を加えない。
+  - 画像に文字や台詞を入れる指示を書かない。
+  - 実在の人物・作品・商標の名前を使わない。
+
+checks:
+  code: [min_chars, max_chars, ends_complete]
+  llm:
+    - 入力にない人物・外見・場所が加えられていますか
+    - 画像に文字や台詞を入れる指示がありますか
