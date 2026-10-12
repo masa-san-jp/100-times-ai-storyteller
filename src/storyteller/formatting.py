@@ -372,13 +372,20 @@ def check_body(
 # --- template ---------------------------------------------------------------
 
 _BLOCK = re.compile(r"\{\{#units\}\}(.*?)\{\{/units\}\}", re.DOTALL)
+_PART_START = re.compile(r"\{\{#part_start\}\}(.*?)\{\{/part_start\}\}", re.DOTALL)
 _VARIABLE = re.compile(r"\{\{\s*([a-z_]+(?:\.[a-z_]+)?)\s*\}\}")
 
 
 def render_template(
     template: str, story: Mapping[str, Any], units: Sequence[Mapping[str, Any]], name: str
 ) -> str:
-    """Pour the unit texts into the template (one ``{{#units}}`` block)."""
+    """Pour the unit texts into the template (one ``{{#units}}`` block).
+
+    Inside the block, ``{{unit.chapter}}`` counts units anew in each part
+    (it equals ``{{unit.number}}`` without parts), and a
+    ``{{#part_start}}…{{/part_start}}`` section is kept only for the first
+    unit of each part (for the part heading of a saga).
+    """
 
     blocks = _BLOCK.findall(template)
     if len(blocks) != 1 or len(_BLOCK.split(template)) != 3:
@@ -403,16 +410,23 @@ def render_template(
         return _VARIABLE.sub(replace, text)
 
     rendered_units = []
+    chapter = 0
+    previous_part: Any = object()
     for number, unit in enumerate(units, start=1):
+        starts_part = unit["part"] is not None and unit["part"] != previous_part
+        chapter = 1 if unit["part"] != previous_part else chapter + 1
+        previous_part = unit["part"]
+        block = _PART_START.sub(lambda match: match.group(1) if starts_part else "", blocks[0])
         scope = {
             **values,
             "unit.number": str(number),
+            "unit.chapter": str(chapter),
             "unit.id": unit["id"],
             "unit.title": unit["title"],
             "unit.part": "" if unit["part"] is None else str(unit["part"]),
             "unit.body": unit["body"],
         }
-        rendered_units.append(fill(blocks[0], scope))
+        rendered_units.append(fill(block, scope))
     before, _, after = _BLOCK.split(template)
     return fill(before, values) + "".join(rendered_units) + fill(after, values)
 

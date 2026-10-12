@@ -164,7 +164,9 @@ def test_profile_schema_accepts_the_spec_example_and_rejects_deviations() -> Non
             validate_document(bad, schema)
 
 
-def test_load_profile_rejects_semantic_errors(tmp_path: Path, dummy_format: Path) -> None:
+def test_load_profile_rejects_semantic_errors(
+    tmp_path: Path, dummy_format: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     assert formatting.load_profile("dummy", formats_root=dummy_format)["name"] == "dummy"
 
     def write(profile: dict[str, Any]) -> None:
@@ -175,13 +177,16 @@ def test_load_profile_rejects_semantic_errors(tmp_path: Path, dummy_format: Path
     for bad, message in (
         ({**PROFILE, "name": "other"}, "ディレクトリ名"),
         ({**PROFILE, "chars_per_event": [50, 10]}, "下限"),
-        ({**PROFILE, "unit_mapping": "structure"}, "未対応"),
         ({**PROFILE, "checks": {"code": ["fountain"]}}, "未対応"),
         ({**PROFILE, "template": "missing.md"}, "テンプレート"),
     ):
         write(bad)
         with pytest.raises(ValueError, match=message):
             formatting.load_profile("dummy", formats_root=dummy_format)
+    write(PROFILE)
+    monkeypatch.delitem(format_units.UNIT_MAPPERS, "scene")
+    with pytest.raises(ValueError, match="未対応"):
+        formatting.load_profile("dummy", formats_root=dummy_format)
     with pytest.raises(ValueError, match="様式名"):
         formatting.load_profile("../x", formats_root=dummy_format)
     with pytest.raises(ValueError, match="プロファイル"):
