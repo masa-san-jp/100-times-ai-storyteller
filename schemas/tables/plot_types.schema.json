@@ -40,7 +40,8 @@
               "description": {"type": "string", "minLength": 1},
               "stages": {
                 "type": "object",
-                "additionalProperties": false,
+                "propertyNames": {"pattern": "^[a-z][a-z0-9-]*$"},
+                "additionalProperties": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
                 "required": ["three-beat", "kishotenketsu", "heros-journey-12"],
                 "properties": {
                   "three-beat": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},

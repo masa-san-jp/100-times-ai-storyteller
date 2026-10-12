@@ -91,7 +91,7 @@ def test_plot_and_structure_tables_have_phase_one_shape():
     plot_types = load_table("plot_types", repository_root=ROOT)
     structures = load_table("structures", repository_root=ROOT)
 
-    assert len(plot_types["types"]) == 14
+    assert len(plot_types["types"]) == 21
     assert {plot["name"] for plot in plot_types["types"]} == {
         "旅（クエスト）",
         "モンスターを倒す",
@@ -107,12 +107,22 @@ def test_plot_and_structure_tables_have_phase_one_shape():
         "陰謀・政治劇",
         "人間ドラマ",
         "哲学的／存在論的",
+        "タイムループ／時間改変",
+        "シュルレアリスム／超現実",
+        "断片的構成（フラグメント／コラージュ）",
+        "メタフィクション／ポストモダン",
+        "詩的・抽象的（リリカル）",
+        "ドキュメンタリー／エッセイ",
+        "アンチクライマックス／無為",
     }
-    assert {plot["structure"] for plot in plot_types["types"]} == {"standard"}
+    assert sum(plot["structure"] == "standard" for plot in plot_types["types"]) == 14
+    dedicated = {plot["structure"] for plot in plot_types["types"]} - {"standard"}
+    assert len(dedicated) == 7
     assert set(structures["templates"]) == {
         "three-beat",
         "kishotenketsu",
         "heros-journey-12",
+        *dedicated,
     }
     assert len(structures["templates"]["heros-journey-12"]["stages"]) == 12
     assert all(
@@ -171,10 +181,25 @@ def test_required_events_assign_a_stage_in_each_standard_template():
     standard_template_ids = {"three-beat", "kishotenketsu", "heros-journey-12"}
 
     for plot in plot_types["types"]:
+        expected = set(standard_template_ids)
+        if plot["structure"] != "standard":
+            expected.add(plot["structure"])
         for event in plot["required_events"]:
-            assert set(event["stages"]) == standard_template_ids
+            assert set(event["stages"]) == expected
             for template_id, stage_id in event["stages"].items():
                 assert stage_id in stage_ids[template_id]
+
+
+def test_dedicated_templates_fit_the_smallest_main_thread_and_have_a_climax():
+    structures = load_table("structures", repository_root=ROOT)["templates"]
+    scales = load_table("scales", repository_root=ROOT)
+    min_events = min(scales["level_min_events"])
+    for template_id in structures:
+        if template_id in {"three-beat", "kishotenketsu", "heros-journey-12"}:
+            continue
+        stages = structures[template_id]["stages"]
+        assert len(stages) <= min_events
+        assert any(stage["climax"] for stage in stages)
 
 
 def test_name_sound_table_has_eight_sets_with_twelve_sounds_each():

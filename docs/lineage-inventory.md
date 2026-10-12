@@ -157,16 +157,16 @@
 | プロット型 | 9 コメディ | :251 | 取り込み済み | plot_types.yaml:90 | 取り込み済み（tables/plot_types.yaml:90） |
 | プロット型 | 10 サバイバル／ディストピア | :252 | 取り込み済み | plot_types.yaml:101 | 取り込み済み（tables/plot_types.yaml:101） |
 | プロット型 | 11 復讐 | :253 | 取り込み済み | plot_types.yaml:112 | 取り込み済み（tables/plot_types.yaml:112） |
-| プロット型 | 12 タイムループ／時間改変 | :254 | 未取り込み（計画あり） | story-pipeline.md:135 「専用テンプレートを持つ7型は P2-08 で加える」 | 取り込む（P2-08：tables/plot_types.yaml） |
+| プロット型 | 12 タイムループ／時間改変 | :254 | 取り込み済み | plot_types.yaml:254 | 取り込み済み（tables/plot_types.yaml:254） |
 | プロット型 | 13 陰謀・政治劇 | :255 | 取り込み済み | plot_types.yaml:123 | 取り込み済み（tables/plot_types.yaml:123） |
 | プロット型 | 14 人間ドラマ | :256 | 取り込み済み | plot_types.yaml:134 | 取り込み済み（tables/plot_types.yaml:134） |
-| プロット型 | 15 シュルレアリスム／超現実 | :257 | 未取り込み（計画あり P2-08） | — | 取り込む（P2-08：tables/plot_types.yaml） |
-| プロット型 | 16 断片的構成（フラグメント／コラージュ／パスティーシュ） | :258 | 未取り込み（計画あり P2-08） | — | 取り込む（P2-08：tables/plot_types.yaml） |
-| プロット型 | 17 メタフィクション／ポストモダン | :259 | 未取り込み（計画あり P2-08） | — | 取り込む（P2-08：tables/plot_types.yaml） |
-| プロット型 | 18 詩的・抽象的（リリカル） | :260 | 未取り込み（計画あり P2-08） | — | 取り込む（P2-08：tables/plot_types.yaml） |
+| プロット型 | 15 シュルレアリスム／超現実 | :257 | 取り込み済み | plot_types.yaml:272 | 取り込み済み（tables/plot_types.yaml:272） |
+| プロット型 | 16 断片的構成（フラグメント／コラージュ／パスティーシュ） | :258 | 取り込み済み | plot_types.yaml:290 | 取り込み済み（tables/plot_types.yaml:290） |
+| プロット型 | 17 メタフィクション／ポストモダン | :259 | 取り込み済み | plot_types.yaml:308 | 取り込み済み（tables/plot_types.yaml:308） |
+| プロット型 | 18 詩的・抽象的（リリカル） | :260 | 取り込み済み | plot_types.yaml:326 | 取り込み済み（tables/plot_types.yaml:326） |
 | プロット型 | 19 哲学的／存在論的 | :261 | 取り込み済み | plot_types.yaml:145 | 取り込み済み（tables/plot_types.yaml:145） |
-| プロット型 | 20 ドキュメンタリー／エッセイ | :262 | 未取り込み（計画あり P2-08） | — | 取り込む（P2-08：tables/plot_types.yaml） |
-| プロット型 | 21 アンチクライマックス／無為 | :263 | 未取り込み（計画あり P2-08） | — | 取り込む（P2-08：tables/plot_types.yaml） |
+| プロット型 | 20 ドキュメンタリー／エッセイ | :262 | 取り込み済み | plot_types.yaml:344 | 取り込み済み（tables/plot_types.yaml:344） |
+| プロット型 | 21 アンチクライマックス／無為 | :263 | 取り込み済み | plot_types.yaml:362 | 取り込み済み（tables/plot_types.yaml:362） |
 | プロット型 | WB: LLM-generated 10 plot types from 神話・伝承・古今東西の物語 | WB:expansion.yaml:129-159; WB v1.2 nb:~268 | 除外 | LINEAGE.md:48 「21型を固定テーブルにし、選択は S3（コード）で行う。LLMの呼び出しをなくす」 | 外す（プロット型は固定テーブル、選択はコード：VISION P2） |
 | プロット型の項目 | 中核構造 `core_structure` | HJ:colab_features.py:191; design-spec:515; WB:expansion.yaml:134 | 取り込み済み | plot_types.yaml `core` | 取り込み済み（tables/plot_types.yaml `core`） |
 | プロット型の項目 | 必須イベント `required_events` (最低3つの転換点) | HJ:colab_features.py:192; design-spec:516; WB:expansion.yaml:135 | 取り込み済み | plot_types.yaml `required_events` (3 each, mapped per template) | 取り込み済み（tables/plot_types.yaml `required_events`） |
