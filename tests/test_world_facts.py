@@ -480,3 +480,24 @@ def test_list_items_facts_are_independent_across_items(tmp_path):
         mine = f"S4.fact-{entry['id']}"
         others = second_ids if entry["item_id"] == first else first_ids if entry["item_id"] == second else set()
         assert not (ancestors(mine) & others)
+
+
+def test_s5_name_fact_reusing_a_decided_name_is_exempt_from_uses_given():
+    # Regression: a "no kinship" family member may carry a name decided earlier.
+    definition = _definition("S5.fact")
+    inputs = {**_inputs("name"), "previous_facts": [{"id": "g1", "text": "家族の名前：ソリハシ"}]}
+    reused = validate_output(definition, '{"name":"ソリハシ","reading":"ソリハシ"}', inputs, harness_root=ROOT)
+    assert reused.passed, reused.errors
+    fresh = validate_output(definition, '{"name":"カナ","reading":"ホホ"}', inputs, harness_root=ROOT)
+    assert any("uses_given" in error for error in fresh.errors)
+
+
+def test_s5_name_fact_exemption_needs_the_whole_decided_name():
+    definition = _definition("S5.fact")
+    inputs = {**_inputs("name"), "previous_facts": [{"id": "g1", "text": "家族の名前：ソリハシ"}],
+              "glossary": [{"id": "t1", "name": "ミズハ", "definition": "港町"}]}
+    from_glossary = validate_output(definition, '{"name":"ミズハ","reading":"ミズハ"}', inputs, harness_root=ROOT)
+    assert from_glossary.passed, from_glossary.errors
+    for partial in ("ハシ", "ソリ", "ミズ"):
+        result = validate_output(definition, f'{{"name":"{partial}","reading":"ホホ"}}', inputs, harness_root=ROOT)
+        assert any("uses_given" in error for error in result.errors), partial

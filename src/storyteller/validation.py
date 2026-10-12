@@ -423,6 +423,18 @@ def _run_check(
         value, missing = _read_field(output, field)
         if missing or not isinstance(value, str):
             return ["uses_given: 対象フィールドが文字列ではありません"], []
+        # A value already decided in the inputs (exempt_slots) is reused as is;
+        # the sound requirement only applies to newly created values.
+        exempt_field = arguments.get("exempt_field")
+        exempt_slots = arguments.get("exempt_slots")
+        if isinstance(exempt_field, str) and isinstance(exempt_slots, list):
+            fixed, fixed_missing = _read_field(output, exempt_field)
+            if not fixed_missing and isinstance(fixed, str) and fixed.strip():
+                decided = _normalise(fixed.strip())
+                if any(_contains_whole(_normalise(text), decided)
+                       for exempt_slot in exempt_slots if exempt_slot in inputs
+                       for text in _input_texts(inputs[exempt_slot])):
+                    return [], []
         if slot not in inputs:
             return [f"uses_given: 入力スロットがありません: {slot}"], []
         given = [text for text in _input_texts(inputs[slot]) if text]
@@ -827,6 +839,36 @@ def _load_common_words(
 
 def _normalise(value: str) -> str:
     return unicodedata.normalize("NFC", value)
+
+
+def _script_class(char: str) -> str:
+    if "゠" <= char <= "ヿ" or "ㇰ" <= char <= "ㇿ" or "ｦ" <= char <= "ﾟ":
+        return "katakana"
+    if "぀" <= char <= "ゟ":
+        return "hiragana"
+    if "CJK" in unicodedata.name(char, ""):
+        return "kanji"
+    if char.isalnum():
+        return "alnum"
+    return "other"
+
+
+def _contains_whole(text: str, word: str) -> bool:
+    """True when ``word`` occurs in ``text`` not as part of a longer word of the same script.
+
+    A decided name counts as reused only when it appears whole; a new name that
+    merely matches part of a longer decided word (``ハシ`` in ``ソリハシ``) does not.
+    """
+    start = text.find(word)
+    while start != -1:
+        end = start + len(word)
+        before = _script_class(text[start - 1]) if start > 0 else "other"
+        after = _script_class(text[end]) if end < len(text) else "other"
+        if not ((before != "other" and before == _script_class(word[0]))
+                or (after != "other" and after == _script_class(word[-1]))):
+            return True
+        start = text.find(word, start + 1)
+    return False
 
 
 def _normalize_for_substring(value: str) -> str:
