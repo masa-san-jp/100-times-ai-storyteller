@@ -22,11 +22,11 @@
     },
     "unit": {
       "type": "string",
-      "enum": ["chapter", "scene", "slide"]
+      "enum": ["chapter", "scene", "slide", "prompt", "section"]
     },
     "unit_mapping": {
       "type": "string",
-      "enum": ["structure", "scene", "per_event"]
+      "enum": ["structure", "scene", "per_event", "person_and_event", "world_cast"]
     },
     "chars_per_event": {
       "type": "array",
