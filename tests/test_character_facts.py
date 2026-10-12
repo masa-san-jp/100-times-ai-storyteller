@@ -479,3 +479,25 @@ def test_complete_sheet_fits_description_inputs_without_truncating_facts(item):
     assert all(key not in prepared["character"] for key in ("name_sound", "role_definition", "plot_context"))
     used = input_char_count(definition, prepared)
     assert used <= definition["max_input_chars"]
+
+
+def test_description_card_sheet_keeps_only_target_person_identity(tmp_path):
+    harness, run_id, _ = _harness(tmp_path, age=71)
+    _finish(harness, run_id)
+    outputs = _accepted_outputs(harness, run_id)
+    outputs["S3.assign"]["cast"].append(_character("adversary", "c2", "別人"))
+    outputs["S5.name-c2"] = {"name": "獏賀暮", "reading": "バクガボ"}
+    outputs["S5.fact-c2-age"] = "340"
+    outputs["S5.fact-c2-timeline.0.year"] = "542"
+    source = character_source_context(outputs, {"type": "S5.profile", "index": ["c1"]})
+    assert set(source) == {"c1"}
+    sheet = source["c1"]
+    assert sheet["name"] == "リオ"
+    assert sheet["age"] == 71 and sheet["birth_year"] == 229
+    assert "獏賀暮" not in str(sheet)
+    person = outputs["S3.assign"]["cast"][0]
+    card = generate_task_card(_definition("S5.profile"), "ticket", _inputs(
+        facts=sheet, role_definition=person["role_definition"],
+        plot_requirements=person["plot_context"]))
+    assert "獏賀暮" not in card
+    assert "birth_year: 229" in card and "age: 71" in card and "name: リオ" in card

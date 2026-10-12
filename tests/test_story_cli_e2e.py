@@ -253,7 +253,7 @@ def _fake_output(
         field = task_type.removeprefix("S5.")
         person_id = inputs["character"]["id"]
         short_values = {
-            "intro": f"{person_id}の短い紹介。",
+            "intro": f"{inputs['facts']['name']}は{person_id}の人物である。",
             "motive": f"{person_id}が行動する動機。",
             "catchphrase": f"私は{person_id}として進む。",
         }
@@ -274,7 +274,10 @@ def _fake_output(
         }
         minimum, maximum = volume_ranges[field]
         target_length = (minimum + maximum) // 2
-        return _filler_text(task_id, field, target_length)
+        subject_fields = {"profile", "appearance", "personality", "values",
+                          "inner_conflict", "backstory"}
+        opening = f"{inputs['facts']['name']}は" if field in subject_fields else ""
+        return opening + _filler_text(task_id, field, target_length - len(opening))
 
     if task_type == "S7.event":
         return {

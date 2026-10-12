@@ -195,7 +195,8 @@ def character_source_context(
     entries = character_entries(outputs, person_id)
     if task["type"] != "S5.fact":
         from .glossary import build_glossary
-        return {person_id: sheet_for_card(assemble_character_sheet(outputs, person_id), build_glossary(outputs))}
+        sheet = sheet_for_card(assemble_character_sheet(outputs, person_id), build_glossary(outputs))
+        return {person_id: {**sheet, "name": outputs[f"S5.name-{person_id}"]["name"]}}
     current = deepcopy(next(entry for entry in entries if entry["id"] == task["index"][0]))
     # Fill display names from accepted dependencies, retaining the planned IDs.
     from .glossary import build_glossary

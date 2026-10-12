@@ -487,6 +487,15 @@ def _run_check(
             ], []
         return [], []
 
+    if name == "character_identity":
+        if output_kind != "text":
+            raise ValidationConfigurationError("character_identity requires text output")
+        from .character_identity import identity_errors
+        require_subject = arguments.get("require_subject", False)
+        if not isinstance(require_subject, bool):
+            raise ValidationConfigurationError("character_identity.require_subject must be boolean")
+        return identity_errors(output, inputs.get("facts"), require_subject=require_subject), []
+
     if name == "no_new_proper_nouns":
         mode = arguments.get("mode")
         if mode not in {"warn", "fail"}:
