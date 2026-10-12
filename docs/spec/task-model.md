@@ -249,7 +249,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 | `min_chars` | `field`（任意）, `n` | 文字数が n 以上 |
 | `count` | `field`, `n` または `min`・`max` | 配列の件数が n、または min 以上 max 以下 |
 | `ids_subset` | `field`, `slot` | 配列の各IDが、指定した入力スロットに含まれるIDの部分集合 |
-| `uses_given` | `field`, `slot`, `n` | 文字列が、指定した入力スロットの要素のうち n 個以上を部分文字列として含む |
+| `uses_given` | `field`, `slot`, `n`, `exempt_field`（任意）, `exempt_slots`（任意） | 文字列が、指定した入力スロットの要素のうち n 個以上を部分文字列として含む。`exempt_field` の値が `exempt_slots` のいずれかの入力に既に含まれる（先に決まった値をそのまま使う）場合は検査しない |
 | `ends_complete` | `field`（任意）, `fix`（任意、`append`） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか。`fix: append` の場合は、満たさないとき末尾に「。」を補って合格とし、manifest の `warnings` に記録する（1文で完結する短い項目に使う。途中で切れた長文には使わない） |
 | `avoid_listed` | `fields`（任意）, `table`（例：`tables/cliches.yaml`） | 指定したテーブルの表現を、正規化後の部分文字列として含まない |
 | `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` ではすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |

@@ -206,7 +206,9 @@ def specialize_fact_definition(definition: Mapping[str, Any], inputs: Mapping[st
         if step not in result["card"]["steps"]:
             result["card"]["steps"].append(step)
         result["validate"] = {"schema": "schemas/tasks/S4.calendar_name.schema.json", "checks": [*common_checks, {"min_chars": {"field": "name", "n": 1}},
-            {"uses_given": {"field": "reading", "slot": "name_sound", "n": 2}}]}
+            {"uses_given": {"field": "reading", "slot": "name_sound", "n": 2, **(
+                {"exempt_field": "name", "exempt_slots": ["previous_facts", "world_facts", "glossary"]}
+                if result.get("id") == "S5.fact" else {})}}]}
     elif shape == "choice":
         result["choice_max"] = 1
         result["validate"] = {"checks": common_checks}

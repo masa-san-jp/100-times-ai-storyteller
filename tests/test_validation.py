@@ -751,3 +751,11 @@ def test_validate_document_reloads_file_schema_when_it_changes(tmp_path, monkeyp
         validate_document("value", schema_path)
 
     assert load_calls == 2
+
+
+def test_no_new_proper_nouns_does_not_flag_common_words_in_default_table():
+    definition = {"output": "text", "validate": {"checks": [{"no_new_proper_nouns": {"mode": "warn"}}]}}
+    result = validate_output(definition, "港町のAIがケーブルを引いた。", {"x": "入力"})
+    assert result.passed and not result.warnings, result.warnings
+    flagged = validate_output(definition, "ゼラフィナ王国の使者が来た。", {"x": "入力"})
+    assert any("ゼラフィナ" in warning for warning in flagged.warnings)

@@ -480,3 +480,13 @@ def test_list_items_facts_are_independent_across_items(tmp_path):
         mine = f"S4.fact-{entry['id']}"
         others = second_ids if entry["item_id"] == first else first_ids if entry["item_id"] == second else set()
         assert not (ancestors(mine) & others)
+
+
+def test_s5_name_fact_reusing_a_decided_name_is_exempt_from_uses_given():
+    # Regression: a "no kinship" family member may carry a name decided earlier.
+    definition = _definition("S5.fact")
+    inputs = {**_inputs("name"), "previous_facts": [{"id": "g1", "text": "家族の名前：ソリハシ"}]}
+    reused = validate_output(definition, '{"name":"ソリハシ","reading":"ソリハシ"}', inputs, harness_root=ROOT)
+    assert reused.passed, reused.errors
+    fresh = validate_output(definition, '{"name":"カナ","reading":"ホホ"}', inputs, harness_root=ROOT)
+    assert any("uses_given" in error for error in fresh.errors)

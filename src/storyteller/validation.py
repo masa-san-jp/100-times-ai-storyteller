@@ -423,6 +423,16 @@ def _run_check(
         value, missing = _read_field(output, field)
         if missing or not isinstance(value, str):
             return ["uses_given: 対象フィールドが文字列ではありません"], []
+        # A value already decided in the inputs (exempt_slots) is reused as is;
+        # the sound requirement only applies to newly created values.
+        exempt_field = arguments.get("exempt_field")
+        exempt_slots = arguments.get("exempt_slots")
+        if isinstance(exempt_field, str) and isinstance(exempt_slots, list):
+            fixed, fixed_missing = _read_field(output, exempt_field)
+            if not fixed_missing and isinstance(fixed, str) and fixed.strip():
+                if any(fixed.strip() in "\n".join(_input_texts(inputs[name]))
+                       for name in exempt_slots if name in inputs):
+                    return [], []
         if slot not in inputs:
             return [f"uses_given: 入力スロットがありません: {slot}"], []
         given = [text for text in _input_texts(inputs[slot]) if text]
