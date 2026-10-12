@@ -34,7 +34,10 @@ def definitions() -> dict[str, dict[str, Any]]:
     choice["inputs"]["choices"] = slot("選択肢", "input.choices")
     follow = llm("D4.follow", "text", [])
     follow["inputs"] = {"noun": {"label": "固有名詞の案", "from": "D3.noun", "select": "output",
-                                 "required": True}}
+                                 "required": True},
+                        # A glossary slot takes the separate glossary path of input building.
+                        "glossary": {"label": "関係する用語集", "from": "S3.assign",
+                                     "select": "glossary", "required": False}}
     return {
         "D1.short": llm("D1.short", "text", [{"max_chars": {"n": 12}}, "ends_complete"], "短く書く。"),
         "D2.pick": choice,
