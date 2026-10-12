@@ -26,6 +26,102 @@
           "items": {"$ref": "#/$defs/task"}
         }
       }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "batch_id",
+        "requested",
+        "completed",
+        "duplicates",
+        "created",
+        "runs",
+        "problem_runs",
+        "failed_tasks"
+      ],
+      "properties": {
+        "batch_id": {
+          "type": "string"
+        },
+        "requested": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duplicates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "created": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/run-summary"
+          }
+        },
+        "problem_runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "run_id",
+              "status",
+              "warnings"
+            ],
+            "properties": {
+              "run_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "failed_tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "run_id",
+              "task_id",
+              "reason"
+            ],
+            "properties": {
+              "run_id": {
+                "type": "string"
+              },
+              "task_id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {

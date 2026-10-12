@@ -1,0 +1,31 @@
+id: R2.motif
+version: 1
+kind: llm
+element: text
+inputs:
+  events:
+    label: 主筋の出来事（時系列。長い場合は中間を省いてある）
+    from: R1.aggregate
+    select: "runs[{slot}].events"
+    required: true
+  previous_motifs:
+    label: すでに挙げたモチーフ（重ねない）
+    from: R2.motif
+    select: previous
+    required: false
+output: text
+continuation: false
+card:
+  role: 与えられた物語の出来事の流れから、繰り返し現れる象徴的なモチーフ（物、場所、行為、イメージ）を1つ挙げる。
+  steps:
+    - 出来事の流れに現れる物・場所・行為・イメージのうち、物語の意味を担うものを1つ選ぶ。
+    - すでに挙げたモチーフと重ならないものにする。
+    - 20字以内の名詞句で書く。説明や解釈を加えない。
+validate:
+  checks:
+    - min_chars:
+        n: 1
+    - max_chars:
+        n: 20
+max_input_chars: 4000
+on_exhausted: skip

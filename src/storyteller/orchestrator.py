@@ -43,6 +43,7 @@ from .storage import (
     atomic_write_text,
     manifest_lock,
 )
+from .report_layout import find_report_dir, report_manifest_paths
 from .validation import (
     ValidationResult,
     output_char_count,
@@ -65,7 +66,7 @@ _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _TICKET = re.compile(r"^[a-f0-9]{32}$")
 _EXECUTOR_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
-_HARNESS_KINDS = frozenset({"story", "dummy"})
+_HARNESS_KINDS = frozenset({"story", "dummy", "report"})
 _TERMINAL_RUN_STATUSES = frozenset({"halted", "completed", "duplicate"})
 _MISSING: Final = object()
 
@@ -250,6 +251,8 @@ class Orchestrator:
             schema_root=self.definition_root,
         )
         self.code_handlers = dict(code_handlers or {})
+        # run_id -> directory of a report run (batches/<id>/report/, report.md §1).
+        self._report_dirs: dict[str, Path] = {}
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def create_run(
@@ -273,8 +276,12 @@ class Orchestrator:
         run_id: str | None = None,
         harness_kind: str | None = None,
         escalation: Sequence[str] | None = None,
+        directory: str | Path | None = None,
     ) -> str:
         """Create and persist a run, returning its run ID.
+
+        ``directory`` places the run outside ``runs/`` (a batch's report run
+        lives in ``batches/<batch_id>/report/``, docs/spec/report.md §1).
 
         ``tasks`` is retained as a readable alias for ``task_specs``.  If no
         nodes are supplied, one unindexed node is created for each task
@@ -314,8 +321,11 @@ class Orchestrator:
         resolved_run_id = run_id or _make_run_id(created_at, run_seed)
         if not _RUN_ID.fullmatch(resolved_run_id):
             raise ValueError(f"invalid run_id: {resolved_run_id!r}")
+        if directory is not None:
+            self._report_dirs[resolved_run_id] = Path(directory)
         run_dir = self.run_dir(resolved_run_id)
         if run_dir.exists():
+            self._report_dirs.pop(resolved_run_id, None)
             raise FileExistsError(f"run already exists: {resolved_run_id}")
 
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -393,7 +403,16 @@ class Orchestrator:
         """Return the durable directory for *run_id*."""
         if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
             raise ValueError(f"invalid run_id: {run_id!r}")
-        return self.data_dir / "runs" / run_id
+        registered = self._report_dirs.get(run_id)
+        if registered is not None:
+            return registered
+        path = self.data_dir / "runs" / run_id
+        if not path.exists():
+            found = find_report_dir(self.data_dir, run_id)
+            if found is not None:
+                self._report_dirs[run_id] = found
+                return found
+        return path
 
     def task_dir(self, run_id: str, task_id: str) -> Path:
         """Return a task directory after rejecting path traversal."""
@@ -1023,6 +1042,13 @@ class Orchestrator:
                     definition,
                     stored_value,
                 )
+                if task["type"] == "S2.counter":
+                    from .table_append import append_counter_element
+                    _, append_warning = append_counter_element(
+                        self.data_dir, run_id, task_id, card_inputs, stored_value
+                    )
+                    if append_warning:
+                        recorded_warnings = (*recorded_warnings, append_warning)
                 task["cache_key"] = key
                 _release_claim(run_dir, task_id, task)
                 _set_task_state(
@@ -1378,22 +1404,17 @@ class Orchestrator:
                 statuses[run_id] = manifest["status"]
             return [run_id]
 
-        runs_dir = self.data_dir / "runs"
-        if not runs_dir.is_dir():
-            return []
         records: list[tuple[str, str]] = []
-        for entry in runs_dir.iterdir():
-            if not entry.is_dir() or not _RUN_ID.fullmatch(entry.name):
-                continue
+        for name, manifest_path in self._run_manifest_entries():
             try:
-                manifest = load_manifest(entry / "manifest.json")
+                manifest = load_manifest(manifest_path)
             except (OSError, ValueError) as error:
-                _warn_skipped_run(entry.name, error)
+                _warn_skipped_run(name, error)
                 continue
             if statuses is not None:
-                statuses[entry.name] = manifest["status"]
+                statuses[name] = manifest["status"]
             if manifest["status"] in {"active", "stalled"}:
-                records.append((manifest["created_at"], entry.name))
+                records.append((manifest["created_at"], name))
         records.sort(key=lambda item: (item[0], item[1]))
         return [entry[1] for entry in records]
 
@@ -1553,22 +1574,35 @@ class Orchestrator:
         )
 
     def _find_claim_ticket(self, ticket: str) -> tuple[str, str] | None:
-        runs_dir = self.data_dir / "runs"
-        if not runs_dir.is_dir():
-            return None
-        for entry in sorted(runs_dir.iterdir(), key=lambda path: path.name):
-            if not entry.is_dir() or not _RUN_ID.fullmatch(entry.name):
-                continue
+        for name, manifest_path in sorted(self._run_manifest_entries()):
             try:
-                manifest = load_manifest(entry / "manifest.json")
+                manifest = load_manifest(manifest_path)
             except (OSError, ValueError) as error:
-                _warn_skipped_run(entry.name, error)
+                _warn_skipped_run(name, error)
                 continue
             for task_id, task in manifest["tasks"].items():
                 claim = task.get("claim")
                 if isinstance(claim, Mapping) and claim.get("ticket") == ticket:
-                    return entry.name, task_id
+                    return name, task_id
         return None
+
+    def _run_manifest_entries(self) -> list[tuple[str, Path]]:
+        """List ``(run_id, manifest path)`` of the runs and the batch report runs."""
+        entries: list[tuple[str, Path]] = []
+        runs_dir = self.data_dir / "runs"
+        if runs_dir.is_dir():
+            for entry in runs_dir.iterdir():
+                if entry.is_dir() and _RUN_ID.fullmatch(entry.name):
+                    entries.append((entry.name, entry / "manifest.json"))
+        for path in report_manifest_paths(self.data_dir):
+            try:
+                run_id = json.loads(path.read_text(encoding="utf-8")).get("run_id")
+            except (OSError, UnicodeError, ValueError, AttributeError):
+                continue
+            if isinstance(run_id, str) and _RUN_ID.fullmatch(run_id):
+                self._report_dirs[run_id] = path.parent
+                entries.append((run_id, path))
+        return entries
 
     # This spelling describes the operation in the plan and is convenient for
     # tests without introducing a second implementation.
@@ -1669,6 +1703,57 @@ class Orchestrator:
                 additions,
                 (),
                 self.task_definitions,
+            )
+            self._preflight_ranges(manifest, run_id, additions)
+            _create_dynamic_task_dirs(run_id, additions, self.task_dir)
+            _commit_dynamic_tasks(manifest, additions, self.task_definitions)
+            _refresh_blocked_tasks(manifest, self._now())
+            _update_run_status(manifest)
+            _touch_manifest(manifest, self._now())
+            self._persist_manifest(run_dir, manifest)
+            return manifest
+
+    def add_tasks_to_completed_run(
+        self,
+        run_id: str,
+        tasks: Iterable[TaskSpec | Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        """Add tasks to a ``completed`` run, which becomes ``active`` again.
+
+        Used by ``st format`` (cli.md).  The tasks are validated together with
+        the existing graph; a run in any other status is rejected.
+        """
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if manifest["status"] not in {"completed", "active"}:
+                raise InvalidTransition(
+                    f"completed または active の run だけにタスクを追加できます（現在: {manifest['status']}）"
+                )
+            additions = _normalise_task_specs(tasks, self.task_definitions)
+            duplicates = {spec.task_id for spec in additions} & set(manifest["tasks"])
+            if duplicates:
+                raise DAGError(f"追加タスクのIDが重複しています: {sorted(duplicates)[0]}")
+            # 追加するタスクと、それが依存する既存のタスク（推移的）だけを検査する。
+            related: set[str] = set()
+            for spec in additions:
+                for dependency in spec.deps:
+                    if dependency in manifest["tasks"]:
+                        related.add(dependency)
+                        related |= _dependency_closure(manifest, dependency)
+            existing = [
+                TaskSpec(
+                    task_id=task_id,
+                    type=manifest["tasks"][task_id]["type"],
+                    deps=tuple(manifest["tasks"][task_id]["deps"]),
+                    index=tuple(manifest["tasks"][task_id]["index"]),
+                )
+                for task_id in sorted(related)
+            ]
+            _validate_graph(
+                [*existing, *additions],
+                self.task_definitions,
+                allow_deferred_dependencies=True,
             )
             self._preflight_ranges(manifest, run_id, additions)
             _create_dynamic_task_dirs(run_id, additions, self.task_dir)
@@ -3404,6 +3489,12 @@ def _source_outputs(
             from .character_facts import character_source_context
             if slot not in result:
                 result[slot] = character_source_context(dependency_outputs, task)
+            continue
+
+        from .formatting import FORMAT_SINGLE_SOURCES, format_source_value
+        if slot in FORMAT_SINGLE_SOURCES and len(matching) == 1:
+            # 様式化の1つの依存は、添字（様式名）で包まずそのまま渡す。
+            result[slot] = format_source_value(slot_name, dependency_outputs[matching[0]])
             continue
 
         indexed = any(

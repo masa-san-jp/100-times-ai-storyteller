@@ -13,6 +13,7 @@ from .story_s2 import story_s2_merge, story_s2_plan
 from .story_s3 import story_s3_assign
 from .story_s4 import story_s4_diversity
 from .character_facts import story_s5_fact_plan
+from .formatting import load_format_task_definitions, make_handlers as make_format_handlers
 from .story_s5 import story_s5_relationship_context
 from .story_s6 import story_s6_expand
 from .story_s7 import story_s7_assemble
@@ -40,6 +41,35 @@ def create_free_run(
     """Validate free input, derive S0, and create the initial S1 DAG."""
 
     free_input = read_free_input(input_path)
+    return create_run_from_paragraphs(
+        data_dir,
+        free_input.as_document(),
+        free_input.paragraphs,
+        input_type="free",
+        preset=preset,
+        axis_overrides=axis_overrides,
+        seed=seed,
+        parts=parts,
+        plot_type=plot_type,
+        repository_root=repository_root,
+    )
+
+
+def create_run_from_paragraphs(
+    data_dir: str | Path,
+    input_document: dict[str, Any],
+    paragraphs: Any,
+    *,
+    input_type: str,
+    preset: str,
+    axis_overrides: dict[str, str] | None,
+    seed: int | None,
+    parts: int | None,
+    plot_type: str | None,
+    repository_root: str | Path,
+) -> str:
+    """Derive S0 from a normalized input and create the initial S1 DAG."""
+
     resolved_seed = seed if seed is not None else generated_seed()
     scale = derive_scale(
         preset,
@@ -64,7 +94,7 @@ def create_free_run(
             deps=tuple(f"S1.extract-{paragraph['id']}-{earlier}" for earlier in range(1, number)),
             index=(paragraph["id"], str(number)),
         )
-        for paragraph in free_input.paragraphs
+        for paragraph in paragraphs
         for number in range(1, 6)
     ]
     s1_task_ids = tuple(spec.task_id for spec in task_specs)
@@ -85,8 +115,8 @@ def create_free_run(
     run_id = orchestrator.create_run(
         task_specs=task_specs,
         seed=resolved_seed,
-        input_data=free_input.as_document(),
-        input_type="free",
+        input_data=input_document,
+        input_type=input_type,
         plot_type=plot_type,
         scale=scale_value,
         table_snapshot={axis: 0 for axis in _element_axes(repository_root)},
@@ -101,14 +131,24 @@ def create_free_run(
     return run_id
 
 
-def create_story_orchestrator(data_dir: str | Path) -> Orchestrator:
-    """Return the story orchestrator used by the S0/S1 hand-off."""
+def create_story_orchestrator(
+    data_dir: str | Path, *, formats_root: str | Path | None = None
+) -> Orchestrator:
+    """Return the story orchestrator used by the S0/S1 hand-off.
+
+    It also knows the formatting tasks (``st format``), which read format
+    profiles from ``formats_root`` (default: the repository's ``formats/``).
+    """
 
     repository_root = Path(__file__).resolve().parents[2]
     return Orchestrator(
         data_dir,
-        _load_story_task_definitions(repository_root),
         {
+            **_load_story_task_definitions(repository_root),
+            **load_format_task_definitions(repository_root),
+        },
+        {
+            **make_format_handlers(repository_root, formats_root),
             "story_s2_plan": story_s2_plan,
             "story_s2_merge": story_s2_merge,
             "story_s3_assign": story_s3_assign,

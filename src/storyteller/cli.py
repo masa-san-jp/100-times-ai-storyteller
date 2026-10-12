@@ -15,6 +15,10 @@ from .adapter import register_auto_command
 from .cache_prune import register_cli_commands as register_cache_commands
 from .dev.dummy import create_dummy_orchestrator
 from .input_data import PersonalInformationError
+from .narrative import create_narrative_run
+from .pii_check import register_cli_commands as register_check_input_command
+from .report import register_cli_commands as register_report_command
+from .report_layout import report_manifest_paths
 from .new_run import create_free_run, create_story_orchestrator
 from .manifest import load_manifest
 from .orchestrator import (
@@ -25,6 +29,7 @@ from .orchestrator import (
     OrchestrationError,
 )
 from .storage import DataDirectoryError, LockTimeoutError, resolve_data_dir
+from .table_edit import register_cli_commands as register_table_commands
 from .workspace import register_cli_commands
 
 
@@ -85,7 +90,7 @@ def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
     status_parser = subparsers.add_parser("status", help="show run status")
     status_scope = status_parser.add_mutually_exclusive_group()
     status_scope.add_argument("--run", dest="run_id")
-    # --batch is intentionally not registered until Phase 2.
+    status_scope.add_argument("--batch", dest="batch_id")
     status_parser.add_argument("--json", action="store_true", dest="as_json")
 
     retry_parser = subparsers.add_parser("retry", help="retry one failed task")
@@ -101,8 +106,17 @@ def _add_phase0_commands(parser: argparse.ArgumentParser) -> None:
     )
     dummy_parser.add_argument("--seed", type=int)
 
+    format_parser = subparsers.add_parser(
+        "format", help="start formatting a completed story run"
+    )
+    format_parser.add_argument("--run", dest="run_id", required=True)
+    format_parser.add_argument("--as", dest="format_name", required=True)
+
     register_cli_commands(subparsers)
+    register_check_input_command(subparsers)
     register_cache_commands(subparsers)
+    register_report_command(subparsers)
+    register_table_commands(subparsers)
 
     new_parser = subparsers.add_parser("new", help="create a story run")
     input_group = new_parser.add_mutually_exclusive_group(required=True)
@@ -180,6 +194,8 @@ def _run_command(args: argparse.Namespace) -> int:
         return _resume(args)
     if args.command == "new":
         return _new(args)
+    if args.command == "format":
+        return _format(args)
     if args.command == "dev" and args.dev_command == "new-dummy":
         return _new_dummy(args)
     raise CliArgumentError("command is required")
@@ -198,20 +214,27 @@ def _orchestrator(data_dir: Path, run_id: str | None = None):
         return create_story_orchestrator(data_dir)
     if harness_kind == "dummy":
         return create_dummy_orchestrator(data_dir)
+    if harness_kind == "report":
+        from .report import create_report_orchestrator
+
+        return create_report_orchestrator(data_dir)
     raise ValueError(f"未知の harness_kind です: {harness_kind!r}")
 
 
 def _candidate_run_ids(data_dir: Path) -> list[str]:
     """Return active/stalled runs in the durable creation order."""
     runs_dir = data_dir / "runs"
-    if not runs_dir.is_dir():
-        return []
+    manifest_paths = (
+        [entry / "manifest.json" for entry in runs_dir.iterdir() if entry.is_dir()]
+        if runs_dir.is_dir()
+        else []
+    )
+    # バッチの傾向分析（batches/<id>/report/）のタスクも st next の対象にする。
+    manifest_paths += report_manifest_paths(data_dir)
     candidates: list[tuple[str, str]] = []
-    for entry in runs_dir.iterdir():
-        if not entry.is_dir():
-            continue
+    for manifest_path in manifest_paths:
         try:
-            manifest = _load_manifest(data_dir, entry.name)
+            manifest = load_manifest(manifest_path)
         except (FileNotFoundError, OSError, ValueError):
             continue
         if manifest["status"] in {"active", "stalled"}:
@@ -222,19 +245,22 @@ def _candidate_run_ids(data_dir: Path) -> list[str]:
 
 def _orchestrator_for_ticket(data_dir: Path, ticket: str):
     runs_dir = data_dir / "runs"
-    if runs_dir.is_dir():
-        for entry in runs_dir.iterdir():
-            if not entry.is_dir():
-                continue
-            try:
-                manifest = load_manifest(entry / "manifest.json")
-            except (FileNotFoundError, OSError, ValueError):
-                continue
-            if any(
-                (task.get("claim") or {}).get("ticket") == ticket
-                for task in manifest["tasks"].values()
-            ):
-                return _orchestrator(data_dir, manifest["run_id"])
+    manifest_paths = (
+        [entry / "manifest.json" for entry in runs_dir.iterdir() if entry.is_dir()]
+        if runs_dir.is_dir()
+        else []
+    )
+    manifest_paths += report_manifest_paths(data_dir)
+    for manifest_path in manifest_paths:
+        try:
+            manifest = load_manifest(manifest_path)
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+        if any(
+            (task.get("claim") or {}).get("ticket") == ticket
+            for task in manifest["tasks"].values()
+        ):
+            return _orchestrator(data_dir, manifest["run_id"])
     # Keep the single-run seam available to embedders that provide their own
     # orchestrator; the built-in implementation raises InvalidClaimError
     # without making a harness guess when no manifest exists.
@@ -328,6 +354,15 @@ def _submit(args: argparse.Namespace) -> int:
 
 def _status(args: argparse.Namespace) -> int:
     data_dir = _data_dir()
+    if args.batch_id is not None:
+        from .batch_status import batch_status, print_batch_status
+
+        payload = batch_status(data_dir, args.batch_id)
+        if args.as_json:
+            _print_json(payload)
+        else:
+            print_batch_status(payload)
+        return EXIT_OK
     if args.run_id is not None:
         payload = _run_status(data_dir, args.run_id)
     else:
@@ -342,7 +377,14 @@ def _status(args: argparse.Namespace) -> int:
 def _load_manifest(data_dir: Path, run_id: str) -> dict[str, Any]:
     if not isinstance(run_id, str) or not _RUN_ID_PATTERN.fullmatch(run_id):
         raise ValueError(f"invalid run_id: {run_id!r}")
-    return load_manifest(data_dir / "runs" / run_id / "manifest.json")
+    path = data_dir / "runs" / run_id / "manifest.json"
+    if not path.exists():
+        from .report_layout import find_report_dir
+
+        found = find_report_dir(data_dir, run_id)
+        if found is not None:
+            path = found / "manifest.json"
+    return load_manifest(path)
 
 
 def _all_run_statuses(data_dir: Path) -> list[dict[str, Any]]:
@@ -380,6 +422,11 @@ _TASK_STATES = ("blocked", "ready", "claimed", "done", "failed", "skipped")
 
 def _run_status(data_dir: Path, run_id: str) -> dict[str, Any]:
     manifest = _load_manifest(data_dir, run_id)
+    run_dir = data_dir / "runs" / run_id
+    if not run_dir.exists():
+        from .report_layout import find_report_dir
+
+        run_dir = find_report_dir(data_dir, run_id) or run_dir
     tasks = []
     for task_id in sorted(manifest["tasks"]):
         task = manifest["tasks"][task_id]
@@ -397,7 +444,7 @@ def _run_status(data_dir: Path, run_id: str) -> dict[str, Any]:
                 "failure_report": (
                     (Path("tasks") / task_id / "failure.md").as_posix()
                     if task["state"] in {"failed", "skipped"}
-                    and (data_dir / "runs" / run_id / "tasks" / task_id / "failure.md").is_file()
+                    and (run_dir / "tasks" / task_id / "failure.md").is_file()
                     else None
                 ),
             }
@@ -414,16 +461,24 @@ def _retry(args: argparse.Namespace) -> int:
     data_dir = _data_dir()
     matches: list[str] = []
     runs_dir = data_dir / "runs"
-    if runs_dir.is_dir():
-        for entry in runs_dir.iterdir():
-            if not entry.is_dir():
-                continue
-            try:
-                manifest = _load_manifest(data_dir, entry.name)
-            except (ValueError, OSError):
-                continue
-            if args.task_id in manifest["tasks"]:
-                matches.append(manifest["run_id"])
+    manifest_paths = (
+        [
+            entry / "manifest.json"
+            for entry in runs_dir.iterdir()
+            if entry.is_dir() and _RUN_ID_PATTERN.fullmatch(entry.name)
+        ]
+        if runs_dir.is_dir()
+        else []
+    )
+    # バッチの傾向分析（batches/<id>/report/）のタスクも対象にする。
+    manifest_paths += report_manifest_paths(data_dir)
+    for manifest_path in manifest_paths:
+        try:
+            manifest = load_manifest(manifest_path)
+        except (ValueError, OSError):
+            continue
+        if args.task_id in manifest["tasks"]:
+            matches.append(manifest["run_id"])
     if len(matches) != 1:
         raise ValueError(f"対象タスクを一意に特定できません: {args.task_id}")
     _orchestrator(data_dir, matches[0]).retry_failed(matches[0], args.task_id)
@@ -446,11 +501,22 @@ def _new_dummy(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _format(args: argparse.Namespace) -> int:
+    from .formatting import default_formats_root, start_formatting
+
+    data_dir = _data_dir()
+    start_formatting(
+        _orchestrator(data_dir, args.run_id),
+        args.run_id,
+        args.format_name,
+        formats_root=default_formats_root(),
+    )
+    return EXIT_OK
+
+
 def _new(args: argparse.Namespace) -> int:
-    if args.narrative is not None:
-        raise CliArgumentError("P1-02 では --free のみ対応しています")
-    if args.scale not in {"vignette", "short"}:
-        raise CliArgumentError("この規模プリセットは Phase 2 で対応します")
+    if args.scale not in {"vignette", "short", "novella", "novel", "saga"}:
+        raise CliArgumentError("未知の規模プリセットです")
     if args.count not in {None, 1}:
         raise CliArgumentError("--count は Phase 2 で対応します")
     overrides: dict[str, str] = {}
@@ -462,9 +528,10 @@ def _new(args: argparse.Namespace) -> int:
             raise CliArgumentError("--axis は異なる NAME=VALUE を指定してください")
         overrides[name] = value
     repository_root = Path(__file__).resolve().parents[2]
-    run_id = create_free_run(
+    create = create_free_run if args.free is not None else create_narrative_run
+    run_id = create(
         _data_dir(),
-        args.free,
+        args.free if args.free is not None else args.narrative,
         preset=args.scale,
         axis_overrides=overrides,
         seed=args.seed,

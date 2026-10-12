@@ -457,3 +457,65 @@ def test_submit_prints_continued_for_a_continuation_submission(
 
     assert main(["submit", "ticket", "--truncated"]) == 0
     assert capsys.readouterr().out == "continued\n"
+
+
+def _set_batch(data_dir: Path, run_id: str, batch_id: str, **changes) -> None:
+    manifest = _load_manifest(data_dir, run_id)
+    manifest["batch_id"] = batch_id
+    for key, value in changes.items():
+        manifest[key] = value
+    _save_manifest(data_dir, run_id, manifest)
+
+
+def test_status_batch_lists_reasons_from_manifest(tmp_path):
+    data_dir = tmp_path / "data"
+    stalled = _new_dummy(data_dir, seed=16777216)
+    halted = _new_dummy(data_dir, seed=33554432)
+    completed = _new_dummy(data_dir, seed=50331648)
+    other = _new_dummy(data_dir, seed=67108864)
+    manifest = _load_manifest(data_dir, stalled)
+    task_id = next(iter(manifest["tasks"]))
+    manifest["tasks"][task_id]["state"] = "failed"
+    manifest["tasks"][task_id]["error"] = "検証に3回不合格：理由X"
+    _save_manifest(data_dir, stalled, manifest)
+    _set_batch(data_dir, stalled, "b1", status="stalled")
+    _set_batch(
+        data_dir, halted, "b1", status="halted", warnings=["ハーネスの変更を検出"]
+    )
+    _set_batch(data_dir, completed, "b1", status="duplicate")
+    _set_batch(data_dir, other, "b2")
+    batch_dir = data_dir / "batches" / "b1"
+    batch_dir.mkdir(parents=True)
+    (batch_dir / "manifest.json").write_text('{"requested": 5}\n', encoding="utf-8")
+
+    result = _run_st(data_dir, "status", "--batch", "b1", "--json")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    schema_path = Path(__file__).parents[1] / "schemas" / "status.schema.json"
+    jsonschema.validate(payload, json.loads(schema_path.read_text(encoding="utf-8")))
+    assert payload["requested"] == 5
+    assert payload["created"] == 3
+    assert payload["duplicates"] == 1
+    assert payload["completed"] == 0
+    assert {run["run_id"] for run in payload["runs"]} == {stalled, halted, completed}
+    assert {r["run_id"]: (r["status"], r["warnings"]) for r in payload["problem_runs"]} == {
+        stalled: ("stalled", []),
+        halted: ("halted", ["ハーネスの変更を検出"]),
+    }
+    assert payload["failed_tasks"] == [
+        {"run_id": stalled, "task_id": task_id, "reason": "検証に3回不合格：理由X"}
+    ]
+
+    human = _run_st(data_dir, "status", "--batch", "b1")
+    assert human.returncode == 0
+    assert "検証に3回不合格：理由X" in human.stdout
+    assert "ハーネスの変更を検出" in human.stdout
+
+
+def test_status_batch_unknown_batch_fails_and_excludes_run(tmp_path):
+    data_dir = tmp_path / "data"
+    _new_dummy(data_dir, seed=83886080)
+    assert _run_st(data_dir, "status", "--batch", "nope").returncode == 1
+    assert _run_st(data_dir, "status", "--batch", "../x").returncode == 1
+    both = _run_st(data_dir, "status", "--batch", "b", "--run", "r")
+    assert both.returncode != 0

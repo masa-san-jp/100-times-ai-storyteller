@@ -1,0 +1,39 @@
+id: R4.question
+version: 1
+kind: llm
+element: text
+inputs:
+  term:
+    label: 繰り返し現れたモチーフ（代表語）
+    from: R3.group
+    select: "groups[{slot}].term"
+    required: true
+  summaries:
+    label: そのモチーフが現れた物語の要約
+    from: R3.group
+    select: "groups[{slot}].summaries"
+    required: false
+    truncate: tail
+  observation:
+    label: 見えた傾向
+    from: R4.observation
+    select: "[{slot}]"
+    required: false
+output: text
+continuation: false
+card:
+  role: 見えた傾向をもとに、物語の元になった入力との関係を考えるための問いを1文で書く。
+  steps:
+    - 見えた傾向が、物語を作るときに最初に与えられた入力（書き手の記録や思い）とどうつながっているかを尋ねる疑問文を1文で書く。
+    - 答えを決めつけない。「〜でしょうか。」「〜だったのでしょうか。」のように、読む人が自分で考えられる形にする。
+    - 入力にない事柄を付け加えない。
+validate:
+  checks:
+    - min_chars:
+        n: 1
+    - max_chars:
+        n: 150
+    - ends_complete:
+        fix: append
+max_input_chars: 3000
+on_exhausted: skip

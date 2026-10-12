@@ -92,6 +92,11 @@ def derive_scale(
     elif parts is not None:
         raise ScaleError("--parts は threads=parts の規模でだけ指定できます")
 
+    # scale.md §4 step 5: a saga decides the event count part by part.
+    part_events: list[int] | None = None
+    if resolved_parts is not None:
+        part_events = [rng.randint(event_min, event_max) for _ in range(resolved_parts)]
+
     max_world_level = max(levels["space"], levels["change"])
     world_sections: list[str] = []
     for section_ids in scales["world_sections_by_level"][: max_world_level + 1]:
@@ -110,7 +115,8 @@ def derive_scale(
             "axes": axes,
             "overrides": provided_overrides,
             "derived": {
-                "events": rng.randint(event_min, event_max),
+                "events": sum(part_events) if part_events is not None else rng.randint(event_min, event_max),
+                "part_events": part_events,
                 "threads": threads,
                 "cast": cast,
                 "parts": resolved_parts,

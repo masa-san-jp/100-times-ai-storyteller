@@ -1,0 +1,46 @@
+id: F2.write
+version: 1
+kind: llm
+element: text
+output: text
+inputs:
+  events:
+    label: 書く対象の出来事
+    from: F1.split
+    select: "parts[{slot}].events"
+    required: true
+  characters:
+    label: 登場人物
+    from: F1.split
+    select: "parts[{slot}].characters"
+    required: true
+    truncate: head
+  rules:
+    label: 書き方の規則
+    from: F1.split
+    select: rules
+    required: true
+  range:
+    label: 分量の範囲
+    from: F1.split
+    select: "parts[{slot}].range"
+    required: true
+  previous_unit:
+    label: 直前の本文の末尾（最大600字）
+    from: F2.write
+    select: output
+    required: false
+    truncate: tail
+card:
+  role: 与えられた出来事を、書き方の規則に従って本文に書き起こす。
+  steps:
+    - 入力の出来事を、与えられた順序のまま、すべて本文に書く。出来事の順序を入れ替えない。
+    - 入力にない出来事・人物を加えない。登場人物は入力の名前と読みだけを使う。
+    - 書き方の規則をすべて守る。
+    - 分量の範囲に収まる字数で書く。
+    - 直前の本文の末尾がある場合は、そこから自然につなげる。繰り返して書かない。
+    - 本文は完結した文で終える。
+max_input_chars: 9000
+continuation: true
+on_exhausted: fail
+max_invalidations: 2

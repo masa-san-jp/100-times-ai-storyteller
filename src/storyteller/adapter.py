@@ -14,14 +14,12 @@ import re
 import sys
 import threading
 import time
-from datetime import datetime
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from http.client import HTTPException
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -29,15 +27,16 @@ from urllib.request import Request, urlopen
 
 import yaml
 
-from .manifest import load_manifest, write_manifest
-from .orchestrator import ClaimError, Orchestrator
-from .storage import acquire_lock, atomic_write_json, manifest_lock
-from .validation import YamlValidationError, parse_json_object, validate_document
-
 from .adapter_retry import (
     AdapterError, AdapterRequestError, RequestRejected, TransportError,
     TransportExhausted, retry_transport,
 )
+from .auto_workers import WorkersFailed, run_supervised
+from .manifest import load_manifest, write_manifest
+from .orchestrator import ClaimError, Orchestrator
+from .report_layout import report_manifest_paths
+from .storage import acquire_lock, atomic_write_json, manifest_lock
+from .validation import YamlValidationError, parse_json_object, validate_document
 
 
 @dataclass(frozen=True)
@@ -427,16 +426,13 @@ class AutoRunner:
     def run(self, *, run_id: str | None, workers: int, until_empty: bool) -> None:
         if workers < 1:
             raise AdapterError("workers は1以上でなければなりません")
-        if workers == 1:
-            self._worker(run_id=run_id, until_empty=until_empty)
-            return
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [
-                pool.submit(self._worker, run_id=run_id, until_empty=until_empty)
-                for _ in range(workers)
-            ]
-            for future in futures:
-                future.result()
+        try:
+            run_supervised(
+                workers,
+                lambda: self._worker(run_id=run_id, until_empty=until_empty),
+            )
+        except WorkersFailed as error:
+            raise AdapterError(str(error)) from error
 
     def _worker(self, *, run_id: str | None, until_empty: bool) -> None:
         adapter = self.adapter_factory(self.model)
@@ -561,14 +557,17 @@ class AutoRunner:
 
     def _candidate_run_ids(self) -> list[str]:
         runs_dir = self.data_dir / "runs"
-        if not runs_dir.is_dir():
-            return []
+        manifest_paths = (
+            [entry / "manifest.json" for entry in runs_dir.iterdir() if entry.is_dir()]
+            if runs_dir.is_dir()
+            else []
+        )
+        # バッチの傾向分析（batches/<id>/report/）のタスクも対象にする。
+        manifest_paths += report_manifest_paths(self.data_dir)
         candidates: list[tuple[str, str]] = []
-        for entry in runs_dir.iterdir():
-            if not entry.is_dir():
-                continue
+        for manifest_path in manifest_paths:
             try:
-                manifest = load_manifest(entry / "manifest.json")
+                manifest = load_manifest(manifest_path)
             except (OSError, ValueError):
                 continue
             if manifest["status"] in {"active", "stalled"}:
@@ -611,25 +610,31 @@ class AutoRunner:
 
     def _has_claimed_tasks(self, run_id: str | None) -> bool:
         runs_dir = self.data_dir / "runs"
-        if not runs_dir.is_dir():
-            return False
-        run_dirs = [runs_dir / run_id] if run_id is not None else list(runs_dir.iterdir())
+        run_dirs = (
+            [entry for entry in runs_dir.iterdir() if entry.is_dir()]
+            if runs_dir.is_dir()
+            else []
+        )
+        # バッチの傾向分析（batches/<id>/report/）の claim も待つ。
+        run_dirs += [path.parent for path in report_manifest_paths(self.data_dir)]
         for run_dir in run_dirs:
-            if not run_dir.is_dir():
-                continue
             try:
                 manifest = load_manifest(run_dir / "manifest.json")
             except (OSError, ValueError):
                 continue
+            if run_id is not None and manifest["run_id"] != run_id:
+                continue
             if manifest["status"] != "active":
                 # claim_next does not reconcile claims of non-active runs.
                 try:
-                    self._orchestrator_for_run(run_dir.name).release_expired_claims(
-                        run_dir.name
+                    self._orchestrator_for_run(manifest["run_id"]).release_expired_claims(
+                        manifest["run_id"]
                     )
-                    manifest = load_manifest(run_dir / "manifest.json")
                 except (OSError, ValueError, ClaimError):
-                    continue
+                    pass
+                # A stalled run yields no task to take; do not wait for
+                # other executors' live claims (cli.md `st auto`).
+                continue
             if any(task.get("state") == "claimed" for task in manifest["tasks"].values()):
                 return True
         return False
