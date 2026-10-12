@@ -47,7 +47,7 @@ def event_source_for_card(
 
 
 def event_tasks(
-    parent: str, event_id: str, first_deps: Sequence[str], previous_event: str | None
+    parent: str, event_id: str, first_deps: Sequence[str], previous_event: str | None, conditions: Sequence[str] = ()
 ) -> list[TaskSpec]:
     """Keep every earlier field available, but only the previous event's result."""
     additions = []
@@ -62,7 +62,7 @@ def event_tasks(
             for number, task_id in enumerate(ids, start=1):
                 additions.append(TaskSpec(
                     task_id, "S7.event",
-                    deps=tuple(dict.fromkeys((*first_deps, *previous_result))),
+                    deps=tuple(dict.fromkeys((*first_deps, *previous_result, *conditions))),
                     index=(event_id, field, f"c{number}"),
                 ))
             pick = select_task_id(event_id)
@@ -75,12 +75,12 @@ def event_tasks(
         deps = first_deps if not field_ids else (parent, *field_ids)
         additions.append(TaskSpec(
             task_id, "S7.event",
-            deps=tuple(dict.fromkeys((*deps, *previous_result))), index=(event_id, field),
+            deps=tuple(dict.fromkeys((*deps, *previous_result, *conditions))), index=(event_id, field),
         ))
         field_ids.append(task_id)
     additions.append(TaskSpec(
         f"S7.assemble-{event_id}", "S7.assemble",
-        deps=(parent, *field_ids), index=(event_id,),
+        deps=(parent, *field_ids, *conditions), index=(event_id,),
     ))
     return additions
 
@@ -109,5 +109,10 @@ def story_s7_assemble(context: CodeTaskContext) -> CodeTaskResult:
         for source in task_sources(context.run_dir / "tasks" / task_id):
             if source not in sources:
                 sources.append(source)
+    from .plot_quality import conditions_from_outputs
+    conditions = conditions_from_outputs(context.dependency_outputs,
+        [key for key in getattr(context, "task", {}).get("deps", ()) if key.startswith("S7.condition-")])
+    if conditions:
+        output["conditions"] = conditions
     output["sources"] = sources
     return CodeTaskResult(output=output)

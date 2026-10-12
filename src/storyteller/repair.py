@@ -64,6 +64,10 @@ def repair_conditions(
             lines.append(f"{arguments.get('n')}字以内にする{where}。")
         elif name == "min_chars":
             lines.append(f"{arguments.get('n')}字以上にする{where}。")
+        elif name == "no_story_metadata":
+            lines.append("構造の説明と内部 ID を本文から除く。")
+        elif name == "no_repeated_scene":
+            lines.append("直前の場面の行動・結果を再演せず、担当部分だけを書く。")
         elif name == "ends_complete":
             lines.append(f"文末を「。」などで完結させる{where}。")
     element = definition.get("element")
@@ -106,6 +110,10 @@ def generate_repair_card(
         "### 元の出力", original, "### 不合格の理由", reason, "### 満たすべき条件",
         *(f"- {condition}" for condition in repair_conditions(definition, inputs)),
     ]
+    if "conditions" in inputs:
+        lines.extend(["### 確定した筋の条件（変更・追加しない）", _render_value(inputs["conditions"])])
+    if "no_repeated_scene" in reason and isinstance(inputs.get("previous_scene"), str):
+        lines.extend(["### 直前の場面（再演しない）", inputs["previous_scene"][-600:]])
     if definition.get("element") == "choice" and "choices" in inputs:
         lines.extend(["### 選択肢", _render_value(inputs["choices"])])
     lines.extend(["", "## 手順", f"1. {REPAIR_STEP}",

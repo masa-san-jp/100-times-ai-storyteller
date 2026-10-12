@@ -1,47 +1,47 @@
 id: S7.detail
-version: 9
+version: 10
 kind: llm
 element: text
 inputs:
   when:
     label: 出来事のいつ
     from: S7.assemble
-    select: "[{slot}].when"
+    select: '[{slot}].when'
     required: true
   where:
     label: 出来事のどこ
     from: S7.assemble
-    select: "[{slot}].where"
+    select: '[{slot}].where'
     required: true
   who:
     label: 出来事の誰
     from: S7.assemble
-    select: "[{slot}].who"
+    select: '[{slot}].who'
     required: true
   why:
     label: 出来事の理由
     from: S7.assemble
-    select: "[{slot}].why"
+    select: '[{slot}].why'
     required: true
   intent:
     label: 出来事の意思
     from: S7.assemble
-    select: "[{slot}].intent"
+    select: '[{slot}].intent'
     required: true
   what:
     label: 出来事の行動
     from: S7.assemble
-    select: "[{slot}].what"
+    select: '[{slot}].what'
     required: true
   result:
     label: 出来事の結果
     from: S7.assemble
-    select: "[{slot}].result"
+    select: '[{slot}].result'
     required: true
   emotion:
     label: 出来事の感情
     from: S7.assemble
-    select: "[{slot}].emotion"
+    select: '[{slot}].emotion'
     required: true
   beat:
     label: 場面の働き
@@ -72,29 +72,38 @@ inputs:
     select: glossary
     required: false
     truncate: head
+  conditions:
+    label: 確定した筋の条件（変更・追加しない）
+    from: S7.condition
+    select: output
+    required: false
 output: text
 extend_to_min: true
 continuation: true
 card:
   role: 出来事の一つの場面を、正本として説明的に詳述する。
   steps:
-    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
-    - 出来事の when・where・who・why・intent・what・result・emotion を、入力された内容から正確に引き継ぐ。
-    - 場面の働きの定義に従い、この場面で起きたことと人物の行動を三人称で具体的に説明する。
-    - 登場人物の名前・役・紹介・口調と、選択された世界の抜粋だけを使う。入力にない人物、出来事、設定を加えない。
-    - 同じ出来事の直前の場面がある場合は、その末尾から自然につなげる。他の出来事の場面は参照しない。
-    - 小説の文体や会話中心の表現にせず、いつ・どこで・誰が・何をしたかが分かる正本の説明にする。
-    - 1500〜2500字を目安に、場面の説明だけを完結した文章で書く。
+  - 確定した発動・禁止・解決条件を守り、入力にない条件を追加・反転・置換しない。本文に内部 ID と構造の説明を書かない。
+  - 場面の働きが担当する部分だけを書く。発端は開始まで、展開は行動の過程、転換は変化、余波は結果の後だけとする。他の場面の行動と結果を最初から語り直さない。直前の場面に書かれたことは再演しない。
+  - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
+  - 出来事の when・where・who・why・intent・what・result・emotion を、入力された内容から正確に引き継ぐ。
+  - 場面の働きの定義に従い、担当部分の人物の行動だけを三人称で具体的に説明する。入力の全項目を毎回説明し直さない。
+  - 登場人物の名前・役・紹介・口調と、選択された世界の抜粋だけを使う。入力にない人物、出来事、設定を加えない。
+  - 同じ出来事の直前の場面がある場合は、その末尾から自然につなげる。他の出来事の場面は参照しない。
+  - 小説の文体や会話中心の表現にせず、いつ・どこで・誰が・何をしたかが分かる正本の説明にする。
+  - 1500〜2500字を目安に、場面の説明だけを完結した文章で書く。
 validate:
   checks:
-    - no_new_proper_nouns:
-        mode: warn
-    - no_copy_from_inputs
-    - avoid_listed:
-        table: tables/meta_terms.yaml
-    - min_chars:
-        n: 1500
-    - max_chars:
-        n: 2500
-        fix: trim
-max_input_chars: 2800
+  - no_story_metadata
+  - no_repeated_scene
+  - no_new_proper_nouns:
+      mode: warn
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - min_chars:
+      n: 1500
+  - max_chars:
+      n: 2500
+      fix: trim
+max_input_chars: 2600
