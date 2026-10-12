@@ -3461,7 +3461,8 @@ def _source_outputs(
             )
         if task.get("type") == "S7.event":
             from .story_s7 import event_source_for_card
-            source_value = event_source_for_card(task, slot, source_value)
+            source_value = event_source_for_card(
+                task, slot, source_value, dependency_outputs)
         result[slot] = source_value
     return result
 

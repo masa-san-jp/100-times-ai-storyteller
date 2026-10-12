@@ -78,7 +78,7 @@ inputs:
     select: output
     required: false
 output: text
-candidates: 1
+candidates: 3
 select_candidate: least_similar
 card:
   role: 与えられた局所的な文脈から、入力で指定された出来事の項目1つだけを書く。

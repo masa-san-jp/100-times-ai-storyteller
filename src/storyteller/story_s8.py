@@ -9,6 +9,7 @@ from typing import Any
 
 from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
+from .story_s7_candidates import what_task_ids
 
 
 _EVENT_ID = re.compile(r"^e[0-9]{3}$")
@@ -154,12 +155,15 @@ def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
             if not detail
             else f"比較結果に矛盾あり：{detail}"
         )
-        target_id = f"S7.event-{event_id}-what"
+        target_ids = _what_task_ids(context, event_id)
+        target_id = target_ids[0]
         invalidation_count, existing_warnings = _s7_invalidation_state(
             context, target_id
         )
         if invalidation_count is None or invalidation_count < _S7_MAX_INVALIDATIONS:
-            invalidations.append((target_id, reason))
+            # With candidate generation, every candidate is invalidated; the
+            # selection task follows by dependency (story-pipeline.md S8).
+            invalidations.extend((task_id, reason) for task_id in target_ids)
         else:
             warning = (
                 f"{target_id}: 矛盾あり判定が無効化上限（{_S7_MAX_INVALIDATIONS}回）に達したため、"
@@ -173,6 +177,14 @@ def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
         invalidations=invalidations,
         manifest_updates=manifest_updates,
     )
+
+
+def _what_task_ids(context: CodeTaskContext, event_id: str) -> list[str]:
+    run_dir = getattr(context, "run_dir", None)
+    if run_dir is None:
+        return [f"S7.event-{event_id}-what"]
+    tasks = load_manifest(run_dir / "manifest.json").get("tasks", {})
+    return what_task_ids(tasks, event_id)
 
 
 def _s7_invalidation_state(
