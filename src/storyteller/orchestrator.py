@@ -2840,7 +2840,8 @@ def _apply_invalidation(
     current_count = int(target["invalidations"])
     if current_count >= max_invalidations:
         target["error"] = reason
-        if target["type"] in {"S4.section", "S4.item"}:
+        if (target["type"] in {"S4.section", "S4.item"}
+            and definition.get("on_exhausted", "skip") == "skip"):
             _force_task_state(manifest, task_id, "skipped", at, reason=reason)
             manifest["warnings"].append(f"{task_id}: 無効化の上限に達したため省略: {reason}")
             _refresh_blocked_tasks(manifest, at)

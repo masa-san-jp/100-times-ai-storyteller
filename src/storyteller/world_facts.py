@@ -79,7 +79,10 @@ def _description_entries(world_task: Mapping[str, Any], entries: Sequence[Mappin
            and (entry.get("item_id") == world_task["id"] if world_task["kind"] == "list"
                 else all_viewpoints or entry["viewpoint"] == world_task["viewpoint"])]
     ids = {entry["id"] for entry in own}
-    for entry in list(own):
+    cursor = 0
+    while cursor < len(own):
+        entry = own[cursor]
+        cursor += 1
         for other in referred_entries(entry, entries):
             if other["id"] not in ids:
                 own.append(other)

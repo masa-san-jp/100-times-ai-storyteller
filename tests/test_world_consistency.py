@@ -128,3 +128,64 @@ def test_six_full_fact_rows_and_maximum_body_fit_model_context():
     assert body in card and all(fact['text'] in card for fact in facts)
     model = yaml.safe_load((ROOT / 'config/models.yaml').read_text(encoding='utf-8'))['models']['gpt-oss:20b']
     assert 2 * len(card) + model['max_tokens'] <= model['context_length']
+
+
+@pytest.mark.parametrize('keys', [
+    ['social_structure.habitat_area', 'place.protected_area', 'place.area'],
+    ['social_structure.forest_area', 'place.summer_temperature', 'place.highest_elevation'],
+])
+def test_generation_claim_preserves_transitive_fact_references(tmp_path, keys):
+    from storyteller.tables import load_table
+    catalog = {entry['key']: entry for entry in load_table('world_facts')['facts']}
+    entries = [dict(catalog[key], id=key, item_id=None) for key in keys]
+    assignment = _assignment()
+    world_task = deepcopy(assignment['world_tasks'][0])
+    world_task.update(id='social_structure-1-f1', section_id='social_structure',
+                      viewpoint=entries[0]['viewpoint'])
+    assignment.update(world_tasks=[world_task], world_fact_tasks=entries)
+    assert [entry['key'] for entry in description_entries(world_task, entries)] == keys
+    base = create_story_orchestrator(ROOT)
+    definitions = {'S4.section': base.task_definitions['S4.section']}
+    sources = {'S3.assign': assignment, 'S4.calendar_name': {'name': 'カナ暦', 'reading': 'カナ'},
+               **{f'S4.fact-{key}': str(value) for key, value in zip(keys, (2, 3, 4))}}
+    specs = []
+    handlers = {}
+    for task_id in sources:
+        task_type = task_id.split('-')[0]
+        definitions[task_type] = {'id': task_type, 'version': 1, 'kind': 'code', 'handler': task_type}
+        handlers[task_type] = lambda context: sources[context.task_id]
+        specs.append(TaskSpec(task_id, task_type,
+                              index=(task_id.split('-', 1)[1],) if '-' in task_id else ()))
+    body_id = 'S4.section-social_structure-1-f1'
+    specs.append(TaskSpec(body_id, 'S4.section', deps=tuple(sources), index=(world_task['id'],)))
+    harness = Orchestrator(tmp_path / 'data', definitions, handlers, harness_root=ROOT, repository_root=ROOT)
+    run = harness.create_run(seed=1, task_specs=specs)
+    claim = harness.claim_next(run, executor_id='test')
+    inputs = json.loads((harness.task_dir(run, body_id) / 'input.json').read_text(encoding='utf-8'))
+    assert len(inputs['facts']) == 3
+    assert all(catalog[key]['label'] in claim['card'] for key in keys)
+    assert all(f'S4.fact-{key}' in harness.load_run(run)['tasks'][body_id]['deps'] for key in keys)
+
+
+def test_fact_reference_closure_is_cycle_safe_and_keeps_ids_once():
+    entries = [dict(id='a', key='a', section_id='place', viewpoint='地形', item_id=None, refers=['b']),
+               dict(id='b', key='b', section_id='place', viewpoint='制度', item_id=None, refers=['a'])]
+    world_task = dict(id='place-1-f1', section_id='place', kind='single', viewpoint='地形')
+    assert [entry['id'] for entry in description_entries(world_task, entries)] == ['a', 'b']
+
+
+def test_generated_dag_includes_three_level_catalog_references(tmp_path):
+    from tests.test_world_facts import _planned
+    harness, run, assignment = _planned(tmp_path, sections=['place', 'social_structure'])
+    manifest = harness.load_run(run)
+    entries = {entry['key']: entry for entry in assignment['world_fact_tasks']}
+    for keys in ([
+        'social_structure.habitat_area', 'place.protected_area', 'place.area'
+    ], [
+        'social_structure.forest_area', 'place.summer_temperature', 'place.highest_elevation'
+    ]):
+        world_task = next(task for task in assignment['world_tasks']
+                          if task['section_id'] == 'social_structure'
+                          and task['viewpoint'] == entries[keys[0]]['viewpoint'])
+        dependencies = manifest['tasks'][f"S4.section-{world_task['id']}"]['deps']
+        assert {f'S4.fact-{key}' for key in keys} <= set(dependencies)
