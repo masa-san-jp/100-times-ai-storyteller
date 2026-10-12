@@ -187,6 +187,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 ### 4.2 構造テンプレートの選び方
 
 - 構造テンプレートは `tables/structures.yaml` に置く。各テンプレートは段階の一覧を持ち、各段階は次を持つ：定義文、指針（heros-journey の段階ごとの指針と、骨子 A〜E の要素：予兆・挫折・代償など）、幕（`act`）、重み、要求する役、`absent_role_note`、`world_sections`、`object`（真偽値）、`climax`（真偽値）。
+- 構造テンプレートは、任意で `chapters`（小説様式の章への割付）を持てる。各章は `id`・`name`・`stages`（段階 id の並び）を持ち、全章の `stages` を順に連結すると、段階の一覧と過不足なく一致しなければならない。`chapters` がない構造テンプレートは、1段階を1章とする（[format-pipeline.md](format-pipeline.md) §4.1）。
 - 標準の構造テンプレートは3つある：`three-beat`（3段階）、`kishotenketsu`（4段階）、`heros-journey-12`（12段階）。段階の定義は `tables/structures.yaml` を原本とする。
 - 主筋（および大河の各部の主筋）のテンプレートは、プロット型が `standard` の場合、その筋に配分された出来事数で決める。
 
