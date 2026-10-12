@@ -1,0 +1,21 @@
+name: screenplay
+unit: scene
+unit_mapping: scene
+chars_per_event: [300, 800]
+max_chars_per_task: 2400
+template: template.fountain
+continuation: true
+
+rules:
+  - Fountain 形式でシーンの中身を書く。シーン見出し（行頭の「.」）、章・節の見出し（「#」）、タイトルページは書かない。
+  - 状況と動きは、現在形の短い地の文（アクション）で書く。1段落ごとに空行を入れる。
+  - 台詞は、行頭に「@」を付けた人物名の行、その直下に台詞の行、の形で書く。台詞の前後は空行にする。感情や仕草は、人物名の行と台詞の間、または台詞の行の間に、半角の丸括弧で囲んだ1行で示す。
+  - 人物の内面は、行動と台詞で見せる。説明的な地の文で済ませない。
+  - 入力の出来事の順序を変えない。
+  - 入力にない出来事・人物を加えない。
+
+checks:
+  code: [min_chars, max_chars, ends_complete, fountain_syntax]
+  llm:
+    - 入力の出来事のうち、描かれていないものがありますか
+    - 入力にない人物が登場していますか

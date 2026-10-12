@@ -56,6 +56,7 @@
 | 要素の軸 | `tables/element_axes.yaml` | Phase 1 |
 | 世界セクションのカタログ | `tables/world_sections.yaml` | Phase 1 |
 | 近似重複の閾値 | `tables/dedup.yaml` | Phase 2 |
+| 時間の飛躍を示す語句（映画シナリオのシーン割付） | `tables/time_jumps.yaml` | Phase 3 |
 | 正本の形式 | `schemas/story.schema.json` | Phase 1 |
 
 移行するときは、spec 側の値を削除し、ファイルへのリンクに置き換える。値が spec とファイルの両方に残っている状態を作らない。ファイルを作成する作業項目は、この置き換えを受け入れ条件に含む（各フェーズ計画書の「共通の受け入れ条件」）。

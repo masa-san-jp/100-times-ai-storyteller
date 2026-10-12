@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from . import format_slides, format_visual
+from . import format_scene, format_slides, format_visual
 from .format_units import UNIT_MAPPERS
 from . import reference_book
 from .orchestrator import CodeTaskContext, CodeTaskResult, Orchestrator, TaskSpec
@@ -40,6 +40,7 @@ FORMAT_SINGLE_SOURCES = frozenset({"F0.select", "F1.split", "F2.write", "F2.writ
 SyntaxCheck = Callable[[str, Mapping[str, Any]], list[str]]
 SYNTAX_CHECKS: dict[str, SyntaxCheck] = {
     "contains_names": reference_book.check_contains_names,
+    "fountain_syntax": format_scene.check_fountain_syntax,
     format_slides.CHECK_NAME: format_slides.check_slide,
 }
 
