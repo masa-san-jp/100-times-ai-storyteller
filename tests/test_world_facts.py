@@ -182,7 +182,10 @@ def test_export_has_one_calendar_measurement_year_and_sorted_timeline():
     assert "| 標高 | 200.0 | m | 300 | カナ暦 |" in markdown
     assert markdown.index("| カナ暦 | 12 | リオ") < markdown.index("| カナ暦 | 200 |")
     del outputs["S4.fact-place.height"]
-    assert "| 標高 |" not in render_world_facts_markdown(assignment, outputs)  # skipped facts are omitted
+    # task-model §6.7: 省略された事実は行を残し、値を（未定）として示す。
+    with pytest.raises(ValueError, match="省略されていない"):
+        render_world_facts_markdown(assignment, outputs)
+    assert "| 標高 | （未定） | m | 300 | カナ暦 |" in render_world_facts_markdown(assignment, outputs, skipped=frozenset({"S4.fact-place.height"}))
 
 
 def test_glossary_ids_and_fact_context_are_section_scoped_and_survive_budget():
@@ -510,12 +513,14 @@ def test_fact_definitions_skip_on_exhaustion(task_type):
     assert definition.get("on_exhausted", "skip") == "skip"
 
 
-def test_render_world_facts_omits_skipped_fact_without_error():
+def test_render_world_facts_shows_skipped_fact_as_undecided_without_error():
     assignment, outputs = _assembled()
     full = render_world_facts_markdown(assignment, outputs)
     del outputs["S4.fact-place.height"]
-    markdown = render_world_facts_markdown(assignment, outputs)
-    assert "| 標高 |" in full and "| 標高 |" not in markdown
+    markdown = render_world_facts_markdown(assignment, outputs, skipped=frozenset({"S4.fact-place.height"}))
+    # task-model §6.7: 行は残り、値だけが（未定）になる（出来事そのものは消えない）。
+    assert "| 標高 | 200.0 | m | 300 | カナ暦 |" in full
+    assert "| 標高 | （未定） | m | 300 | カナ暦 |" in markdown
     assert "## 年表" in markdown
 
 

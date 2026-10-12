@@ -2014,6 +2014,18 @@ class Orchestrator:
                         fixed = fixed_range_value(context.definition, limits)
                     elif context.definition.get("element") == "choice":
                         fixed = fixed_choice_value(context.definition, context.inputs)
+                    if fixed is not None and task["type"] == "S5.fact":
+                        from .glossary import glossary_id
+                        skipped_names = {glossary_id(dependency, 0) for dependency, record in manifest["tasks"].items()
+                                         if record["type"] == "S5.fact" and record["state"] == "skipped"}
+                        if context.definition.get("element") == "choice" and fixed in skipped_names:
+                            reason = "選択肢の参照元が省略されたため未定"
+                            _set_task_state(manifest, task_id, "skipped", self._now(), reason=reason)
+                            task["error"] = reason
+                            manifest["warnings"].append(f"{task_id}: {reason}")
+                            _refresh_blocked_tasks(manifest, self._now())
+                            changed = completed = True
+                            continue
                     if fixed is not None:
                         atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
                         _write_submitted_output(self.task_dir(run_id, task_id), context.definition, fixed)
@@ -2119,7 +2131,7 @@ class Orchestrator:
                     name: slot for name, slot in definition["inputs"].items()
                     if name in {"shape", "bounds"}
                 }}
-            dependencies = _read_dependency_outputs(self.run_dir(run_id), prospective, task)
+            dependencies = _read_dependency_outputs(self.run_dir(run_id), prospective, task, strict=False)
             dependencies.update({key: value for key, value in (pending_outputs or {}).items()
                                  if key in spec.deps})
             sources = _source_outputs(prospective, task, range_definition, dependencies)
@@ -3721,7 +3733,18 @@ def _read_dependency_outputs(
     run_dir: Path,
     manifest: Mapping[str, Any],
     task: Mapping[str, Any],
+    *,
+    strict: bool = True,
 ) -> dict[str, Any]:
+    """Read ``done`` dependencies' outputs from disk.
+
+    ``strict`` detects the real anomaly of a ``done`` task whose output file
+    is missing (as opposed to a ``skipped`` task, which legitimately has
+    none): it must not be read as "skipped" and quietly become （未定）.
+    ``_preflight_ranges`` passes ``strict=False`` because it marks tasks
+    ``done`` prospectively, before their output is written, and supplies
+    their value separately via ``pending_outputs``.
+    """
     outputs: dict[str, Any] = {}
     for task_id in task["deps"]:
         dependency = manifest["tasks"][task_id]
@@ -3732,6 +3755,8 @@ def _read_dependency_outputs(
         try:
             if output_json.is_file() or output_md.is_file():
                 outputs[task_id] = read_task_output(run_dir / "tasks" / task_id, dependency["type"])
+            elif strict:
+                raise CodeTaskError(f"完了したタスクの出力ファイルがありません: {task_id}")
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise CodeTaskError(f"タスク出力を読み込めません: {task_id}") from error
     return outputs

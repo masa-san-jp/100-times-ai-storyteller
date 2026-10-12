@@ -81,7 +81,11 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
     characters_markdown = render_characters_markdown(story, outputs, glossary)
     world_markdown = render_world_markdown(story)
     glossary_markdown = render_glossary_markdown(glossary)
-    world_facts_markdown = render_world_facts_markdown(assignment, outputs)
+    world_facts_markdown = render_world_facts_markdown(
+        assignment, outputs, skipped=frozenset(
+            task_id for task_id, task in manifest["tasks"].items() if task["state"] == "skipped"
+        ),
+    )
 
     volume, warnings = _compute_volume(
         manifest,
@@ -137,6 +141,10 @@ def _all_outputs(context: CodeTaskContext) -> dict[str, Any]:
                 outputs[task_id] = read_task_output(context.run_dir / "tasks" / task_id, task["type"])
             except (OSError, UnicodeError, json.JSONDecodeError) as error:
                 raise ValueError(f"タスク出力を読み込めません: {task_id}") from error
+        else:
+            # state が done なのに出力ファイルがないのは省略ではない異常であり、
+            # （未定）に読み替えて進めてはならない。
+            raise ValueError(f"完了したタスクの出力ファイルがありません: {task_id}")
     return outputs
 
 

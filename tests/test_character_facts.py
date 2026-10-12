@@ -263,6 +263,56 @@ def test_no_location_falls_back_to_one_registered_name_then_choice(tmp_path):
     assert card["shape"] == "choice" and card["choices"][0]["name"]
 
 
+def _advance_until_ready(harness, run_id, target):
+    """Submit good answers for every ready task other than ``target``."""
+    while True:
+        manifest = harness.advance(run_id)
+        task = manifest["tasks"][target]
+        if task["kind"] != "llm" or task["state"] == "ready":
+            return
+        ready = [task_id for task_id, t in manifest["tasks"].items()
+                 if t["kind"] == "llm" and t["state"] == "ready" and task_id != target]
+        if not ready:
+            return
+        task_id = ready[0]
+        claim = harness.claim_task(run_id, task_id, executor_id="test")
+        inputs = json.loads((harness.task_dir(run_id, task_id) / "input.json").read_text(encoding="utf-8"))
+        if inputs["shape"] == "name":
+            reading = "".join(inputs["name_sound"]["sounds"][:2])
+            value = json.dumps({"name": reading, "reading": reading}, ensure_ascii=False)
+        elif inputs["shape"] == "choice":
+            value = inputs["choices"][-1]["id"]
+        elif inputs["shape"] in {"integer", "number"}:
+            value = str(inputs.get("bounds", {}).get("max", 170))
+        else:
+            value = "母" if inputs["label"] == "続柄" else "水路を点検する"
+        assert harness.submit(claim["ticket"], value).accepted
+
+
+def test_residence_is_undecided_when_birthplace_is_skipped(tmp_path):
+    # レビュー指摘2: 世界に地名がないとき、居住地の唯一の選択肢は出身地が
+    # 登録する予定の ID になる。出身地（S5.fact-c1-birthplace）が上限に
+    # 達して省略されると、その ID は用語集に登録されないので、居住地を
+    # その未登録 ID で確定させてはならない（task-model §6.7、ADR-0008）。
+    harness, run_id, _ = _harness(tmp_path, with_place=False)
+    task_id = "S5.fact-c1-birthplace"
+    _advance_until_ready(harness, run_id, task_id)
+    for _ in range(5):
+        claim = harness.claim_task(run_id, task_id, executor_id="test")
+        assert not harness.submit(claim["ticket"], '{"name": "x", "reading": "x"}').accepted
+    assert harness.load_run(run_id)["tasks"][task_id]["state"] == "skipped"
+    _finish(harness, run_id, skipped=(task_id, "S5.fact-c1-residence"))
+    assert harness.load_run(run_id)["tasks"]["S5.fact-c1-residence"]["state"] == "skipped"
+    assert harness.load_run(run_id)["status"] == "completed"
+    outputs = _accepted_outputs(harness, run_id)
+    sheet = assemble_character_sheet(outputs, "c1")
+    assert sheet.get("birthplace") is None
+    assert sheet.get("residence") is None
+    # 未登録 ID が残っていれば用語集に無く、以前は KeyError になっていた。
+    markdown = render_character_sheet(sheet, build_glossary(outputs))
+    assert "| 出身地 | （未定） |" in markdown and "| 居住地 | （未定） |" in markdown
+
+
 def test_single_option_choices_are_recorded_by_code_without_a_claim(tmp_path, monkeypatch):
     from storyteller.task_outputs import read_task_output
     harness, run_id, _ = _harness(tmp_path)
@@ -491,16 +541,22 @@ def test_character_sheet_omits_skipped_facts_without_error(tmp_path):
     _finish(harness, run_id)
     outputs = _accepted_outputs(harness, run_id)
     plan = outputs["S5.fact_plan-c1"]["facts"]
+    assert any(entry["key"] == "family.1.name" for entry in plan), "この件数のシードは家族1件目を前提とする"
     for key in ("age", "affiliation", "timeline.1.event", "family.1.name", "skills.1"):
         for entry in plan:
             if entry["key"] == key:
                 outputs.pop(f"S5.fact-{entry['id']}", None)
     sheet = assemble_character_sheet(outputs, "c1")
     assert sheet.get("age") is None and sheet["birth_year"] is None
+    # task-model §6.7: 片方の欄だけ省略された行は消さず、欠けた欄を
+    # （未定）として残す（行ごと除外すると、合格した続柄・年が消える）。
     assert all({"year", "event"} <= row.keys() for row in sheet["timeline"])
+    assert any(row["event"] == "（未定）" for row in sheet["timeline"])
+    assert any(member["name"] == "（未定）" for member in sheet["family"])
     markdown = render_character_sheet(sheet, build_glossary(outputs))
-    assert "| 年齢（歳） | 不明 |" in markdown
-    assert "| 所属 | 不明 |" in markdown
+    assert "| 年齢（歳） | （未定） |" in markdown
+    assert "| 所属 | （未定） |" in markdown
+    assert "（未定）" in markdown
 
 
 def test_fact_plan_without_age_fact_still_plans_the_rest(tmp_path):
@@ -545,7 +601,7 @@ def test_generated_character_fact_repairs_escalates_and_skips(tmp_path):
     assert harness.load_run(run_id)["status"] == "completed"
     outputs = _accepted_outputs(harness, run_id)
     sheet = assemble_character_sheet(outputs, "c1")
-    assert "不明" in render_character_sheet(sheet, build_glossary(outputs))
+    assert "（未定）" in render_character_sheet(sheet, build_glossary(outputs))
 
 
 def test_skipped_age_finishes_generated_character_fact_run(tmp_path):
@@ -560,4 +616,4 @@ def test_skipped_age_finishes_generated_character_fact_run(tmp_path):
     outputs = _accepted_outputs(harness, run_id)
     sheet = assemble_character_sheet(outputs, "c1")
     assert sheet["birth_year"] is None
-    assert "不明" in render_character_sheet(sheet, build_glossary(outputs))
+    assert "（未定）" in render_character_sheet(sheet, build_glossary(outputs))
