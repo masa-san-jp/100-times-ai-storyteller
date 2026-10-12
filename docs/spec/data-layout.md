@@ -61,7 +61,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 
 - `run_id` は `<作成日時（UTC） YYYYMMDD-HHMMSS>-<seed を8桁の小文字16進にした先頭6桁>` とする。
 - `batch_id` は `run_id` と同じ形式で、作成日時とバッチの seed から作る。
-- `task_id` は `<タスク種別ID>`、または `<タスク種別ID>-<添字>` とする。添字は、スロットや人物のID、候補番号（`c1`〜）を `-` でつなぐ（例：`S7.event-e005-c2`）。継続は同じタスクの中で扱い、task_id を分けない（[task-model.md](task-model.md) §8）。
+- `task_id` は `<タスク種別ID>`、または `<タスク種別ID>-<添字>` とする。添字は、スロットや人物のID、候補番号（`c1`〜）を `-` でつなぐ（例：`S7.event-e005-what-c2`）。継続は同じタスクの中で扱い、task_id を分けない（[task-model.md](task-model.md) §8）。
 - コードタスクもタスクディレクトリを持ち、出力を `output.json` に置く（`card.md` と `claim.json` は持たない）。spec 中の `assignment.json`・`slots.json` は、それぞれ S3・S6 のタスクの `output.json` を指す。
 - ユーザーの入力と生成物を、データディレクトリ以外に書き出さない。
 

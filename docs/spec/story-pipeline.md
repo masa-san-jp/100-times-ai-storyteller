@@ -117,7 +117,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 - 出力：`slots.json`。S7 のタスクをスロットの数だけ生成する。
 
 ### S7 出来事生成 [L]
-- タスクの単位：スロット1つの項目1つ（`S7.event-e<3桁>-<項目>`、`element: text`、各120字以内）。項目は `what`（何が起きたか）→ `where` → `when` → `why` → `intent` → `result` → `emotion` → `foreshadowing` の順に1つずつ実行し、同じスロットの先に決まった項目をカードに示す。`what` のタスクは `candidates: 3`、`select_candidate: least_similar`（Phase 1 は `candidates: 1`）。
+- タスクの単位：スロット1つの項目1つ（`S7.event-e<3桁>-<項目>`、`element: text`、各120字以内）。項目は `what`（何が起きたか）→ `where` → `when` → `why` → `intent` → `result` → `emotion` → `foreshadowing` の順に1つずつ実行し、同じスロットの先に決まった項目をカードに示す。`what` のタスクは `candidates: 3`、`select_candidate: least_similar`（Phase 1 は `candidates: 1`）。候補タスクは `S7.event-e<3桁>-what-c<n>`、選ぶコードタスクは `S7.select-e<3桁>` とし、後続の項目は選ばれた `what` をカードに示す。`least_similar` の比較対象（[task-model.md](task-model.md) §7）は、同じバッチの他の run のすべてのスロットの、選ばれた `what` とする。
 - `who` は推論させない。S6 がスロットに割り当てた人物を、コードが `who` として記録する。
 - 入力：
   - スロットの段階の定義文。割り当てられていれば、プロット型の必須の出来事の説明、`absent_role_note`、`object`
