@@ -90,6 +90,13 @@
       "items": {
         "type": "string"
       }
+    },
+    "escalation": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9._-]{1,64}$"
+      }
     }
   },
   "$defs": {
@@ -218,6 +225,10 @@
         },
         "error": {
           "type": ["string", "null"]
+        },
+        "executor": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9._-]{1,64}$"
         }
       }
     },

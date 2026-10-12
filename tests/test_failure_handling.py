@@ -212,7 +212,7 @@ def test_request_rejection_is_fatal_even_with_skip_and_status_links_draft(
 
 
 def test_exhaustion_report_keeps_attempts_and_limits_output_preview(tmp_path):
-    harness = Orchestrator(tmp_path, {"D1.value": definition(max_attempts=2)})
+    harness = Orchestrator(tmp_path, {"D1.value": definition(max_attempts=2, on_exhausted="fail")})
     run = harness.create_run(seed=1, input_data={"material": "入力を伏せる"})
     for raw in ["あ" * 300 + "先頭300字の外", "450〜500"]:
         claim = harness.claim_next(run, executor_id="worker")

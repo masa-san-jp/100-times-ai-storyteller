@@ -410,3 +410,16 @@ def test_s6_chooses_between_people_with_the_same_required_role_by_seed() -> None
         )
 
     assert selected == {"c2", "c3"}
+
+
+def test_skipped_motive_is_shown_as_undecided() -> None:
+    # task-model §6.7: a skipped S5.motive leaves no output; S6 goes on with 「（未定）」.
+    from storyteller.story_s6 import _character_outputs
+
+    outputs = {"S5.name-c1": {"name": "カナ"}, "S5.name-c2": {"name": "リオ"},
+               "S5.motive-c2": {"motive": "町を守る"}}
+    result = _character_outputs(outputs, [{"id": "c1"}, {"id": "c2"}])
+    assert result["c1"]["motive"] == "（未定）"
+    assert result["c2"]["motive"] == "町を守る"
+    with pytest.raises(ValueError):
+        _character_outputs({"S5.motive-c1": {"motive": "x"}}, [{"id": "c1"}])

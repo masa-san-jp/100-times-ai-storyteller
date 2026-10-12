@@ -17,6 +17,10 @@ class E2EPlan:
         self.story_calls = 0
 
     def __call__(self, card: str) -> Response:
+        if "前回の出力を、元の内容を保ったまま" in card:
+            # task-model §6.7: the overlong d2 value gets a repair card.
+            assert "あ" * 51 in card and "50字以内" in card
+            return Response("beta")
         if "### 項目\n" in card:
             item_id = item_id_from_card(card)
             assert item_id is not None

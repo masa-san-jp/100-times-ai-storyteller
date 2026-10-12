@@ -121,7 +121,7 @@ def story_s8_judge(context: CodeTaskContext) -> CodeTaskResult:
 
     event_id = _judge_event_id(context)
     comparisons = context.inputs.get("comparisons")
-    if comparisons is None:
+    if comparisons is None or comparisons == "未定":  # comparisons were skipped
         comparisons = []
     if isinstance(comparisons, Mapping):
         # S8.compare is indexed.  The selector contract therefore supplies

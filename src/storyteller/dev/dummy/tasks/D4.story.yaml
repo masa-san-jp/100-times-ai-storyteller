@@ -21,3 +21,5 @@ validate:
         n: 10
 continuation: true
 lease_minutes: 0.05
+# 状態遷移の検査用：上限に達したら run を止める（task-model §6.3）。
+on_exhausted: fail
