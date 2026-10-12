@@ -520,3 +520,16 @@ def test_description_recovers_subject_name_without_a_direct_name_dependency(tmp_
     assert inputs["facts"]["age"] == 71
     card = generate_task_card(_definition("S5.intro"), "ticket", inputs)
     assert "リオ" in card
+
+
+def test_description_does_not_invent_a_subject_when_accepted_name_is_unavailable(tmp_path):
+    harness, run_id, _ = _harness(tmp_path, age=71)
+    _finish(harness, run_id)
+    outputs = _accepted_outputs(harness, run_id)
+    outputs.pop("S5.name-c1")
+    source = character_source_context(outputs, {"type": "S5.intro", "index": ["c1"]})
+    assert "name" not in source["c1"]
+    assert source["c1"]["age"] == 71
+    definition = {"element": "text", "output": "text", "validate": {"checks": [
+        {"character_identity": {"require_subject": True}}]}}
+    assert validate_output(definition, "人物の名前は未定。", {"facts": source["c1"]}).passed
