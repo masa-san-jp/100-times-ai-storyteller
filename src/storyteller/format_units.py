@@ -25,6 +25,7 @@ class Unit:
     title: str
     event_ids: tuple[str, ...]
     part: int | None = None
+    person_id: str | None = None  # set for a unit made from one cast member
 
 
 UnitMapper = Callable[[Mapping[str, Any], Mapping[str, Any], Path], list[Unit]]
