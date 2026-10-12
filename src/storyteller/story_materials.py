@@ -12,10 +12,18 @@ def assign_material_id(task: Mapping[str, Any], value: Any) -> Any:
     if task.get("type") != "S1.extract" or not isinstance(value, Mapping):
         return value
     index = task.get("index", [])
-    if (len(index) != 2 or not re.fullmatch(r"p[0-9]{3}", index[0])
-            or index[1] not in {"1", "2", "3", "4", "5"}):
+    if len(index) != 2 or index[1] not in {"1", "2", "3", "4", "5"}:
         return value
-    number = (int(index[0][1:]) - 1) * 5 + int(index[1])
+    if re.fullmatch(r"p[0-9]{3}", index[0]):
+        position = int(index[0][1:])
+    else:
+        # ナラティブの段落 ID は項目名。項目の定義順を位置として使う。
+        from .narrative import NARRATIVE_ITEMS
+        keys = list(NARRATIVE_ITEMS)
+        if index[0] not in keys:
+            return value
+        position = keys.index(index[0]) + 1
+    number = (position - 1) * 5 + int(index[1])
     return {**value, "id": f"m{number:03d}"}
 
 

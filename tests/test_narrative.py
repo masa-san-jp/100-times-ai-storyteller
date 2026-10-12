@@ -108,3 +108,17 @@ def test_cli_new_narrative(tmp_path: Path, monkeypatch, capsys) -> None:
     assert (data_dir / "runs" / run_id / "input.json").is_file()
     bad = _write(tmp_path / "bad.json", _narrative(1))
     assert main(["new", "--narrative", str(bad), "--scale", "vignette"]) == 1
+
+
+def test_narrative_s1_materials_get_stable_ids():
+    from storyteller.narrative import NARRATIVE_ITEMS
+    from storyteller.story_materials import assign_material_id, materials_from_outputs
+
+    keys = list(NARRATIVE_ITEMS)
+    outputs = {}
+    for key in (keys[0], keys[-1]):
+        for number in "15":
+            task = {"type": "S1.extract", "index": [key, number]}
+            outputs[f"{key}-{number}"] = assign_material_id(task, {"text": "t", "kind": "value"})
+    ids = [m["id"] for m in materials_from_outputs(outputs)]
+    assert ids == ["m001", "m005", f"m{(len(keys) - 1) * 5 + 1:03d}", f"m{len(keys) * 5:03d}"]
