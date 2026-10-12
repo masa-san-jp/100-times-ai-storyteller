@@ -1,2 +1,3 @@
 opening_threshold: 0.35
 max_copy_chars: 60
+near_duplicate_threshold: 0.5

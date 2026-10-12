@@ -43,7 +43,7 @@ def test_copy_uses_prose_values_not_metadata_or_artificial_boundaries(tmp_path: 
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text((ROOT / relative).read_text(encoding="utf-8"), encoding="utf-8")
-    (tmp_path / "tables/dedup.yaml").write_text("opening_threshold: 0.35\nmax_copy_chars: 3\n", encoding="utf-8")
+    (tmp_path / "tables/dedup.yaml").write_text("opening_threshold: 0.35\nnear_duplicate_threshold: 0.5\nmax_copy_chars: 3\n", encoding="utf-8")
     result = validate_output(definition, json.dumps({"body": "ががが"}), {"text": "か\u3099" * 3}, harness_root=tmp_path)
     assert not result.passed
 
