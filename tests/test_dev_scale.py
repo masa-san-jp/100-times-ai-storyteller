@@ -61,8 +61,9 @@ def test_dev_run_has_minimal_allocation(tmp_path: Path) -> None:
     assert volume["story"]["scene_counts"] == [1, 1, 1]
 
 
-def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path) -> None:
-    data_dir, run_id = _new_dev_run(tmp_path)
+@pytest.mark.parametrize("seed", [38, 5])
+def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path, seed: int) -> None:
+    data_dir, run_id = _new_dev_run(tmp_path, seed)
     harness = create_story_orchestrator(data_dir)
     for _ in range(500):
         claimed = harness.claim_next(run_id, executor_id="dev", isolation="none")
@@ -73,6 +74,9 @@ def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path) -> N
             task_id, task, _task_input(data_dir, run_id, task_id), send_comparison_yes=False
         )
         inputs = _task_input(data_dir, run_id, task_id)
+        if task["type"] == "S5.relationship":
+            other = inputs["other_person"]
+            assert other and other[0]["name"] and other[0]["intro"], inputs
         definition = specialize_fact_definition(harness.task_definitions[task["type"]], inputs)
         if definition["output"] != "text":
             output = json.dumps(output, ensure_ascii=False)

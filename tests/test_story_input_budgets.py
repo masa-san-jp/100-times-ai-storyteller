@@ -110,3 +110,15 @@ def test_world_excerpt_keeps_whole_leading_facets_and_paragraphs():
     assert selected[0]["body"] == facets[0]["body"]
     assert _world_excerpt("あ" * 700 + "。\n\n" + "い" * 600 + "。", 1200) == "あ" * 700 + "。"
     assert _world_excerpt("あ" * 700 + "。" + "い" * 600 + "。", 1200) == "あ" * 700 + "。"
+
+
+def test_relationship_keeps_other_person_object_and_glossary():
+    other = {"id": "c2", "name": "カナ", "role": "supporter", "intro": "水路の見回り役。"}
+    inputs = _s5_inputs("リオ", _character("protagonist", "c1", "主人公"))
+    inputs["facts"] = sheet_for_card(_facts(), _glossary())
+    inputs["glossary"] = _glossary()
+    inputs["profile"] = "プロフィール。"
+    inputs["other_person"] = {"c2": other}
+    fitted = _assert_fits("S5.relationship", inputs)
+    assert fitted["other_person"] == [other]
+    assert fitted["glossary"]
