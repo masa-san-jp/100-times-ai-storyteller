@@ -1,5 +1,5 @@
 id: S7.event
-version: 9
+version: 10
 kind: llm
 element: text
 inputs:
@@ -88,6 +88,7 @@ select_candidate: least_similar
 card:
   role: 与えられた局所的な文脈から、入力で指定された出来事の項目1つだけを書く。
   steps:
+  - 「何が起きたか」と「結果」は、割り当て人物の名前を冒頭に置き、「は」または「が」で主語にする。共同主語は割り当て人物の名前だけを「と」か「、」でつなぐ。ほかの人物への言及はできるが、主語を別人物に置き換えない。
   - 確定した発動・禁止・解決条件を守り、入力にない条件を追加・反転・置換しない。本文に内部 ID と構造の説明を書かない。
   - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
   - 段階の定義と指針に従い、必須の出来事があれば、それを満たす項目の本文を書く。
@@ -99,6 +100,7 @@ card:
 validate:
   checks:
   - no_story_metadata
+  - event_subject
   - no_copy_from_inputs
   - avoid_listed:
       table: tables/meta_terms.yaml

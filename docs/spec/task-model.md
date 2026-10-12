@@ -254,6 +254,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 | `ends_complete` | `field`（任意）, `fix`（任意、`append`） | 末尾の空白を除いた最後の文字が `。．.！!？?」』）)】…` のいずれか。`fix: append` の場合は、満たさないとき末尾に「。」を補って合格とし、manifest の `warnings` に記録する（1文で完結する短い項目に使う。途中で切れた長文には使わない） |
 | `avoid_listed` | `fields`（任意）, `table`（例：`tables/cliches.yaml`） | 指定したテーブルの表現を、正規化後の部分文字列として含まない |
 | `character_identity` | `require_subject`（任意、boolean、既定 false。text のみ） | 人物の事実シート `facts` の `name`・`age`・`birth_year`・`calendar` に対し、対象名に直接係る現在年齢・生年の明示記述を照合する。判定範囲と限界は [story-pipeline.md](story-pipeline.md) §10 を参照。不一致は不合格とし、字数修正で解消可能とは扱わない |
+| `event_subject` | なし（text のみ） | S7 の `what`・`result` は、カードの割り当て人物の既知名を冒頭の主語にする。共同主語・引用符・未定の範囲は [story-pipeline.md](story-pipeline.md) S7 に従う。主体の不一致は不合格とし、字数修正で解消可能とは扱わない |
 | `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` ではすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
 
 ### 6.3 不合格の扱い

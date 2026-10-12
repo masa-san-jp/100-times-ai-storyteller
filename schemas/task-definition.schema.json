@@ -324,6 +324,7 @@
           "enum": [
             "no_copy_from_inputs",
             "character_identity",
+            "event_subject",
             "no_story_metadata",
             "no_repeated_scene",
             "max_chars",
