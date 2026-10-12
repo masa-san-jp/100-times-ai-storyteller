@@ -60,6 +60,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 ```
 
 - `run_id` は `<作成日時（UTC） YYYYMMDD-HHMMSS>-<seed を8桁の小文字16進にした先頭6桁>` とする。
+- `batch_id` は `run_id` と同じ形式で、作成日時とバッチの seed から作る。
 - `task_id` は `<タスク種別ID>`、または `<タスク種別ID>-<添字>` とする。添字は、スロットや人物のID、候補番号（`c1`〜）を `-` でつなぐ（例：`S7.event-e005-c2`）。継続は同じタスクの中で扱い、task_id を分けない（[task-model.md](task-model.md) §8）。
 - コードタスクもタスクディレクトリを持ち、出力を `output.json` に置く（`card.md` と `claim.json` は持たない）。spec 中の `assignment.json`・`slots.json` は、それぞれ S3・S6 のタスクの `output.json` を指す。
 - ユーザーの入力と生成物を、データディレクトリ以外に書き出さない。
@@ -107,7 +108,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 - run の manifest は、§3 の表の項目（任意と書かれたものを除く）をすべて必須とする（値がないものは null）。型は、`schema_version`・`seed` が整数、`created_at`・`updated_at` が §7.2 と同じ時刻の形式、`input`・`scale`・`harness`・`table_snapshot`・`tasks` がオブジェクト、`warnings` が文字列の配列、その他が文字列とする。表にない項目はエラーとする（`additionalProperties: false`）。`scale` と `table_snapshot` の内部の形式は、それを使う作業項目（P1-02、P1-05）で定める。Phase 0 では `input`・`scale` は空のオブジェクトでよい。
 - タスクの記録も、§3.1 の表の項目（任意と書かれたものを除く）をすべて必須とし、表にない項目はエラーとする。
 
-形式は `schemas/manifest.schema.json` で検証する。バッチの manifest の形式は Phase 2（P2-05）で `schemas/batch-manifest.schema.json` として定める。
+形式は `schemas/manifest.schema.json` で検証する。バッチの manifest の形式は `schemas/batch-manifest.schema.json` を原本とする（§3.2 末尾）。
 
 ### 3.2 ハーネスの変更検出
 
@@ -116,7 +117,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 - ハーネスの変更の確認は、run の状態が `halted`・`completed`・`duplicate` 以外のすべての場合に行う（`stalled` を含む）。記録が空でも、現在のファイルとの比較を省略しない。
 - `st next` と `st submit` は、対象の run について、記録と現在のファイルの組を比べる。ファイルの追加・削除・内容の変更は、すべて変更とみなす。
 - run の途中でハーネスのファイルの sha256 が変わったことを `st` が検出した場合、その run を `halted` にする。`halted` の run のタスクは `st next` の対象から外し、標準エラー出力に警告を出す。`st resume --accept-harness-change RUN_ID` で続行を明示した場合だけ、manifest の `harness` を現在の値に更新し、run の状態を [task-model.md](task-model.md) §4.2 の優先順で決め直す。既存の claim は有効のまま残す。
-- バッチの manifest は、バッチの seed・要求件数・run の一覧・完了数・重複で除外した数・作成数の上限を持つ。更新は `batch.lock` を取ってから行う。
+- バッチの manifest は、バッチの seed（`seed`）・要求件数（`requested`）・run の一覧（`runs`：run ID・index・判定 `pending` / `accepted` / `duplicate`）・完了数（`completed`：`accepted` の数）・重複で除外した数（`duplicates`）・作成数の上限（`max_created`）と、補充の run に引き継ぐ `st new` の引数（`params`）を持つ。更新は `batch.lock` を取ってから行う。`batch.lock` を持つ時間を短くするため、`st new --count` は run を1本ずつ作り、作るたびにロックを取って一覧に加える。
 
 ## 4. seed の派生
 
