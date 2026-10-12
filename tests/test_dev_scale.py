@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -98,12 +99,24 @@ def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path) -> N
     assert len(tasks) < 400  # a few minutes with a real model (ADR-0009)
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is required")
+def _test_bash() -> str | None:
+    """Use Git Bash on Windows; System32/bash.exe is a WSL launcher."""
+    if sys.platform == "win32":
+        git = shutil.which("git")
+        if git:
+            candidate = Path(git).resolve().parent.parent / "bin" / "bash.exe"
+            if candidate.is_file():
+                return str(candidate)
+        return None
+    return shutil.which("bash")
+
+
+@pytest.mark.skipif(_test_bash() is None, reason="a native Bash is required")
 def test_dev_run_script_creates_a_dev_run_and_reports(tmp_path: Path) -> None:
     script = ROOT / "tools" / "dev_run.sh"
     data_dir = tmp_path / "data"
     result = subprocess.run(
-        ["bash", str(script), "--data-dir", str(data_dir), "--seed", "3", "--command", "true"],
+        [_test_bash(), str(script), "--data-dir", str(data_dir), "--seed", "3", "--command", "true"],
         capture_output=True, text=True, encoding="utf-8", check=False,
     )
 
@@ -115,7 +128,7 @@ def test_dev_run_script_creates_a_dev_run_and_reports(tmp_path: Path) -> None:
     assert _manifest(data_dir, run_id)["scale"]["preset"] == "dev"
 
     usage = subprocess.run(
-        ["bash", str(script)], capture_output=True, text=True, encoding="utf-8", check=False
+        [_test_bash(), str(script)], capture_output=True, text=True, encoding="utf-8", check=False
     )
     assert usage.returncode == 2
 
@@ -142,3 +155,18 @@ def test_dev_run_relationship_cards_keep_the_counterpart(tmp_path: Path, seed: i
         assert harness.submit(claimed["ticket"], output).accepted, task_id
     assert seen
     assert _manifest(data_dir, run_id)["status"] == "completed"
+
+
+def test_windows_script_launcher_uses_git_bash_instead_of_wsl(tmp_path, monkeypatch):
+    git_root = tmp_path / "Git"
+    git = git_root / "cmd" / "git.exe"
+    bash = git_root / "bin" / "bash.exe"
+    git.parent.mkdir(parents=True)
+    bash.parent.mkdir(parents=True)
+    git.touch()
+    bash.touch()
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(shutil, "which", lambda name: str(git) if name == "git" else "C:/Windows/System32/bash.exe")
+    assert _test_bash() == str(bash)
+    bash.unlink()
+    assert _test_bash() is None
