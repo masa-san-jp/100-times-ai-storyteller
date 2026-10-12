@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from . import format_visual
+from . import format_slides, format_visual
 from .format_units import UNIT_MAPPERS
 from . import reference_book
 from .orchestrator import CodeTaskContext, CodeTaskResult, Orchestrator, TaskSpec
@@ -38,7 +38,10 @@ FORMAT_SINGLE_SOURCES = frozenset({"F0.select", "F1.split", "F2.write", "F2.writ
 # Syntax checks (Fountain, Marp ...) for ``checks.code``.  A check takes the
 # text of one F2 task and its part record, and returns error messages.
 SyntaxCheck = Callable[[str, Mapping[str, Any]], list[str]]
-SYNTAX_CHECKS: dict[str, SyntaxCheck] = {"contains_names": reference_book.check_contains_names}
+SYNTAX_CHECKS: dict[str, SyntaxCheck] = {
+    "contains_names": reference_book.check_contains_names,
+    format_slides.CHECK_NAME: format_slides.check_slide,
+}
 
 
 def default_formats_root() -> Path:
