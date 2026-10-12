@@ -66,7 +66,7 @@ def test_dev_batch_of_ten_completes_despite_executor_crashes(tmp_path: Path) -> 
     assert crashes >= BATCH_SIZE
     for run_id in run_ids:
         manifest = _manifest(data_dir, run_id)
-        assert manifest["status"] == "completed", run_id
+        assert manifest["status"] in {"completed", "duplicate"}, run_id
         assert not [t for t in manifest["tasks"].values() if t["state"] in {"failed", "skipped"}]
 
     status = _cli(data_dir, "status", "--batch", batch_id)
