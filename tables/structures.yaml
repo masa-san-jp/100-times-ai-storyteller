@@ -214,6 +214,39 @@ templates:
         world_sections: [people, future]
         object: true
         climax: true
+    # 小説様式（format-pipeline §4.1）の章への割付。12段階を10章にまとめる。
+    chapters:
+      - id: ordinary-world
+        name: 日常世界
+        stages: [ordinary-world]
+      - id: call-and-refusal
+        name: 冒険への呼びかけと拒否
+        stages: [call-to-adventure, refusal]
+      - id: mentor
+        name: 師との出会い
+        stages: [mentor]
+      - id: threshold
+        name: 第一関門の突破
+        stages: [threshold]
+      - id: trials
+        name: 試練、仲間、敵
+        stages: [trials]
+      - id: ordeal
+        name: 最大の試練
+        stages: [approach, ordeal]
+      - id: reward
+        name: 報酬
+        stages: [reward]
+      - id: road-back
+        name: 帰路
+        stages: [road-back]
+      - id: resurrection
+        name: 復活
+        stages: [resurrection]
+      - id: return-with-elixir
+        name: 宝を持っての帰還
+        stages: [return-with-elixir]
+
   time-loop:
     stages:
       - id: loop-onset

@@ -1,0 +1,38 @@
+id: R2.ending
+version: 1
+kind: llm
+element: text
+inputs:
+  desire:
+    label: 主人公の願望
+    from: R1.aggregate
+    select: "runs[{slot}].desire"
+    required: false
+    truncate: drop
+  adversary:
+    label: 敵対者の役割
+    from: R1.aggregate
+    select: "runs[{slot}].adversary_role"
+    required: false
+    truncate: drop
+  events:
+    label: 主筋の出来事（時系列。長い場合は中間を省いてある）
+    from: R1.aggregate
+    select: "runs[{slot}].events"
+    required: true
+output: text
+continuation: false
+card:
+  role: 与えられた物語の出来事の流れから、物語がどのような結末を迎えたかを短く言い表す。
+  steps:
+    - 出来事の流れの終わりを読み、主人公が最後にどうなったかを、獲得・喪失・変容・帰還などの言葉を手がかりに言い表す。
+    - 60字以内の短い言葉で書く。断定的な診断や評価を加えない。
+    - 入力にある出来事だけを根拠にする。
+validate:
+  checks:
+    - min_chars:
+        n: 1
+    - max_chars:
+        n: 60
+max_input_chars: 4000
+on_exhausted: skip

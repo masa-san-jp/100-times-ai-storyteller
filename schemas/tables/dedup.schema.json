@@ -2,9 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["opening_threshold", "max_copy_chars"],
+  "required": ["opening_threshold", "near_duplicate_threshold", "max_copy_chars"],
   "properties": {
     "opening_threshold": {"type": "number", "minimum": 0, "maximum": 1},
+    "near_duplicate_threshold": {"type": "number", "minimum": 0, "maximum": 1},
     "max_copy_chars": {"type": "integer", "minimum": 1}
   }
 }

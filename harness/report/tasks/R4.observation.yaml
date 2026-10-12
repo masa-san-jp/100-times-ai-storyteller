@@ -1,0 +1,40 @@
+id: R4.observation
+version: 1
+kind: llm
+element: text
+inputs:
+  term:
+    label: 繰り返し現れたモチーフ（代表語）
+    from: R3.group
+    select: "groups[{slot}].term"
+    required: true
+  variants:
+    label: 近い言い方
+    from: R3.group
+    select: "groups[{slot}].variants"
+    required: false
+    truncate: tail
+  summaries:
+    label: そのモチーフが現れた物語の要約
+    from: R3.group
+    select: "groups[{slot}].summaries"
+    required: true
+    truncate: tail
+output: text
+continuation: false
+card:
+  role: 複数の物語に繰り返し現れたモチーフについて、要約に見える傾向を1文で述べる。
+  steps:
+    - 要約に実際に書かれていることだけを根拠に、このモチーフがどのような場面や感情に結びついているかを1文で書く。
+    - 断定や診断をしない。「〜という傾向が見られる」のように、見えたことだけを述べる。
+    - 入力にない事柄を付け加えない。
+validate:
+  checks:
+    - min_chars:
+        n: 1
+    - max_chars:
+        n: 150
+    - ends_complete:
+        fix: append
+max_input_chars: 3000
+on_exhausted: skip

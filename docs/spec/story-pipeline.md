@@ -187,6 +187,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 ### 4.2 構造テンプレートの選び方
 
 - 構造テンプレートは `tables/structures.yaml` に置く。各テンプレートは段階の一覧を持ち、各段階は次を持つ：定義文、指針（heros-journey の段階ごとの指針と、骨子 A〜E の要素：予兆・挫折・代償など）、幕（`act`）、重み、要求する役、`absent_role_note`、`world_sections`、`object`（真偽値）、`climax`（真偽値）。
+- 構造テンプレートは、任意で `chapters`（小説様式の章への割付）を持てる。各章は `id`・`name`・`stages`（段階 id の並び）を持ち、全章の `stages` を順に連結すると、段階の一覧と過不足なく一致しなければならない。`chapters` がない構造テンプレートは、1段階を1章とする（[format-pipeline.md](format-pipeline.md) §4.1）。
 - 標準の構造テンプレートは3つある：`three-beat`（3段階）、`kishotenketsu`（4段階）、`heros-journey-12`（12段階）。段階の定義は `tables/structures.yaml` を原本とする。
 - 主筋（および大河の各部の主筋）のテンプレートは、プロット型が `standard` の場合、その筋に配分された出来事数で決める。
 
@@ -222,9 +223,13 @@ LLM に名前を自由に作らせると、内部知識の典型的な名前に�
 ## 7. 重複除外とバッチの補充
 
 - 指紋：cast の名前・プロフィールと、events の全項目を、NFKC 正規化・空白除去・小文字化した上で連結し、sha256 をとる。指紋が同じバッチ内の既存の正本と一致すれば重複とする。
-- 近似重複：events の `what` と `result` を連結した文字列の、文字3-gram の Jaccard 係数が、同じバッチ内の既存の正本のいずれかと閾値以上であれば近似重複とする。閾値は `tables/dedup.yaml` を原本とする（初期値 0.5）。
+- 近似重複：events の `what` と `result` を連結した文字列の、文字3-gram の Jaccard 係数が、同じバッチ内の既存の正本のいずれかと閾値以上であれば近似重複とする。閾値は `tables/dedup.yaml` の `near_duplicate_threshold` を原本とする。
 - 重複・近似重複の run は `duplicate` とし、バッチの要求件数に数えない。
 - 補充：`st new --count N` は、最初に N 本の run を作る。S9 は `batch.lock` を取ってバッチの manifest を更新する。その run が `duplicate` になった場合に限り、作成数が上限 `max(3N, N+10)` に達していなければ、次の index の run を1本作る（heros-journey を継承）。これにより、`duplicate` 以外で終わる run の数は N を超えない。
+- 比較の相手（「同じバッチ内の既存の正本」）は、バッチの manifest で `accepted` と判定済みの run の正本とする（`duplicate` の run と、S9 が未完了の run は含めない）。
+- 判定済みの run の S9 が再実行された場合（後続の失敗からの `st retry` など）は、記録済みの判定を返し、補充をしない。
+- 補充の run の index は、最初の N 本に予約した 0〜N-1 と既存の index のいずれよりも大きい最小の値とし、上限は index が `max(3N, N+10)` 未満であることで判定する。
+- S9 は、`duplicate` と判定した run の状態を、manifest 更新（`status: duplicate`）で設定する。コードタスクが manifest 更新で設定できる状態は `duplicate` だけとする。
 
 ## 8. 分量の配分
 

@@ -128,7 +128,7 @@ def _use_settings(tmp_path: Path, monkeypatch, *, threshold: float, limit: int):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text((ROOT / relative).read_text(encoding="utf-8"), encoding="utf-8")
     (repository / "tables").mkdir()
-    (repository / "tables/dedup.yaml").write_text(f"opening_threshold: {threshold}\nmax_copy_chars: 60\n", encoding="utf-8")
+    (repository / "tables/dedup.yaml").write_text(f"opening_threshold: {threshold}\nnear_duplicate_threshold: 0.5\nmax_copy_chars: 60\n", encoding="utf-8")
     definition_path = repository / "harness/story/tasks/S4.section.yaml"
     definition_path.write_text(
         definition_path.read_text(encoding="utf-8") + f"max_invalidations: {limit}\n",
@@ -144,7 +144,7 @@ def test_jaccard_uses_sets_and_includes_threshold_boundary(tmp_path: Path, monke
 
     assert [task_id for task_id, _ in story_s4_diversity(context).invalidations] == ids[1:]
     settings = tmp_path / "repository/tables/dedup.yaml"
-    settings.write_text("opening_threshold: 0.21\nmax_copy_chars: 60\n", encoding="utf-8")
+    settings.write_text("opening_threshold: 0.21\nnear_duplicate_threshold: 0.5\nmax_copy_chars: 60\n", encoding="utf-8")
     assert story_s4_diversity(context).invalidations == []
 
 
