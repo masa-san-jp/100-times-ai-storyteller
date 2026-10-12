@@ -50,4 +50,14 @@ def sequential_sources(
             value for key, value in outputs.items()
             if manifest["tasks"][key]["type"] == "S2.expand" and isinstance(value, str)
         ]}
+    elif task_type == "R2.motif":
+        # 傾向分析（docs/spec/report.md R2）：先に挙げたモチーフをカードに示す。
+        previous = [
+            value for key, value in outputs.items()
+            if manifest["tasks"][key]["type"] == "R2.motif" and isinstance(value, str)
+        ]
+        if previous:
+            sources["R2.motif"] = {"previous": previous}
+        else:
+            sources.pop("R2.motif", None)
     return sources

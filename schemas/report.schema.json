@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://100-times-ai-storyteller.example/schemas/report.schema.json",
+  "title": "Batch trend report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "batch_id", "run_count", "run_ids", "aggregate", "motif_groups", "runs"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "batch_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "run_count": {"type": "integer", "minimum": 1},
+    "run_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/run_id"}
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plot_types", "input_ratio", "elements", "roles"],
+      "properties": {
+        "plot_types": {"type": "array", "items": {"$ref": "#/$defs/counted_plot_type"}},
+        "input_ratio": {"$ref": "#/$defs/input_ratio"},
+        "elements": {"type": "array", "items": {"$ref": "#/$defs/counted_element"}},
+        "roles": {"type": "array", "items": {"$ref": "#/$defs/counted_role"}}
+      }
+    },
+    "motif_groups": {
+      "type": "array",
+      "maxItems": 7,
+      "items": {"$ref": "#/$defs/motif_group"}
+    },
+    "runs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/run_summary"}
+    }
+  },
+  "$defs": {
+    "run_id": {"type": "string", "pattern": "^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$"},
+    "run_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/run_id"}
+    },
+    "nullable_text": {"type": ["string", "null"]},
+    "counted_plot_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "count", "run_ids"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "count": {"type": "integer", "minimum": 1},
+        "run_ids": {"$ref": "#/$defs/run_ids"}
+      }
+    },
+    "input_ratio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max", "mean", "per_run"],
+      "properties": {
+        "min": {"type": ["number", "null"]},
+        "max": {"type": ["number", "null"]},
+        "mean": {"type": ["number", "null"]},
+        "per_run": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run_id", "value"],
+            "properties": {
+              "run_id": {"$ref": "#/$defs/run_id"},
+              "value": {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "counted_element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "axis", "text", "count", "run_ids"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "axis": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1},
+        "count": {"type": "integer", "minimum": 1},
+        "run_ids": {"$ref": "#/$defs/run_ids"}
+      }
+    },
+    "counted_role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "count", "run_ids"],
+      "properties": {
+        "role": {"type": "string", "enum": ["protagonist", "messenger", "supporter", "adversary", "bystander"]},
+        "count": {"type": "integer", "minimum": 1},
+        "run_ids": {"$ref": "#/$defs/run_ids"}
+      }
+    },
+    "motif_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "term", "variants", "run_ids", "observation", "question"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^g[1-9][0-9]*$"},
+        "term": {"type": "string", "minLength": 1},
+        "variants": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "run_ids": {"$ref": "#/$defs/run_ids"},
+        "observation": {"$ref": "#/$defs/nullable_text"},
+        "question": {"$ref": "#/$defs/nullable_text"}
+      }
+    },
+    "run_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "desire", "adversary_role", "central_loss", "ending", "motifs"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/run_id"},
+        "desire": {"$ref": "#/$defs/nullable_text"},
+        "adversary_role": {"$ref": "#/$defs/nullable_text"},
+        "central_loss": {"$ref": "#/$defs/nullable_text"},
+        "ending": {"$ref": "#/$defs/nullable_text"},
+        "motifs": {"type": "array", "maxItems": 5, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

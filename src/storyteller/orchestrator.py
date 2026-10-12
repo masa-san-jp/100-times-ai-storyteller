@@ -42,6 +42,7 @@ from .storage import (
     atomic_write_text,
     manifest_lock,
 )
+from .report_layout import find_report_dir, report_manifest_paths
 from .validation import (
     ValidationResult,
     output_char_count,
@@ -64,7 +65,7 @@ _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _TICKET = re.compile(r"^[a-f0-9]{32}$")
 _EXECUTOR_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
-_HARNESS_KINDS = frozenset({"story", "dummy"})
+_HARNESS_KINDS = frozenset({"story", "dummy", "report"})
 _TERMINAL_RUN_STATUSES = frozenset({"halted", "completed", "duplicate"})
 _MISSING: Final = object()
 
@@ -249,6 +250,8 @@ class Orchestrator:
             schema_root=self.definition_root,
         )
         self.code_handlers = dict(code_handlers or {})
+        # run_id -> directory of a report run (batches/<id>/report/, report.md §1).
+        self._report_dirs: dict[str, Path] = {}
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def create_run(
@@ -271,8 +274,12 @@ class Orchestrator:
         table_snapshot: Mapping[str, Any] | None = None,
         run_id: str | None = None,
         harness_kind: str | None = None,
+        directory: str | Path | None = None,
     ) -> str:
         """Create and persist a run, returning its run ID.
+
+        ``directory`` places the run outside ``runs/`` (a batch's report run
+        lives in ``batches/<batch_id>/report/``, docs/spec/report.md §1).
 
         ``tasks`` is retained as a readable alias for ``task_specs``.  If no
         nodes are supplied, one unindexed node is created for each task
@@ -303,8 +310,11 @@ class Orchestrator:
         resolved_run_id = run_id or _make_run_id(created_at, run_seed)
         if not _RUN_ID.fullmatch(resolved_run_id):
             raise ValueError(f"invalid run_id: {resolved_run_id!r}")
+        if directory is not None:
+            self._report_dirs[resolved_run_id] = Path(directory)
         run_dir = self.run_dir(resolved_run_id)
         if run_dir.exists():
+            self._report_dirs.pop(resolved_run_id, None)
             raise FileExistsError(f"run already exists: {resolved_run_id}")
 
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -380,7 +390,16 @@ class Orchestrator:
         """Return the durable directory for *run_id*."""
         if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
             raise ValueError(f"invalid run_id: {run_id!r}")
-        return self.data_dir / "runs" / run_id
+        registered = self._report_dirs.get(run_id)
+        if registered is not None:
+            return registered
+        path = self.data_dir / "runs" / run_id
+        if not path.exists():
+            found = find_report_dir(self.data_dir, run_id)
+            if found is not None:
+                self._report_dirs[run_id] = found
+                return found
+        return path
 
     def task_dir(self, run_id: str, task_id: str) -> Path:
         """Return a task directory after rejecting path traversal."""
@@ -1346,22 +1365,17 @@ class Orchestrator:
                 statuses[run_id] = manifest["status"]
             return [run_id]
 
-        runs_dir = self.data_dir / "runs"
-        if not runs_dir.is_dir():
-            return []
         records: list[tuple[str, str]] = []
-        for entry in runs_dir.iterdir():
-            if not entry.is_dir() or not _RUN_ID.fullmatch(entry.name):
-                continue
+        for name, manifest_path in self._run_manifest_entries():
             try:
-                manifest = load_manifest(entry / "manifest.json")
+                manifest = load_manifest(manifest_path)
             except (OSError, ValueError) as error:
-                _warn_skipped_run(entry.name, error)
+                _warn_skipped_run(name, error)
                 continue
             if statuses is not None:
-                statuses[entry.name] = manifest["status"]
+                statuses[name] = manifest["status"]
             if manifest["status"] in {"active", "stalled"}:
-                records.append((manifest["created_at"], entry.name))
+                records.append((manifest["created_at"], name))
         records.sort(key=lambda item: (item[0], item[1]))
         return [entry[1] for entry in records]
 
@@ -1509,22 +1523,35 @@ class Orchestrator:
         )
 
     def _find_claim_ticket(self, ticket: str) -> tuple[str, str] | None:
-        runs_dir = self.data_dir / "runs"
-        if not runs_dir.is_dir():
-            return None
-        for entry in sorted(runs_dir.iterdir(), key=lambda path: path.name):
-            if not entry.is_dir() or not _RUN_ID.fullmatch(entry.name):
-                continue
+        for name, manifest_path in sorted(self._run_manifest_entries()):
             try:
-                manifest = load_manifest(entry / "manifest.json")
+                manifest = load_manifest(manifest_path)
             except (OSError, ValueError) as error:
-                _warn_skipped_run(entry.name, error)
+                _warn_skipped_run(name, error)
                 continue
             for task_id, task in manifest["tasks"].items():
                 claim = task.get("claim")
                 if isinstance(claim, Mapping) and claim.get("ticket") == ticket:
-                    return entry.name, task_id
+                    return name, task_id
         return None
+
+    def _run_manifest_entries(self) -> list[tuple[str, Path]]:
+        """List ``(run_id, manifest path)`` of the runs and the batch report runs."""
+        entries: list[tuple[str, Path]] = []
+        runs_dir = self.data_dir / "runs"
+        if runs_dir.is_dir():
+            for entry in runs_dir.iterdir():
+                if entry.is_dir() and _RUN_ID.fullmatch(entry.name):
+                    entries.append((entry.name, entry / "manifest.json"))
+        for path in report_manifest_paths(self.data_dir):
+            try:
+                run_id = json.loads(path.read_text(encoding="utf-8")).get("run_id")
+            except (OSError, UnicodeError, ValueError, AttributeError):
+                continue
+            if isinstance(run_id, str) and _RUN_ID.fullmatch(run_id):
+                self._report_dirs[run_id] = path.parent
+                entries.append((run_id, path))
+        return entries
 
     # This spelling describes the operation in the plan and is convenient for
     # tests without introducing a second implementation.
