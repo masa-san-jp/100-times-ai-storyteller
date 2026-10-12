@@ -15,27 +15,43 @@ def identity_errors(output: str, facts: Any, *, require_subject: bool = False) -
         return []
     text = unicodedata.normalize("NFKC", output)
     errors = []
-    opening = text.lstrip().lstrip('「『"').lstrip()
-    if require_subject and not re.match(re.escape(name) + r"\s*[はが]", opening):
-        errors.append(f"character_identity: 冒頭の主語は対象人物 {name} とする")
-    # Remove quoted dialogue, including nested Japanese quotes. Quoted past
-    # claims are not assertions about the current target's identity.
-    stack: list[str] = []
-    unquoted = []
-    closing = {"「": "」", "『": "』", '"': '"'}
-    for char in text:
-        if stack and char == stack[-1]:
-            stack.pop()
-            unquoted.append(" ")
-        elif char in closing:
-            stack.append(closing[char])
-            unquoted.append(" ")
-        else:
-            unquoted.append(" " if stack else char)
-    text = "".join(unquoted)
-    subject = r"(?:^|[\s、。!?;])" + re.escape(name) + r"\s*"
+    if require_subject:
+        opening = text.lstrip()
+        subject_start = re.escape(name) + r"\s*[はが]"
+        while (opening and opening[0] in '「『"'
+               and not re.match(subject_start, opening)):
+            opening = opening[1:].lstrip()
+        if not re.match(subject_start, opening):
+            errors.append(f"character_identity: 冒頭の主語は対象人物 {name} とする")
     calendar = facts.get("calendar", "")
     calendar = unicodedata.normalize("NFKC", calendar) if isinstance(calendar, str) else ""
+    # Mark quoted dialogue without rewriting it: replacing a quoted name
+    # with spaces could falsely join a subject to another calendar's year.
+    # Literal registered names may themselves contain quotation marks.
+    stack: list[str] = []
+    quoted = [False] * len(text)
+    closing = {"「": "」", "『": "』", '"': '"'}
+    protected_names = tuple(value for value in (name, calendar)
+                            if value and any(mark in value for mark in closing))
+    position = 0
+    while position < len(text):
+        if not stack and protected_names:
+            literal = next((value for value in protected_names
+                            if text.startswith(value, position)), None)
+            if literal is not None:
+                position += len(literal)
+                continue
+        char = text[position]
+        if stack and char == stack[-1]:
+            quoted[position] = True
+            stack.pop()
+        elif char in closing:
+            quoted[position] = True
+            stack.append(closing[char])
+        elif stack:
+            quoted[position] = True
+        position += 1
+    subject = r"(?:^|[\s、。!?;])" + re.escape(name) + r"\s*"
     year = (rf"(?:{re.escape(calendar)})?\s*" if calendar else "") + r"([0-9]+)年"
     patterns = {
         "age": subject + r"(?:は(?:現在)?|の年齢は)\s*([0-9]+)歳(?!の(?:とき|時|頃|ころ)|当時|だった|であった|ではない|でない|ではなく|ではなかった|でなかった)",
@@ -46,6 +62,8 @@ def identity_errors(output: str, facts: Any, *, require_subject: bool = False) -
         if isinstance(expected, bool) or not isinstance(expected, int):
             continue
         for match in re.finditer(pattern, text):
+            if any(quoted[match.start():match.end()]):
+                continue
             actual = int(next(group for group in match.groups() if group is not None))
             if actual != expected:
                 errors.append(f"character_identity: {name} の {field} は {expected}（出力: {actual}）")

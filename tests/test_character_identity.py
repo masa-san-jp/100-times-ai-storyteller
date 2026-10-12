@@ -97,3 +97,27 @@ def test_context_and_first_person_items_do_not_require_a_target_subject(field):
                                        ROOT / "schemas/task-definition.schema.json")
     assert "character_identity" in definition["validate"]["checks"]
     assert validate_output(DEFINITION, "獏賀暮を見て、私は歩き出す。", {"facts": FACTS}).passed
+
+
+@pytest.mark.parametrize("name", ["「ウネル」", "『ウネル』", '"ウネル"'])
+def test_literal_quote_marks_in_registered_names_preserve_subject_and_numbers(name):
+    facts = {**FACTS, "name": name}
+    definition = {**DEFINITION, "validate": {"checks": [
+        {"character_identity": {"require_subject": True}}]}}
+    assert validate_output(definition, f"{name}は71歳である。", {"facts": facts}).passed
+    assert validate_output(definition, f"『{name}は340歳だ』", {"facts": facts}).passed
+    wrong = validate_output(definition, f"{name}は340歳である。", {"facts": facts})
+    assert not wrong.passed and "age" in wrong.errors[0]
+    assert validate_output(definition, f"{name}は811年に生まれた。", {"facts": facts}).passed
+    assert not validate_output(definition, f"{name}は542年に生まれた。", {"facts": facts}).passed
+
+
+def test_quoted_other_calendar_is_not_removed_to_invent_a_bare_year_claim():
+    assert validate_output(DEFINITION, "ウネルは「異暦」542年に生まれた。", {"facts": FACTS}).passed
+
+
+def test_literal_quotes_in_registered_calendar_names_preserve_year_validation():
+    facts = {**FACTS, "calendar": "「灯暦」"}
+    wrong = validate_output(DEFINITION, "ウネルは「灯暦」542年に生まれた。", {"facts": facts})
+    assert not wrong.passed and "birth_year" in wrong.errors[0]
+    assert validate_output(DEFINITION, "ウネルは「灯暦」811年に生まれた。", {"facts": facts}).passed
