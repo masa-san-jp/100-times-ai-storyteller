@@ -18,7 +18,7 @@
 
 ```yaml
 name: novel
-unit: chapter                    # 単位：chapter | scene | slide
+unit: chapter                    # 単位：chapter | scene | slide | section
 unit_mapping: structure          # 単位への割付方法（§4）
 chars_per_event: [1500, 3000]    # 出来事1件あたりの分量（下限・上限）
 max_chars_per_task: 6000         # F2 の1タスクで書かせる分量の上限
@@ -67,7 +67,7 @@ checks:
 | 映画シナリオ | `screenplay` | シーン | `scene` | Fountain | P3-03 |
 | プレゼンテーション | `slides` | スライド | `per_event` | Marp Markdown | P3-04 |
 | 画像プロンプト | `visual-prompts` | 人物・場面（`prompt`） | `person_and_event`（§4.3） | Markdown | P5-01 |
-| 資料集 | `reference-book` | 世界セクション・人物 | P5-02 で定義 | Markdown | P5-02 |
+| 資料集 | `reference-book` | 世界セクション・人物 | `world_cast` | Markdown | P5-02 |
 
 ### 4.1 `unit_mapping` の定義
 
@@ -76,6 +76,7 @@ checks:
 | `structure` | 主筋の構造テンプレートの段階を章にする。副筋のスロットは、時系列でその直前にある主筋のスロットと同じ章に入れる（最初の主筋のスロットより前にある場合は第1章に入れる）。大河では部ごとに章を数え直し、部の見出しをテンプレートで加える。`tables/structures.yaml` に章への割付がある場合はそれに従う（heros-journey-12 には、heros-journey の12段階→10章の割付を P3-02 で加える） |
 | `scene` | 連続する出来事のうち、`where` が同じで、`when` が連続しているものを1シーンにまとめる。`where` が変わる、または `when` が「翌日」「数年後」など時間の飛躍を示す場合に、新しいシーンにする。時間の飛躍の判定は、`tables/time_jumps.yaml` の語句との照合で行う |
 | `per_event` | 出来事1件を1単位にする |
+| `world_cast` | 出来事ではなく、世界の概説・世界セクション・人物を1単位にする（§4.4） |
 
 ### 4.2 プレゼンテーション様式の目的
 
@@ -95,3 +96,17 @@ checks:
 - 分量は、プロンプト1つあたり `chars_per_event` の範囲とする（人物の単位も同じ範囲を使う）。`continuation` は `false` とする。
 - 規則：プロンプトは日本語の文で書く。人物は名前ではなく外見で描写する。入力にない人物・外見・場所を加えない。画像に文字や台詞を入れる指示を書かない。実在の人物・作品・商標の名前を使わない。
 - 単位の見出しは、人物は「人物：名前」、場面は「場面：出来事の段階名」とする。出力は、これらの見出しを付けて1つの Markdown にまとめる。
+
+### 4.4 資料集様式 `reference-book`
+
+`reference-book` は、正本の**世界設定と人物を資料としてまとめる**様式である（物語の本文は含めない）。単位は出来事ではなく、世界セクションと人物とする。プロファイルは `unit: section`、`unit_mapping: world_cast` とする。
+
+- 単位は、次の順にコードが作る。
+  1. 世界の概説：`world` の `place`・`era`・`object`、`theme` がある場合は `theme`。
+  2. 世界セクション：`world.sections` の1つにつき1単位（セクションの `body` と `items`）。
+  3. 人物：`cast` の1人につき1単位（名前・読み・役、紹介・プロフィール・動機・外見・性格・価値観・話し方・内面の葛藤、過去、関係、口癖）。
+- 世界セクションと人物は、1つも欠けずに、ちょうど1単位に入れる。
+- 単位の中の資料項目（セクションの `body`、`items` の1件、人物の1つの欄）を、F2 に渡す「出来事」の入力として扱う。`chars_per_event` は資料項目1件あたりの分量とする。1単位の分量が `max_chars_per_task` を超える場合は、資料項目の区切りで複数の F2 タスクに分ける。
+- F2 の入力は、その単位の資料項目だけとする。他の単位と、物語の出来事は渡さない。
+- F4 の `checks.code` に `contains_names` を加える。`items` の名前と人物の名前が、その F2 の本文にあることを検査する。
+- F3 は、概説・世界セクション・人物の順に、単位の見出し（`世界：…`、`人物：…`）を付けて組み立てる。
