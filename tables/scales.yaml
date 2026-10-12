@@ -184,6 +184,11 @@ dev:
   viewpoints_per_section: 1
   list_item_count: 1
   materials_per_paragraph: 1
+  world_facts_scope: described_viewpoints
+  character_fact_counts:
+    family: 1
+    timeline: 1
+    skills: 1
   candidate_multiplier: 1
   task_chars:
     story_beat: [80, 160]

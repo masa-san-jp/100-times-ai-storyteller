@@ -82,6 +82,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 - 出力：`assignment.json`（r、プロット型、筋と筋ごとの出来事数・構造テンプレート、cast の枠と役、不在の役、要素、音）。
 
 ### S4 世界 [L]
+- 開発用 `dev` の事実の範囲は [scale.md](scale.md)「開発用の規模 dev」による。生成した事実の型・参照・意味の検証は本番と同じとする。
 - タスクの単位：世界セクションの観点1つの1面（facet）、または一覧型のセクションの項目1件。生成するセクションは規模で決まり（[scale.md](scale.md) §6）、タスクの数は分量の配分（§8）で決まる。
 - セクションのカタログは `tables/world_sections.yaml` を原本とする。各セクションは、定義文、観点の一覧（heros-journey と world-building の全観点・全小項目を取り込む。[lineage-inventory.md](../lineage-inventory.md) §10）、種類（`single`：本文1つ／`list`：項目を複数件）、本文の字数上限、前提セクション（最大2つ）を持つ。
 - 一覧型のセクション（過去の出来事、社会集団、人々、未来のシナリオ）は、規模ごとの件数（`tables/scales.yaml` の `world_counts`）だけ、1件1タスクで生成する。未来のシナリオは楽観・悲観・中庸の3件とする。
@@ -97,6 +98,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 - 描写ごとのコードタスク `S4.consistency_judge` は、すべての判定を待ち、矛盾ありなら当該描写だけを無効化する。再生成は `max_invalidations` までとし、上限でも矛盾する描写は `skipped` にして失敗報告と警告を残す。判定の省略は警告とともに扱い、確認できなかった描写も未定とする。前提描写を使うタスク・多様性検査・S6 は、この検査の完了を待つ。
 
 ### S5 人物 [L]
+- 開発用 `dev` の家族・年表・技能の反復件数は [scale.md](scale.md)「開発用の規模 dev」による。scalar 事実の全項目と、生成した事実の型・参照・意味の検証は本番と同じとする。
 - タスクの単位：人物1人 × 項目1つ。項目は `name` → `profile` → `intro`・`motive`・`appearance`・`personality`・`values`・`backstory`（時期ごとに複数）・`relationships`（他の人物ごとに1件）・`voice`（口調と台詞の例）・`inner_conflict` → `catchphrase` の順に依存する。各項目の字数は §8 の配分に従う。
 - 主人公以外の人物の項目には、主人公の文脈として、主人公の名前と役を入力に含める。`motive`・`catchphrase` では、主人公の `intro` も含める。主人公の割り当て要素・禁忌・抑圧されている自己像は、主人公自身の項目にだけ入力する（P1）。
 - すべての項目の入力に、その人物の役の定義文（`tables/roles.yaml`。heros-journey・world-building の4役の定義を取り込む）と、プロット型の `character_requirements` を含める。

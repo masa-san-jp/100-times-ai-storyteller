@@ -158,7 +158,9 @@
         "list_item_count",
         "materials_per_paragraph",
         "candidate_multiplier",
-        "task_chars"
+        "task_chars",
+        "world_facts_scope",
+        "character_fact_counts"
       ],
       "properties": {
         "axes": {
@@ -351,6 +353,32 @@
                   }
                 }
               }
+            }
+          }
+        },
+        "world_facts_scope": {
+          "const": "described_viewpoints"
+        },
+        "character_fact_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "family",
+            "timeline",
+            "skills"
+          ],
+          "properties": {
+            "family": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeline": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "skills": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         }
