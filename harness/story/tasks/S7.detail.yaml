@@ -1,5 +1,5 @@
 id: S7.detail
-version: 10
+version: 11
 kind: llm
 element: text
 inputs:
@@ -106,4 +106,4 @@ validate:
   - max_chars:
       n: 2500
       fix: trim
-max_input_chars: 2600
+max_input_chars: 2750

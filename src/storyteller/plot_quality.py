@@ -79,6 +79,8 @@ def unique_events(
             if any(_POLARITY_OR_NUMBER.findall(normalize(a)) !=
                    _POLARITY_OR_NUMBER.findall(normalize(b)) for a, b in pairs):
                 continue
+            if normalize(pairs[1][0]) != normalize(pairs[1][1]):
+                continue
             if all(normalize(a) == normalize(b) or similarity(a, b) >= threshold
                    for a, b in pairs):
                 duplicate = True

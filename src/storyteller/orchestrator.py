@@ -3485,6 +3485,16 @@ def _source_outputs(
         slot = slot_definition.get("from")
         if not isinstance(slot, str) or slot == "input":
             continue
+        if slot == "S7.condition":
+            expected = [dependency for dependency in dependencies
+                        if manifest["tasks"][dependency]["type"] == slot]
+            if expected:
+                result[slot] = {
+                    _dependency_index_key(dependency, manifest["tasks"][dependency]):
+                    dependency_outputs.get(dependency, "（未定）")
+                    for dependency in expected
+                }
+            continue
         matching = [
             dependency
             for dependency in dependencies

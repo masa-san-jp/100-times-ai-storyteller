@@ -110,8 +110,9 @@ def generate_repair_card(
         "### 元の出力", original, "### 不合格の理由", reason, "### 満たすべき条件",
         *(f"- {condition}" for condition in repair_conditions(definition, inputs)),
     ]
-    if "conditions" in inputs:
-        lines.extend(["### 確定した筋の条件（変更・追加しない）", _render_value(inputs["conditions"])])
+    for name in ("conditions", "decided_conditions"):
+        if name in inputs:
+            lines.extend(["### 確定した筋の条件（変更・追加しない）", _render_value(inputs[name])])
     if "no_repeated_scene" in reason and isinstance(inputs.get("previous_scene"), str):
         lines.extend(["### 直前の場面（再演しない）", inputs["previous_scene"][-600:]])
     if definition.get("element") == "choice" and "choices" in inputs:

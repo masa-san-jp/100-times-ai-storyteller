@@ -211,3 +211,112 @@ def test_exhausted_format_quality_failure_warns_and_continues(tmp_path):
     result = make_handlers(ROOT)["format_f4_verify"](context)
     assert not result.output["passed"] and not invalidated
     assert result.manifest_updates["warnings"]
+
+
+def test_opposite_permission_outcomes_survive_s9_and_f1():
+    story = _story([_thread(1, 'main', 'three-beat')],
+                   [novel_event(1, 't001', 'setup'), novel_event(2, 't001', 'setup')])
+    first = story['events'][0]
+    first['result'] = 'ウネルの交渉により門の使用を許可される。'
+    second = deepcopy(first)
+    second.update(id='e002', result='ウネルの交渉により門の使用を拒否される。')
+    story['events'][1] = second
+    slots = [{'id': e['id'], 'thread': e['thread'], 'stage': e['stage']} for e in story['events']]
+    outputs = {f'S7.assemble-{e["id"]}': e for e in story['events']}
+    assert len(_assemble_events(slots, outputs)) == 2
+    plan = build_plan(story, load_profile('novel'), ROOT)
+    assert {e for p in plan['parts'] for e in p['event_ids']} == {'e001', 'e002'}
+
+
+@pytest.mark.parametrize('kind', ['prohibition', 'resolution'])
+def test_condition_repair_claim_retains_previously_decided_conditions(tmp_path, kind):
+    base = create_story_orchestrator(ROOT)
+    definitions = {'S7.condition': base.task_definitions['S7.condition']}
+    for source in ('S3.assign', 'S6.expand'):
+        definitions[source] = {'id': source, 'version': 1, 'kind': 'code', 'handler': source}
+    specs = [TaskSpec(source, source) for source in ('S3.assign', 'S6.expand')]
+    for number, cid in enumerate(condition_ids('e001')):
+        specs.append(TaskSpec(cid, 'S7.condition', deps=('S3.assign', 'S6.expand',
+                             *condition_ids('e001')[:number]),
+                             index=('e001', ('trigger', 'prohibition', 'resolution')[number])))
+    harness = Orchestrator(tmp_path / 'data', definitions,
+        {'S3.assign': lambda context: {'world': {'object': _slot()['object']},
+                                     'cast': [{'elements': {'taboo': '約束を破らない。'}}]},
+         'S6.expand': lambda context: {'slots': [_slot()]}},
+        harness_root=ROOT, repository_root=ROOT)
+    run = harness.create_run(seed=1, task_specs=specs)
+    prior = ['潮が引くと門が現れる。', '夜には門を開けない。']
+    count = 1 if kind == 'prohibition' else 2
+    for condition in prior[:count]:
+        claim = harness.claim_next(run, executor_id='test')
+        assert harness.submit(claim['ticket'], condition).accepted
+    claim = harness.claim_next(run, executor_id='test')
+    assert not harness.submit(claim['ticket'], '文' * 161).accepted
+    repair = harness.claim_next(run, executor_id='test')
+    assert REPAIR_ROLE in repair['card']
+    assert all(condition in repair['card'] for condition in prior[:count])
+    assert '変更・追加しない' in repair['card']
+
+
+def _condition_card_harness(tmp_path, target, *, skip_kind=None, long=False):
+    base = create_story_orchestrator(ROOT)
+    event = _event()
+    if long:
+        event.update({field: field[0] * 119 + '。' for field in
+                      ('when', 'where', 'why', 'intent', 'what', 'result', 'emotion')})
+    slot = dict(_slot(), beats=[{'id': 'opening', 'name': '発端', 'definition': '開始を説明する。'}])
+    conditions = ['発' * 159 + '。', '禁' * 159 + '。', '解' * 159 + '。']
+    definitions = {target: deepcopy(base.task_definitions[target])}
+    for source in ('S6.expand', 'S7.assemble'):
+        definitions[source] = {'id': source, 'version': 1, 'kind': 'code', 'handler': source}
+    definitions['S7.condition'] = {'id': 'S7.condition', 'version': 1, 'kind': 'llm',
+        'element': 'text', 'output': 'text', 'card': {'role': '条件を書く。', 'steps': ['本文を書く。']},
+        'validate': {'checks': [{'max_chars': {'n': 160}}]}, 'continuation': False,
+        'max_attempts': 1, 'on_exhausted': 'skip'}
+    target_id = 'S7.detail-e001-b1' if target == 'S7.detail' else 'S7.event-e001-what'
+    specs = [TaskSpec('S6.expand', 'S6.expand'),
+             TaskSpec('S7.assemble-e001', 'S7.assemble', index=('e001',))]
+    for number, (cid, kind) in enumerate(zip(condition_ids('e001'), ('trigger', 'prohibition', 'resolution'))):
+        deps = (condition_ids('e001')[number - 1],) if number else ()
+        specs.append(TaskSpec(cid, 'S7.condition', deps=deps, index=('e001', kind)))
+    specs.append(TaskSpec(target_id, target, deps=tuple(s.task_id for s in specs),
+                          index=('e001', 'b1' if target == 'S7.detail' else 'what')))
+    harness = Orchestrator(tmp_path / 'data', definitions,
+        {'S6.expand': lambda context: {'slots': [slot]},
+         'S7.assemble': lambda context: event}, harness_root=ROOT, repository_root=ROOT)
+    run = harness.create_run(seed=1, task_specs=specs)
+    for kind, condition in zip(('trigger', 'prohibition', 'resolution'), conditions):
+        claim = harness.claim_next(run, executor_id='test')
+        harness.submit(claim['ticket'], '長' * 161 if kind == skip_kind else condition)
+    claim = harness.claim_next(run, executor_id='test')
+    return harness, run, target_id, claim, conditions
+
+
+@pytest.mark.parametrize('target', ['S7.event', 'S7.detail'])
+@pytest.mark.parametrize('skip_kind', ['prohibition', 'trigger'])
+def test_actual_claim_shows_skipped_condition_as_undecided(tmp_path, target, skip_kind):
+    harness, run, task_id, claim, conditions = _condition_card_harness(
+        tmp_path, target, skip_kind=skip_kind)
+    values = json.loads((harness.task_dir(run, task_id) / 'input.json').read_text(encoding='utf-8'))
+    assert len(values['conditions']) == 3
+    assert values['conditions'][f'e001-{skip_kind}'] == '（未定）'
+    assert '（未定）' in claim['card']
+    assert sum(condition in claim['card'] for condition in conditions) == 2
+
+
+def test_max_length_detail_can_claim_continuation_with_all_conditions(tmp_path):
+    from storyteller.cards import input_char_count
+    harness, run, task_id, claim, conditions = _condition_card_harness(
+        tmp_path, 'S7.detail', long=True)
+    values = json.loads((harness.task_dir(run, task_id) / 'input.json').read_text(encoding='utf-8'))
+    definition = harness.task_definitions['S7.detail']
+    assert definition['max_input_chars'] - input_char_count(definition, values) >= 1000
+    assert all(condition in claim['card'] for condition in conditions)
+    assert harness.submit(claim['ticket'], '人物は静かに歩き始めた。').accepted
+    continuation = harness.claim_next(run, executor_id='test')
+    assert continuation is not None
+    assert all(condition in continuation['card'] for condition in conditions)
+    assert 'これまでの出力の末尾' in continuation['card']
+    assert harness.load_run(run)['tasks'][task_id]['state'] == 'claimed'
+    assert harness.submit(continuation['ticket'], '歩' * 1499 + '。').accepted
+    assert harness.advance(run)['status'] == 'completed'
