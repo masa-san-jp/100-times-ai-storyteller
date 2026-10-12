@@ -308,3 +308,29 @@ def test_report_tasks_are_not_mixed_into_status_runs(tmp_path, monkeypatch, caps
     assert main(["status", "--batch", "b1", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert [run["run_id"] for run in payload["runs"]] == run_ids
+
+
+def test_failed_report_task_is_shown_and_retried(tmp_path, monkeypatch, capsys):
+    data = tmp_path / "data"
+    run_ids = _make_batch(data, monkeypatch, capsys, count=1)
+    story = data / "runs" / run_ids[0] / "story" / "story.json"
+    saved = story.read_text(encoding="utf-8")
+    story.unlink()
+    assert main(["report", "--batch", "b1"]) == 0
+    report_run_id = capsys.readouterr().out.strip()
+    directory = report_dir(data, "b1")
+    assert load_manifest(directory / "manifest.json")["tasks"]["R1.aggregate"]["state"] == "failed"
+
+    assert main(["status", "--run", report_run_id, "--json"]) == 0
+    tasks = {task["task_id"]: task for task in json.loads(capsys.readouterr().out)["tasks"]}
+    assert tasks["R1.aggregate"]["failure_report"] == "tasks/R1.aggregate/failure.md"
+
+    story.write_text(saved, encoding="utf-8")
+    assert main(["retry", "R1.aggregate"]) == 0
+    capsys.readouterr()
+    assert load_manifest(directory / "manifest.json")["tasks"]["R1.aggregate"]["state"] == "ready"
+    assert main(["next", "--json"]) == 0
+    capsys.readouterr()
+    manifest = load_manifest(directory / "manifest.json")
+    assert manifest["tasks"]["R1.aggregate"]["state"] == "done"
+    assert any(task["type"] == "R2.loss" for task in manifest["tasks"].values())

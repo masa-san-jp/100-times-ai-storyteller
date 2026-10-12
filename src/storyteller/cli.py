@@ -422,6 +422,11 @@ _TASK_STATES = ("blocked", "ready", "claimed", "done", "failed", "skipped")
 
 def _run_status(data_dir: Path, run_id: str) -> dict[str, Any]:
     manifest = _load_manifest(data_dir, run_id)
+    run_dir = data_dir / "runs" / run_id
+    if not run_dir.exists():
+        from .report_layout import find_report_dir
+
+        run_dir = find_report_dir(data_dir, run_id) or run_dir
     tasks = []
     for task_id in sorted(manifest["tasks"]):
         task = manifest["tasks"][task_id]
@@ -439,7 +444,7 @@ def _run_status(data_dir: Path, run_id: str) -> dict[str, Any]:
                 "failure_report": (
                     (Path("tasks") / task_id / "failure.md").as_posix()
                     if task["state"] == "failed"
-                    and (data_dir / "runs" / run_id / "tasks" / task_id / "failure.md").is_file()
+                    and (run_dir / "tasks" / task_id / "failure.md").is_file()
                     else None
                 ),
             }
@@ -456,16 +461,24 @@ def _retry(args: argparse.Namespace) -> int:
     data_dir = _data_dir()
     matches: list[str] = []
     runs_dir = data_dir / "runs"
-    if runs_dir.is_dir():
-        for entry in runs_dir.iterdir():
-            if not entry.is_dir():
-                continue
-            try:
-                manifest = _load_manifest(data_dir, entry.name)
-            except (ValueError, OSError):
-                continue
-            if args.task_id in manifest["tasks"]:
-                matches.append(manifest["run_id"])
+    manifest_paths = (
+        [
+            entry / "manifest.json"
+            for entry in runs_dir.iterdir()
+            if entry.is_dir() and _RUN_ID_PATTERN.fullmatch(entry.name)
+        ]
+        if runs_dir.is_dir()
+        else []
+    )
+    # バッチの傾向分析（batches/<id>/report/）のタスクも対象にする。
+    manifest_paths += report_manifest_paths(data_dir)
+    for manifest_path in manifest_paths:
+        try:
+            manifest = load_manifest(manifest_path)
+        except (ValueError, OSError):
+            continue
+        if args.task_id in manifest["tasks"]:
+            matches.append(manifest["run_id"])
     if len(matches) != 1:
         raise ValueError(f"対象タスクを一意に特定できません: {args.task_id}")
     _orchestrator(data_dir, matches[0]).retry_failed(matches[0], args.task_id)
