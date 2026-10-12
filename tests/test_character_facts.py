@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from storyteller.cards import generate_task_card, prepare_task_inputs
+from storyteller.cards import InputBudgetError, generate_task_card, input_char_count, prepare_task_inputs
 from storyteller.character_facts import (
     assign_character_fact_tasks, assemble_character_sheet, character_source_context,
     render_character_sheet, sheet_for_card, initial_character_specs,
@@ -94,6 +94,38 @@ def test_same_name_for_two_offered_choices_is_rejected():
     result = validate_output(_definition(), "カナ", inputs, harness_root=ROOT)
     assert not result.passed and "複数の選択肢" in result.errors[0]
     assert validate_output(_definition(), "[g654321]", inputs, harness_root=ROOT).value == "g654321"
+
+
+@pytest.mark.parametrize("count", [62, 122], ids=["novel", "saga"])
+def test_large_affiliation_choices_fit_without_losing_ids_or_name_validation(count):
+    from storyteller.orchestrator import _prepare_card_inputs
+
+    choices = [{"id": f"g{number:06x}", "name": f"組織{number}"} for number in range(count)]
+    choices[-1]["name"] = choices[0]["name"]
+    choices.append({"id": "none", "name": "なし"})
+    inputs = _inputs("choice", label="所属", choices=choices,
+                     world_facts=[{"id": "place", "text": "世界の事実。" * 1000}])
+    definition = specialize_fact_definition(_definition(), inputs)
+    original = deepcopy(inputs)
+    with pytest.raises(InputBudgetError):
+        prepare_task_inputs(definition, inputs)
+
+    # Cache preflight receives the base S5.fact definition (element: text),
+    # while claiming uses its per-field specialized choice definition.
+    fitted = _prepare_card_inputs(_definition(), inputs)
+    assert _prepare_card_inputs(definition, inputs) == fitted
+    assert inputs == original
+    assert input_char_count(definition, fitted) <= definition["max_input_chars"]
+    assert [{"id": choice["id"], "name": choice["name"]} for choice in fitted["choices"]] == choices
+    card = generate_task_card(definition, "ticket", fitted)
+    assert all(f"[{choice['id']}] {choice['name']}" in card for choice in choices)
+    for identifier in (choices[0]["id"], choices[-2]["id"], "none"):
+        result = validate_output(definition, f"[{identifier}]", fitted, harness_root=ROOT)
+        assert result.passed and result.value == identifier
+    assert validate_output(definition, "なし", fitted, harness_root=ROOT).value == "none"
+    assert not validate_output(definition, "gffffff", fitted, harness_root=ROOT).passed
+    ambiguous = validate_output(definition, choices[0]["name"], fitted, harness_root=ROOT)
+    assert not ambiguous.passed and "複数の選択肢" in ambiguous.errors[0]
 
 
 @pytest.mark.parametrize("choices,expected", [
