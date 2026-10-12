@@ -49,14 +49,15 @@ def test_metadata_rejection_produces_a_repair_inference(tmp_path):
     definitions = {name: deepcopy(base.task_definitions[name]) for name in ('F2.write_once',)}
     definitions['F1.split'] = {'id': 'F1.split', 'version': 1, 'kind': 'code', 'handler': 'plan'}
     part = {'id': 'u1p1', 'events': [], 'characters': [], 'range': '1〜200字',
+            'min_chars': 1, 'max_chars': 200,
             'conditions': ['干潮のときだけ道が現れる。']}
 
     def plan(context):
-        return CodeTaskResult(output={'parts': [part], 'rules': []}, add_tasks=[
+        return CodeTaskResult(output={'parts': [part], 'rules': [], 'code_checks': ['no_story_metadata']}, add_tasks=[
             TaskSpec('F2.write_once-u1p1-novel', 'F2.write_once', deps=(context.task_id,), index=('u1p1', 'novel'))])
 
     harness = Orchestrator(tmp_path / 'data', definitions, {'plan': plan}, harness_root=ROOT, repository_root=ROOT)
-    run = harness.create_run(seed=1, task_specs=[TaskSpec('F1.split', 'F1.split')])
+    run = harness.create_run(seed=1, task_specs=[TaskSpec('F1.split-novel', 'F1.split', index=('novel',))])
     claim = harness.claim_next(run, executor_id='test')
     rejected = harness.submit(claim['ticket'], 'ウネル（c1）は歩いた。この場面は発端を示す。')
     assert not rejected.accepted
@@ -258,7 +259,7 @@ def test_condition_repair_claim_retains_previously_decided_conditions(tmp_path, 
     assert '変更・追加しない' in repair['card']
 
 
-def _condition_card_harness(tmp_path, target, *, skip_kind=None, long=False):
+def _condition_card_harness(tmp_path, target, *, skip_kind=None, long=False, second_scene=False):
     base = create_story_orchestrator(ROOT)
     event = _event()
     if long:
@@ -266,6 +267,8 @@ def _condition_card_harness(tmp_path, target, *, skip_kind=None, long=False):
                       ('when', 'where', 'why', 'intent', 'what', 'result', 'emotion')})
     slot = dict(_slot(), beats=[{'id': 'opening', 'name': '発端', 'definition': '開始を説明する。'}])
     conditions = ['発' * 159 + '。', '禁' * 159 + '。', '解' * 159 + '。']
+    if second_scene:
+        slot['beats'].append({'id': 'development', 'name': '展開', 'definition': '行動を説明する。'})
     definitions = {target: deepcopy(base.task_definitions[target])}
     for source in ('S6.expand', 'S7.assemble'):
         definitions[source] = {'id': source, 'version': 1, 'kind': 'code', 'handler': source}
@@ -281,6 +284,9 @@ def _condition_card_harness(tmp_path, target, *, skip_kind=None, long=False):
         specs.append(TaskSpec(cid, 'S7.condition', deps=deps, index=('e001', kind)))
     specs.append(TaskSpec(target_id, target, deps=tuple(s.task_id for s in specs),
                           index=('e001', 'b1' if target == 'S7.detail' else 'what')))
+    if second_scene:
+        specs.append(TaskSpec('S7.detail-e001-b2', 'S7.detail',
+                              deps=(*specs[-1].deps, target_id), index=('e001', 'b2')))
     harness = Orchestrator(tmp_path / 'data', definitions,
         {'S6.expand': lambda context: {'slots': [slot]},
          'S7.assemble': lambda context: event}, harness_root=ROOT, repository_root=ROOT)
@@ -320,3 +326,73 @@ def test_max_length_detail_can_claim_continuation_with_all_conditions(tmp_path):
     assert harness.load_run(run)['tasks'][task_id]['state'] == 'claimed'
     assert harness.submit(continuation['ticket'], '歩' * 1499 + '。').accepted
     assert harness.advance(run)['status'] == 'completed'
+
+
+def _repair_input_body(card):
+    return card.split('## 入力\n', 1)[1].split('\n\n## 手順', 1)[0]
+
+
+@pytest.mark.parametrize('original_size', [2501, 50000])
+@pytest.mark.parametrize('reason_size', [434, 30000])
+def test_detail_repair_fits_budget_without_losing_conditions_or_ends(original_size, reason_size):
+    import unicodedata
+    from storyteller.repair import generate_repair_card
+    definition = create_story_orchestrator(ROOT).task_definitions['S7.detail']
+    conditions = ['条' * 159 + '。'] * 3
+    previous = '直前' * 300
+    original = '先頭。' + '文' * original_size + '末尾。'
+    card = generate_repair_card(definition, 'a' * 32, original_output=original,
+        reason='no_repeated_scene: ' + '理' * reason_size,
+        inputs={'conditions': conditions, 'previous_scene': previous})
+    assert len(unicodedata.normalize('NFC', _repair_input_body(card))) <= definition['max_input_chars']
+    assert card.count(conditions[0]) == 3
+    assert '先頭。' in card and '末尾。' in card and '（中間を省略）' in card
+    assert previous[-100:] in card
+    assert 2 * len(card) + 8192 <= 16384
+
+
+def test_repair_uses_nfc_budget_and_rejects_impossible_fixed_conditions():
+    import unicodedata
+    from storyteller.cards import InputBudgetError
+    from storyteller.repair import generate_repair_card
+    definition = create_story_orchestrator(ROOT).task_definitions['S7.detail']
+    card = generate_repair_card(definition, 'a' * 32, original_output='は\u3099' * 5000,
+                               reason='max_chars', inputs={})
+    assert card == unicodedata.normalize('NFC', card)
+    assert len(_repair_input_body(card)) <= definition['max_input_chars']
+    with pytest.raises(InputBudgetError):
+        generate_repair_card(dict(definition, max_input_chars=20), 'a' * 32,
+                             original_output='本文。', reason='max_chars',
+                             inputs={'conditions': ['変更しない条件。']})
+
+
+def test_actual_detail_repair_claim_preserves_conditions_and_previous_tail(tmp_path):
+    harness, run, task_id, first, conditions = _condition_card_harness(
+        tmp_path, 'S7.detail', second_scene=True)
+    previous = ''.join(chr(0x5000 + index) for index in range(1499)) + '。'
+    assert harness.submit(first['ticket'], previous).accepted
+    second = harness.claim_next(run, executor_id='test')
+    rewritten = list(previous[-600:])
+    for index in range(25, 600, 50):
+        rewritten[index] = 'あ'
+    rejected = harness.submit(second['ticket'], ''.join(rewritten) + 'c1' + '文' * 1900 + '。')
+    assert not rejected.accepted
+    assert any('no_repeated_scene' in error for error in rejected.errors)
+    repair = harness.claim_next(run, executor_id='test')
+    assert REPAIR_ROLE in repair['card']
+    assert all(condition in repair['card'] for condition in conditions)
+    assert previous[-100:] in repair['card']
+    assert len(_repair_input_body(repair['card'])) <= harness.task_definitions['S7.detail']['max_input_chars']
+    assert 2 * len(repair['card']) + 8192 <= 16384
+
+
+@pytest.mark.parametrize('kind', ['F2.write', 'F2.write_once'])
+def test_format_repair_also_obeys_its_input_budget(kind):
+    from storyteller.repair import generate_repair_card
+    definition = create_story_orchestrator(ROOT).task_definitions[kind]
+    card = generate_repair_card(definition, 'a' * 32, original_output='先頭。' + '文' * 50000 + '末尾。',
+                               reason='max_chars: ' + '理' * 30000,
+                               inputs={'conditions': ['確定した条件。'] * 3})
+    assert len(_repair_input_body(card)) <= definition['max_input_chars']
+    assert card.count('確定した条件。') == 3
+    assert '先頭。' in card and '末尾。' in card
