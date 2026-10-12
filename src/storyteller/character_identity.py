@@ -52,9 +52,9 @@ def identity_errors(output: str, facts: Any, *, require_subject: bool = False) -
             quoted[position] = True
         position += 1
     subject = r"(?:^|[\s、。!?;])" + re.escape(name) + r"\s*"
-    year = (rf"(?:{re.escape(calendar)})?\s*" if calendar else "") + r"([0-9]+)年"
+    year = (rf"(?:{re.escape(calendar)})?\s*" if calendar else "") + r"([+-]?[0-9]+)年"
     patterns = {
-        "age": subject + r"(?:は(?:現在)?|の年齢は)\s*([0-9]+)歳(?!の(?:とき|時|頃|ころ)|当時|だった|であった|ではない|でない|ではなく|ではなかった|でなかった)",
+        "age": subject + r"(?:は(?:現在)?|の年齢は)\s*([+-]?[0-9]+)歳(?!の(?:とき|時|頃|ころ)|当時|だった|であった|ではない|でない|ではなく|ではなかった|でなかった)",
         "birth_year": subject + r"(?:(?:は|が)\s*" + year + r"(?:に生まれた|生まれ)|の生年は\s*" + year + r")(?!ではない|でない|ではなく|わけではない|のではない|ではなかった|でなかった|わけでない|わけではなかった|のではなかった)",
     }
     for field, pattern in patterns.items():

@@ -121,3 +121,32 @@ def test_literal_quotes_in_registered_calendar_names_preserve_year_validation():
     wrong = validate_output(DEFINITION, "ウネルは「灯暦」542年に生まれた。", {"facts": facts})
     assert not wrong.passed and "birth_year" in wrong.errors[0]
     assert validate_output(DEFINITION, "ウネルは「灯暦」811年に生まれた。", {"facts": facts}).passed
+
+
+@pytest.mark.parametrize("text", [
+    "ウネルは灯暦-700年に生まれた。", "ウネルは灯暦－７００年に生まれた。",
+    "ウネルの生年は-700年。", "ウネルは-700年生まれである。",
+])
+def test_signed_legal_birth_year_matches_negative_canonical_year(text):
+    assert validate_output(DEFINITION, text, {"facts": {**FACTS, "birth_year": -700}}).passed
+
+
+@pytest.mark.parametrize("text", [
+    "ウネルは-699年に生まれた。", "ウネルは灯暦－６９９年に生まれた。",
+])
+def test_signed_negative_birth_year_mismatch_is_not_repairable(text):
+    result = validate_output(DEFINITION, text, {"facts": {**FACTS, "birth_year": -700}})
+    assert not result.passed and not result.repairable and "birth_year" in result.errors[0]
+
+
+@pytest.mark.parametrize("text", ["ウネルは-1歳。", "ウネルは－１歳。"])
+def test_negative_current_age_is_an_explicit_wrong_claim(text):
+    result = validate_output(DEFINITION, text, {"facts": FACTS})
+    assert not result.passed and "age" in result.errors[0]
+
+
+@pytest.mark.parametrize("text", [
+    "ウネルは+71歳。", "ウネルは＋７１歳。", "ウネルは灯暦＋８１１年に生まれた。",
+])
+def test_optional_positive_sign_matches_canonical_integer(text):
+    assert validate_output(DEFINITION, text, {"facts": FACTS}).passed
