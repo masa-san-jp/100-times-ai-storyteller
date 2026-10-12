@@ -75,7 +75,8 @@ def test_s7_definitions_generate_one_text_element() -> None:
     assert "schema" not in definition["validate"]
     assert "decided_fields" in definition["inputs"]
     assert "who" not in definition["inputs"]
-    assert definition["candidates"] == 1
+    assert definition["candidates"] == 3
+    assert definition["select_candidate"] == "least_similar"
     assert definition["max_invalidations"] == 2
     for text, passed in [("小さな変化が起きる。", True), ("変" * 121, False), ("", False)]:
         result = validate_output(definition, text, harness_root=ROOT)

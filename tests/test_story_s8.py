@@ -12,6 +12,7 @@ from storyteller.orchestrator import (
     _source_outputs,
 )
 from storyteller.story_s7 import story_s7_assemble
+from storyteller.story_s7_candidates import story_s7_select
 from storyteller.story_s8 import story_s8_judge, story_s8_plan
 from storyteller.story_s3 import story_s3_assign
 from storyteller.story_s5 import story_s5_relationship_context
@@ -371,6 +372,10 @@ def _integration_definitions() -> dict[str, dict[str, object]]:
         "S6.expand": _code_definition("S6.expand", "expand"),
         "S7.assemble": {**_code_definition("S7.assemble", "event_assemble"), "inputs": {"slot": {"from": "S6.expand", "select": "slots[{slot}]", "label": "スロット"}}},
         "S7.event": {**_llm_definition("S7.event"), "output": "text", "continuation": False},
+        "S7.select": {
+            **_code_definition("S7.select", "event_select"),
+            "inputs": {"candidates": {"from": "S7.event", "select": "output", "label": "候補"}},
+        },
         "S7.detail": _llm_definition("S7.detail"),
         "S8.plan": _code_definition("S8.plan", "plan"),
         "S8.compare": _llm_definition("S8.compare"),
@@ -453,6 +458,7 @@ def test_orchestrator_runs_s3_s6_and_s8_plan_with_test_only_definitions(
             "fact_plan": fact_plan,
             "expand": story_s6_expand,
             "event_assemble": story_s7_assemble,
+            "event_select": story_s7_select,
             "plan": story_s8_plan,
             "judge": lambda _context: {"invalid": False},
             "assemble": lambda _context: {"ok": True},

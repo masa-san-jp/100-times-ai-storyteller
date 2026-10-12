@@ -183,7 +183,7 @@ def test_s6_adds_chronological_s7_s8_s9_dependencies() -> None:
 
     for index, slot in enumerate(slots):
         event_id = slot["id"]
-        s7 = by_id[f"S7.event-{event_id}-what"]
+        s7 = by_id[f"S7.event-{event_id}-what-c1"]
         assert s7.deps[0] == "S6.expand"
         same_thread_previous = next(
             (

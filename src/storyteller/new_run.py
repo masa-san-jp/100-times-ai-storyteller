@@ -17,6 +17,7 @@ from .formatting import load_format_task_definitions, make_handlers as make_form
 from .story_s5 import story_s5_relationship_context
 from .story_s6 import story_s6_expand
 from .story_s7 import story_s7_assemble
+from .story_s7_candidates import story_s7_select
 from .story_s8 import story_s8_judge, story_s8_plan
 from .story_s9 import story_s9_assemble
 from .tables import load_table
@@ -161,6 +162,7 @@ def create_story_orchestrator(
             "story_s5_relationship_context": story_s5_relationship_context,
             "story_s6_expand": story_s6_expand,
             "story_s7_assemble": story_s7_assemble,
+            "story_s7_select": story_s7_select,
             "story_s8_judge": story_s8_judge,
             "story_s8_plan": story_s8_plan,
             "story_s9_assemble": story_s9_assemble,

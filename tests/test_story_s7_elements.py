@@ -14,7 +14,9 @@ def _harness(tmp_path: Path, count: int = 1):
     story = create_story_orchestrator(tmp_path / "unused")
     definitions = {
         name: story.task_definitions[name]
-        for name in ("S7.event", "S7.assemble", "S8.plan", "S8.compare", "S8.judge")
+        for name in (
+            "S7.event", "S7.select", "S7.assemble", "S8.plan", "S8.compare", "S8.judge"
+        )
     }
     definitions["S6.expand"] = {
         "id": "S6.expand", "version": 1, "kind": "code", "handler": "slots"
@@ -54,10 +56,14 @@ def _submit_event(harness, run_id, event_id, *, what=None):
     values = _event()
     if what is not None:
         values["what"] = what
-    for index, field in enumerate(EVENT_FIELDS):
+    # ``what`` is generated as three candidates (c1..c3) with the same card.
+    steps = [(field, f"-{field}") for field in EVENT_FIELDS[1:]]
+    steps = [("what", f"-what-c{n}") for n in (1, 2, 3)] + steps
+    for field, suffix in steps:
+        index = EVENT_FIELDS.index(field)
         claimed = harness.claim_next(run_id, executor_id="test", isolation="none")
         assert claimed is not None
-        task_dir = harness.task_dir(run_id, f"S7.event-{event_id}-{field}")
+        task_dir = harness.task_dir(run_id, f"S7.event-{event_id}{suffix}")
         claim = json.loads((task_dir / "claim.json").read_text(encoding="utf-8"))
         assert claim["ticket"] == claimed["ticket"]
         inputs = json.loads((task_dir / "input.json").read_text(encoding="utf-8"))
@@ -79,12 +85,14 @@ def _submit_event(harness, run_id, event_id, *, what=None):
 
 def test_field_failure_preserves_completed_elements_and_sources(tmp_path):
     harness, run_id = _harness(tmp_path)
-    for field in EVENT_FIELDS[:2]:
+    for _ in range(3):
         claimed = harness.claim_next(run_id, executor_id="test", isolation="none")
-        assert harness.submit(claimed["ticket"], _event()[field]).accepted
+        assert harness.submit(claimed["ticket"], _event()["what"]).accepted
+    claimed = harness.claim_next(run_id, executor_id="test", isolation="none")
+    assert harness.submit(claimed["ticket"], _event()["where"]).accepted
     prior_outputs = {
-        field: (harness.task_dir(run_id, f"S7.event-e001-{field}") / "output.md").read_text(encoding="utf-8")
-        for field in EVENT_FIELDS[:2]
+        "where": (harness.task_dir(run_id, "S7.event-e001-where") / "output.md").read_text(encoding="utf-8"),
+        "what-c1": (harness.task_dir(run_id, "S7.event-e001-what-c1") / "output.md").read_text(encoding="utf-8"),
     }
     claimed = harness.claim_next(run_id, executor_id="test", isolation="none")
     rejected = harness.submit(claimed["ticket"], "時" * 121)
@@ -92,6 +100,7 @@ def test_field_failure_preserves_completed_elements_and_sources(tmp_path):
     tasks = harness.load_run(run_id)["tasks"]
     assert tasks["S7.event-e001-when"]["state"] == "ready"
     assert tasks["S7.event-e001-when"]["attempt"] == 1
+    assert tasks["S7.select-e001"]["state"] == "done"
     for field, text in prior_outputs.items():
         task_id = f"S7.event-e001-{field}"
         assert tasks[task_id]["state"] == "done" and tasks[task_id]["attempt"] == 0
@@ -102,9 +111,10 @@ def test_field_failure_preserves_completed_elements_and_sources(tmp_path):
     harness.advance(run_id)
     output = json.loads((harness.task_dir(run_id, "S7.assemble-e001") / "output.json").read_text(encoding="utf-8"))
     assert {key: value for key, value in output.items() if key != "sources"} == _event()
+    chosen = json.loads((harness.task_dir(run_id, "S7.select-e001") / "output.json").read_text(encoding="utf-8"))["candidate"]
     expected_sources = list(dict.fromkeys(
-        source for field in EVENT_FIELDS
-        for source in task_sources(harness.task_dir(run_id, f"S7.event-e001-{field}"))
+        source for suffix in (f"what-{chosen}", *EVENT_FIELDS[1:])
+        for source in task_sources(harness.task_dir(run_id, f"S7.event-e001-{suffix}"))
     ))
     assert output["sources"] == expected_sources
     assert "c1" in output["sources"] and "m001" in output["sources"]
@@ -119,15 +129,21 @@ def test_s8_invalidates_what_and_rebuilds_all_event_fields(tmp_path):
     result = harness.submit(claimed["ticket"], json.dumps({"answer": "yes", "reason": "結果が両立しない。"}, ensure_ascii=False))
     assert result.accepted
     tasks = harness.advance(run_id)["tasks"]
-    assert tasks["S7.event-e002-what"]["invalidations"] == 1
-    assert tasks["S7.event-e002-what"]["state"] == "ready"
+    for number in (1, 2, 3):
+        assert tasks[f"S7.event-e002-what-c{number}"]["invalidations"] == 1
+        assert tasks[f"S7.event-e002-what-c{number}"]["state"] == "ready"
+    assert tasks["S7.select-e002"]["state"] == "blocked"
     for field in EVENT_FIELDS[1:]:
         task_id = f"S7.event-e002-{field}"
         assert tasks[task_id]["state"] == "blocked"
         assert not (harness.task_dir(run_id, task_id) / "output.md").exists()
     assert tasks["S7.assemble-e002"]["state"] == "blocked"
     assert tasks["S8.plan-e002"]["state"] == "blocked"
-    assert all(tasks[f"S7.event-e001-{field}"]["state"] == "done" for field in EVENT_FIELDS)
+    assert all(
+        tasks[f"S7.event-e001-{suffix}"]["state"] == "done"
+        for suffix in ("what-c1", "what-c2", "what-c3", *EVENT_FIELDS[1:])
+    )
+    assert tasks["S7.select-e001"]["state"] == "done"
     _submit_event(harness, run_id, "e002", what="人物は水門の仕組みを変える。")
     claimed = harness.claim_next(run_id, executor_id="test", isolation="none")
     assert harness.submit(claimed["ticket"], json.dumps({"answer": "no", "reason": "事実は両立する。"}, ensure_ascii=False)).accepted
