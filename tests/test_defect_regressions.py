@@ -14,7 +14,7 @@ from tests.test_character_facts import _harness, _finish, _accepted_outputs
 def test_skipped_slide_completes_after_each_limit(tmp_path, dummy_format, exhaustion):
     profile = {**formatting.load_profile('slides', formats_root=ROOT / 'formats'), 'name': 'dummy', 'chars_per_event': [10, 40]}
     (dummy_format / 'dummy/profile.yaml').write_text(yaml.safe_dump(profile, allow_unicode=True), encoding='utf-8')
-    (dummy_format / 'dummy/template.md').write_text((ROOT / 'formats/slides/template.md').read_text(), encoding='utf-8')
+    (dummy_format / 'dummy/template.md').write_text((ROOT / 'formats/slides/template.md').read_text(encoding='utf-8'), encoding='utf-8')
     _, run_id, harness = _start(tmp_path, dummy_format, events=1)
     def respond(task_id, card):
         if task_id.startswith('F2.'):
@@ -23,7 +23,7 @@ def test_skipped_slide_completes_after_each_limit(tmp_path, dummy_format, exhaus
     _drive(harness, run_id, respond)
     manifest = harness.load_run(run_id)
     assert manifest['status'] == 'completed'
-    body = (harness.run_dir(run_id) / 'formats/dummy/dummy.md').read_text()
+    body = (harness.run_dir(run_id) / 'formats/dummy/dummy.md').read_text(encoding='utf-8')
     assert '（未定）' in body
     assert format_slides.check_deck(body, expected_slides=3) == []
     skipped = [task for task in manifest['tasks'].values() if task['type'].startswith('F2.')]
@@ -78,7 +78,7 @@ def test_format_placeholder_requires_manifest_skipped(tmp_path, dummy_format):
     write = next(key for key, task in manifest['tasks'].items() if task['type'].startswith('F2.'))
     plan_path = harness.run_dir(run_id) / 'tasks/F1.split-dummy/output.json'
     import json
-    plan = json.loads(plan_path.read_text())
+    plan = json.loads(plan_path.read_text(encoding='utf-8'))
     context = SimpleNamespace(task={'index': [plan['parts'][0]['id'], 'dummy']},
                               run_dir=harness.run_dir(run_id), inputs={'plan': plan}, dependency_outputs={})
     verify = formatting.make_handlers(ROOT)['format_f4_verify']
