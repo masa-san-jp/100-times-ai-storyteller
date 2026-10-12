@@ -1,5 +1,5 @@
 id: S5.relationship
-version: 10
+version: 12
 kind: llm
 element: text
 inputs:
@@ -12,6 +12,11 @@ inputs:
     label: 割り当てられた人物
     from: S3.assign
     select: character
+    required: true
+  other_person:
+    label: 相手の人物
+    from: S5.relationship_context
+    select: output
     required: true
   profile:
     label: プロフィール
@@ -40,12 +45,6 @@ inputs:
     from: S3.assign
     select: cast[c1].role
     required: false
-  other_person:
-    label: 相手の人物
-    from: S5.relationship_context
-    select: output
-    required: true
-    truncate: head
   glossary:
     label: 関係する用語集
     from: S3.assign
@@ -74,4 +73,4 @@ validate:
     - max_chars:
         n: 600
         fix: trim
-max_input_chars: 2800
+max_input_chars: 3000

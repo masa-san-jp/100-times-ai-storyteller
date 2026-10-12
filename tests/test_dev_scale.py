@@ -118,3 +118,27 @@ def test_dev_run_script_creates_a_dev_run_and_reports(tmp_path: Path) -> None:
         ["bash", str(script)], capture_output=True, text=True, encoding="utf-8", check=False
     )
     assert usage.returncode == 2
+
+
+@pytest.mark.parametrize("seed", [5, 7])
+def test_dev_run_relationship_cards_keep_the_counterpart(tmp_path: Path, seed: int) -> None:
+    data_dir, run_id = _new_dev_run(tmp_path, seed=seed)
+    harness = create_story_orchestrator(data_dir)
+    seen = 0
+    for _ in range(500):
+        claimed = harness.claim_next(run_id, executor_id="dev", isolation="none")
+        if claimed is None:
+            break
+        task_id, task = _claimed_task(data_dir, run_id, claimed["ticket"])
+        inputs = _task_input(data_dir, run_id, task_id)
+        if task["type"] == "S5.relationship":
+            seen += 1
+            assert inputs["other_person"], task_id
+            assert inputs["other_person"][0]["name"] in claimed["card"], task_id
+        output = _fake_output(task_id, task, inputs, send_comparison_yes=False)
+        definition = specialize_fact_definition(harness.task_definitions[task["type"]], inputs)
+        if definition["output"] != "text":
+            output = json.dumps(output, ensure_ascii=False)
+        assert harness.submit(claimed["ticket"], output).accepted, task_id
+    assert seen
+    assert _manifest(data_dir, run_id)["status"] == "completed"
