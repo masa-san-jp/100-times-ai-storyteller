@@ -4,8 +4,11 @@ executors die mid-task (an abandoned claim is taken over after its lease)."""
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 from storyteller.batch import create_batch, load_batch_manifest
 from storyteller.new_run import create_story_orchestrator
@@ -19,6 +22,9 @@ EXECUTORS = 4
 CRASH_EVERY = 11  # every 11th claim is abandoned: the executor "died"
 
 
+# 約2,700タスク（1 claim あたり約0.15秒、全体で10分前後）のため、通常の pytest では回さない。
+# 実行: STORYTELLER_SLOW_TESTS=1 uv run pytest tests/test_unattended_batch.py
+@pytest.mark.skipif(not os.environ.get("STORYTELLER_SLOW_TESTS"), reason="長時間のテスト（STORYTELLER_SLOW_TESTS=1 で実行）")
 def test_dev_batch_of_ten_completes_with_executor_crashes(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     source = tmp_path / "free.md"
