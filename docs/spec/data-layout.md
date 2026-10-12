@@ -76,7 +76,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 | `created_at`, `updated_at` | 時刻（ISO 8601、UTC） |
 | `status` | `active` / `stalled` / `halted`（ハーネスの変更で停止中）/ `completed` / `duplicate` |
 | `seed`, `seed_source` | run の seed と、その由来（`argument` / `batch` / `generated`） |
-| `input` | 入力の種類（`narrative` / `free`）と、入力ファイルの sha256 |
+| `input` | 入力の種類（`narrative` / `free`）と、入力ファイルの sha256。`--plot-type` の指定があれば、そのプロット型ID（`plot_type`。S3 が主筋に使う） |
 | `scale` | 規模プリセット、上書きした軸、計算した派生値（[scale.md](scale.md) §6） |
 | `harness` | リポジトリ内のタスク定義・既定テーブル・スキーマ・様式プロファイル各ファイルの sha256。データディレクトリの増補テーブルは含めない |
 | `harness_kind` | その run のハーネスの種類：`story`（本物のハーネス）、`dummy`（`st dev new-dummy`）、または `report`（バッチの傾向分析。`batches/<batch_id>/report/` の manifest。ハーネスは `story` と同じ）。すべてのコマンドは、この値に従ってタスク定義・スキーマ・変更検出の対象を決める |

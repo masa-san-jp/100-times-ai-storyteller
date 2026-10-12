@@ -353,6 +353,9 @@ class Orchestrator:
                         "type": input_type,
                         "sha256": source_sha256,
                     }
+                    if plot_type is not None:
+                        # S3 reads the fixed plot type from here (--plot-type).
+                        input_record["plot_type"] = plot_type
 
             resolved_harness = (
                 dict(harness)
