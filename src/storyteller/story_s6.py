@@ -401,6 +401,9 @@ def _character_outputs(
         person_id = person["id"]
         name_output = dependency_outputs.get(f"S5.name-{person_id}")
         motive_output = dependency_outputs.get(f"S5.motive-{person_id}")
+        if f"S5.motive-{person_id}" not in dependency_outputs:
+            # The motive task was skipped (task-model §6.7).
+            motive_output = {"motive": "（未定）"}
         if not isinstance(name_output, Mapping) or not isinstance(motive_output, Mapping):
             raise ValueError(f"S5 の名前または動機の出力がありません: {person_id}")
         name = name_output.get("name")

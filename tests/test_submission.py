@@ -47,6 +47,7 @@ def llm_definition(task_id: str = "D1.echo", **extra: object) -> dict:
         },
         "validate": {"checks": [ {"max_chars": {"field": "text", "n": 20}}]},
         "max_input_chars": 14,
+        "on_exhausted": "fail",  # these tests exercise the failed state (§6.3)
     }
     definition.update(extra)
     return definition
@@ -65,6 +66,7 @@ def continuation_definition(**extra: object) -> dict:
         },
         "validate": {"checks": ["ends_complete", {"min_chars": {"n": 2}}]},
         "max_input_chars": 3000,
+        "on_exhausted": "fail",
     }
     definition.update(extra)
     return definition

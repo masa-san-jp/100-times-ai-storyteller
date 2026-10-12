@@ -11,6 +11,7 @@ import subprocess
 from typing import Any
 
 from .cards import generate_task_card, prepare_task_inputs, _render_input_body, _render_value
+from .repair import is_repair_card, redact_repair_card
 from .storage import atomic_write_text
 from .validation import output_char_count
 
@@ -37,6 +38,8 @@ def redact_card(
     card: str, definition: Mapping[str, Any], inputs: Mapping[str, Any],
 ) -> str:
     """Remove the exact rendered input, including user-supplied Markdown headings."""
+    if is_repair_card(card):
+        return redact_repair_card(card)
     input_body = _render_input_body(definition, inputs)
     marker = "## 入力\n"
     start = card.index(marker) + len(marker)
@@ -61,7 +64,8 @@ def write_failure_reports(
 ) -> None:
     """Cover all failure paths at the orchestrator's persistence boundary."""
     for task_id, task in manifest["tasks"].items():
-        if task["state"] != "failed":
+        # A task skipped after its attempts ran out keeps its reason in ``error``.
+        if task["state"] != "failed" and not (task["state"] == "skipped" and task["error"]):
             continue
         directory = run_dir / "tasks" / task_id
         definition = definitions[task["type"]]

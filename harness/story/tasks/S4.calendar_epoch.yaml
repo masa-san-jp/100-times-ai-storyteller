@@ -37,3 +37,5 @@ validate:
   - no_new_proper_nouns:
       mode: warn
 max_input_chars: 1200
+# 後続の工程がこの出力なしには成り立たないため、上限に達したら run を止める（task-model §6.3）。
+on_exhausted: fail
