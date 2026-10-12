@@ -87,7 +87,8 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
         {
             "characters": characters_markdown,
             "world": world_markdown + world_facts_markdown,
-            "story": story_markdown,
+            # The 生成の記録 is not story text: count the story without it.
+            "story": render_story_markdown(story, details),
         },
     )
     story["meta"]["volume"] = volume

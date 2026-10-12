@@ -1866,6 +1866,8 @@ class Orchestrator:
         source_outputs = sequential_sources(task, manifest, dependency_outputs, source_outputs)
         run_input = _read_run_input(self.run_dir(run_id))
         try:
+            # Slots whose source tasks were all skipped are shown as 未定 (§6.7).
+            undecided = _undecided_slots(manifest, task, definition)
             if "glossary" in definition.get("inputs", {}):
                 # Supplement the assignment view with a derived glossary;
                 # the persisted assignment and registration outputs stay intact.
@@ -1873,7 +1875,7 @@ class Orchestrator:
                 glossary = build_glossary(registrations)
                 base_definition = {**definition, "inputs": {
                     name: slot for name, slot in definition["inputs"].items()
-                    if name != "glossary"
+                    if name != "glossary" and name not in undecided
                 }}
                 base_inputs = resolve_inputs(
                     base_definition, source_outputs, run_input, index=task["index"]
@@ -1885,7 +1887,6 @@ class Orchestrator:
                         glossary, assignment, base_inputs, task["index"]
                     ),
                 }
-            undecided = _undecided_slots(manifest, task, definition)
             inputs = resolve_inputs(
                 {**definition, "inputs": {
                     name: slot for name, slot in definition.get("inputs", {}).items()
