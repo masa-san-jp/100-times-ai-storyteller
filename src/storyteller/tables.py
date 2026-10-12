@@ -65,6 +65,10 @@ _TABLE_SPECS: dict[str, tuple[Path, Path]] = {
         Path("tables/beats.yaml"),
         _TABLE_SCHEMA_ROOT / "beats.schema.json",
     ),
+    "time_jumps": (
+        Path("tables/time_jumps.yaml"),
+        _TABLE_SCHEMA_ROOT / "time_jumps.schema.json",
+    ),
 }
 _ELEMENT_SCHEMA = _TABLE_SCHEMA_ROOT / "elements.schema.json"
 

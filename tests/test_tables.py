@@ -39,6 +39,7 @@ def test_all_phase_one_tables_are_loaded_and_schema_validated():
         "cliches",
         "volume",
         "beats",
+        "time_jumps",
     }
     assert set(tables["elements"]) == {
         "want",
