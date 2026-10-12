@@ -81,6 +81,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 | `harness_kind` | その run のハーネスの種類：`story`（本物のハーネス）、`dummy`（`st dev new-dummy`）、または `report`（バッチの傾向分析。`batches/<batch_id>/report/` の manifest。ハーネスは `story` と同じ）。すべてのコマンドは、この値に従ってタスク定義・スキーマ・変更検出の対象を決める |
 | `input_ratio` | S3 が決めた入力由来の比率 r（数値）。S3 の実行前は null |
 | `table_snapshot` | S3 の実行時点の、増補テーブルの軸ごとの行数。増補テーブルは追記のみなので、この行数までを読めば、同じ割当を再現できる |
+| `escalation` | 実行者IDの配列（任意）。不合格の上限に達したタスクを次の実行者に格上げする順序（[task-model.md](task-model.md) §6.7）。ない場合は格上げしない |
 | `tasks` | タスクID → タスクの記録（§3.1） |
 | `warnings` | 固有名詞の候補、出来事数の引き上げ、JSON の出させ方の切り替えなど |
 
@@ -100,10 +101,11 @@ private/                  # 既定のデータディレクトリ。.gitignore �
 | `cache_key` | 文字列または null | |
 | `claim` | オブジェクトまたは null | claim 中の `ticket`・`executor_id`・`isolation`・`lease_expires_at` |
 | `history` | 配列 | 状態遷移の記録（時刻・遷移・理由・実行者ID） |
-| `error` | 文字列または null | `failed` の理由 |
+| `error` | 文字列または null | `failed` または `skipped` の理由 |
+| `executor` | 文字列（任意） | 格上げにより、このタスクを取れる実行者のID（[task-model.md](task-model.md) §6.7） |
 
-- run の manifest は、§3 の表の項目をすべて必須とする（値がないものは null）。型は、`schema_version`・`seed` が整数、`created_at`・`updated_at` が §7.2 と同じ時刻の形式、`input`・`scale`・`harness`・`table_snapshot`・`tasks` がオブジェクト、`warnings` が文字列の配列、その他が文字列とする。表にない項目はエラーとする（`additionalProperties: false`）。`scale` と `table_snapshot` の内部の形式は、それを使う作業項目（P1-02、P1-05）で定める。Phase 0 では `input`・`scale` は空のオブジェクトでよい。
-- タスクの記録も、§3.1 の表の項目をすべて必須とし、表にない項目はエラーとする。
+- run の manifest は、§3 の表の項目（任意と書かれたものを除く）をすべて必須とする（値がないものは null）。型は、`schema_version`・`seed` が整数、`created_at`・`updated_at` が §7.2 と同じ時刻の形式、`input`・`scale`・`harness`・`table_snapshot`・`tasks` がオブジェクト、`warnings` が文字列の配列、その他が文字列とする。表にない項目はエラーとする（`additionalProperties: false`）。`scale` と `table_snapshot` の内部の形式は、それを使う作業項目（P1-02、P1-05）で定める。Phase 0 では `input`・`scale` は空のオブジェクトでよい。
+- タスクの記録も、§3.1 の表の項目（任意と書かれたものを除く）をすべて必須とし、表にない項目はエラーとする。
 
 形式は `schemas/manifest.schema.json` で検証する。バッチの manifest の形式は Phase 2（P2-05）で `schemas/batch-manifest.schema.json` として定める。
 
