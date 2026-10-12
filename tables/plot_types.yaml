@@ -251,3 +251,129 @@ types:
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal}
       - description: 主人公が唯一の答えに頼らず、自ら選んだ意味と生き方を引き受ける。
         stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+  - id: time-loop
+    name: タイムループ／時間改変
+    core: 同じ時間が繰り返される、または書き換えられる中で、主人公が反復から学び、時間を終わらせる選択をする。
+    structure: time-loop
+    character_requirements: 時間の異変に気づく主人公と、反復の外から異変を指摘または検証する人物を置く。
+    time_design: 同じ起点へ戻る周回を重ね、周回ごとの差分で情報と関係を積み上げる。周回の終わりと時間の再開を明示する。
+    conflict: 繰り返しから抜けたい願いと、抜けることで失うものとの衝突。時間そのものが対立の場になる。
+    climax: 主人公が周回の知識を使い、反復を終えるか、反復を引き受けたまま次へ進むかを選ぶ。
+    pacing: 最初の周回を丁寧に示し、中盤は周回を圧縮して差分を重ね、終端で再び時間を丁寧に流す。
+    typical_setting: 同じ日・同じ場所に閉じた空間、時計や暦が意味を持つ共同体。
+    customization_notes: 入力の場所・物・願望を、周回の起点と反復の中で変わる細部に使う。周回の原因を説明しすぎない。
+    required_events:
+      - description: 同じ時間の起点に戻る異変が最初に起こる。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, time-loop: loop-onset}
+      - description: 周回ごとの差分から、主人公が反復の規則を学ぶ。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, time-loop: loop-repeat}
+      - description: 反復を終える、または引き受ける選択をして時間が動き出す。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, time-loop: loop-release}
+  - id: surrealism
+    name: シュルレアリスム／超現実
+    core: 現実の論理が夢のように歪む世界で、主人公が連想と象徴に導かれ、説明されない変容を通過する。
+    structure: surrealism
+    character_requirements: 現実の感覚を持ち込む主人公と、異様な世界の側に属する案内役または象徴的な人物を置く。
+    time_design: 時間は連想と夢の論理で飛び、場面は因果ではなく類比や反復でつながる。
+    conflict: 現実の論理を保とうとする意識と、それを侵食する不条理や無意識の衝突。
+    climax: 説明を与えるのではなく、象徴的なイメージが主人公の中で結びつく変容の瞬間を置く。
+    pacing: 導入は現実に近く、中盤で論理を崩し続け、終盤で象徴を収束させる。
+    typical_setting: 夢と現実の境目、歪んだ部屋、意味が入れ替わる街。
+    customization_notes: 入力の物・場所・記憶を、ありえない形で変形し、象徴として反復する。出来事の理由を現実の論理で説明しない。
+    required_events:
+      - description: 日常の風景に、現実の論理から外れた最初の歪みが現れる。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, surrealism: dream-threshold}
+      - description: 連想で場面が飛び、主人公の持ち物や記憶が別の物に変容する。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal, surrealism: dream-drift}
+      - description: 象徴が結びつき、主人公が説明できない変容を受け入れる。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, surrealism: dream-awakening}
+  - id: fragmentary
+    name: 断片的構成（フラグメント／コラージュ）
+    core: 時系列や視点が分断された断片を並べ、読者が断片の間の関係から全体像を組み立てる。
+    structure: fragmentary
+    character_requirements: 断片の中心となる主人公と、断片ごとに異なる側面を見せる複数の人物を置く。
+    time_design: 時系列を意図的に入れ替え、断片の順序で意味の連なりを作る。断片間の空白を残す。
+    conflict: 断片の間の欠落と、全体像を組み立てようとする意志の衝突。
+    climax: 最後の断片が、それまでの断片の意味を反転または結びつけて、全体像を示す。
+    pacing: 断片の長さと密度を変え、短い断片の連続と長い断片を交互に置く。
+    typical_setting: 記録、手紙、写真、地図など断片が残る場所、散逸した記憶。
+    customization_notes: 入力の素材を断片の種類（記録・独白・描写）に分けて使う。断片間をつなぐ説明を書き足さない。
+    required_events:
+      - description: 異なる時点や視点の断片が、関係を明かさずに並べられる。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, fragmentary: fragment-scatter}
+      - description: 断片の間に共通する物や言葉が現れ、隠れていた関係が見え始める。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, fragmentary: fragment-echo}
+      - description: 最後の断片が全体像を反転させ、断片の意味を結びつける。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, fragmentary: fragment-assembly}
+  - id: metafiction
+    name: メタフィクション／ポストモダン
+    core: 物語が自分自身を語る行為を意識し、語り手・作者・読者・虚構の枠組みを揺さぶる。
+    structure: metafiction
+    character_requirements: 物語を語る意識を持つ主人公と、語りを疑い、枠の外から指摘する人物を置く。
+    time_design: 語られる時間と語る時間を重ね、物語の途中で語り直しや書き換えが起こる。
+    conflict: 物語であることを引き受ける語りと、物語から逃れようとする人物の衝突。
+    climax: 語りの枠が破れ、主人公が物語の外に触れるか、物語の中で語りを引き受ける選択をする。
+    pacing: 導入は通常の物語として運び、中盤で枠に亀裂を入れ、終盤で語りの形を決める。
+    typical_setting: 書き物の途中の部屋、編集される物語、語り手が覗き込む舞台。
+    customization_notes: 入力の素材を、物語が物語であることの手がかりとして使う。作者や読者への言及は物語内の仕掛けに限る。
+    required_events:
+      - description: 物語が通常の語りとして始まり、語りの枠が意識される兆しが現れる。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, metafiction: frame-opening}
+      - description: 語りの枠が壊れ、人物が語られていることに気づく。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal, metafiction: frame-breaking}
+      - description: 語りの枠を引き受けるか、枠の外へ出る選択をして物語が閉じる。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, metafiction: frame-closing}
+  - id: lyrical
+    name: 詩的・抽象的（リリカル）
+    core: 出来事の連なりよりも、イメージ、音、感情の流れで物語を運び、一つの情動へ収束させる。
+    structure: lyrical
+    character_requirements: 感情の中心となる主人公と、その感情に触れるもう一人の人物または不在の存在を置く。
+    time_design: 時間は情動の波として進み、出来事は感情の高まりと静まりの形で配置する。
+    conflict: 言葉にできない感情と、それを言葉にしようとする衝動の衝突。
+    climax: 感情が最高点に達し、一つのイメージに結晶して静まる。
+    pacing: 短い場面を呼吸のように重ね、感情が高まる箇所だけ密度を上げる。
+    typical_setting: 光や水や季節が感情を映す場所、余白の多い風景。
+    customization_notes: 入力の物・場所・感情を、反復するイメージとして使う。出来事の説明より感覚の描写を優先する。
+    required_events:
+      - description: 感情の発端となるイメージが示される。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, lyrical: image-seed}
+      - description: 同じイメージが形を変えて反復し、感情が高まる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal, lyrical: image-swell}
+      - description: 感情が一つのイメージに結晶し、静けさが訪れる。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, lyrical: image-calm}
+  - id: documentary-essay
+    name: ドキュメンタリー／エッセイ
+    core: 記録、観察、考察の形で出来事を語り、事実と解釈の間から主題を浮かび上がらせる。
+    structure: documentary-essay
+    character_requirements: 観察し記録する主人公（語り手）と、観察の対象となる人物や証言者を置く。
+    time_design: 時間は記録の日付や調査の順序で進み、観察と考察を交互に置く。
+    conflict: 見たものを正確に記すことと、そこから意味を引き出すことの緊張、事実と解釈の衝突。
+    climax: 集めた観察が一つの考察に結びつき、結論を断定せずに示す。
+    pacing: 観察は具体的に、考察は短く、終盤で主題を静かに引き出す。
+    typical_setting: 調査の現場、資料の積まれた部屋、証言が集まる共同体。
+    customization_notes: 入力の素材を、観察された事実と、語り手の考察に振り分けて使う。創作の説明調を避け、記録の文体を保つ。
+    required_events:
+      - description: 語り手が観察の対象と目的を記録として示す。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, documentary-essay: record-opening}
+      - description: 観察と証言が積み重なり、事実の間に矛盾や意味が見え始める。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, documentary-essay: record-observation}
+      - description: 集めた観察から考察が引き出され、結論を断定せずに記す。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, documentary-essay: record-reflection}
+  - id: anticlimax
+    name: アンチクライマックス／無為
+    core: 期待された劇的な出来事が起こらず、待機、停滞、日常の持続の中で物語の意味を成立させる。
+    structure: anticlimax
+    character_requirements: 決定的な行動を起こさない主人公と、行動を促す、または待つことを共有する人物を置く。
+    time_design: 時間は劇的な出来事を避けて流れ、待機や反復の日常が積み重なる。
+    conflict: 何かが起きるはずだという期待と、何も起きない現実の衝突。
+    climax: 期待された出来事が起こらないまま、主人公が何も起きないことを受け止める。
+    pacing: 緊張をほのめかしては解消し、中盤は日常の持続を丁寧に積み、終盤も大きな転換を置かない。
+    typical_setting: 待合室、停滞した町、誰も来ない路上、変化の乏しい日常の場。
+    customization_notes: 入力の願望や出来事の予兆を、起こらないまま持続させる。決着のための事件を足さない。
+    required_events:
+      - description: 何かが起こるという期待が置かれる。
+        stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, anticlimax: expectation}
+      - description: 期待された出来事が起こらないまま、日常と待機が続く。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, anticlimax: suspension}
+      - description: 何も起こらなかったことを主人公が受け止め、日常が続く。
+        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, anticlimax: remainder}

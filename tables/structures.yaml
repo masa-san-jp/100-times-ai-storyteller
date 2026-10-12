@@ -214,3 +214,248 @@ templates:
         world_sections: [people, future]
         object: true
         climax: true
+  time-loop:
+    stages:
+      - id: loop-onset
+        name: 周回の始まり
+        definition: 時間の起点と日常を示し、最初の異変を主人公が体験する。
+        guidance: 起点の状況を細部まで固定し、巻き戻りに気づく瞬間を置く。以後の周回と比べられる基準点にする。
+        act: 1
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心人物が巻き戻りに気づく場面を状況の変化として示す。
+        world_sections: [place, customs]
+        object: false
+        climax: false
+      - id: loop-repeat
+        name: 周回の反復
+        definition: 同じ起点から出来事を繰り返し、周回ごとの差分を積み重ねる。
+        guidance: 毎回、起点は同じにして結果を変える。試した行動、得た情報、失った関係を差分として示し、反復の規則に近づく。段階の出来事数が多いほど周回が増える。
+        act: 2
+        weight: 4
+        roles: [supporter, adversary]
+        absent_role_note: 支援者または敵対者が不在なら、環境の仕掛けや主人公自身の癖が周回の障害になる。
+        world_sections: [place, events, past_events]
+        object: true
+        climax: false
+      - id: loop-release
+        name: 周回の終わり
+        definition: 周回の知識を使って選択し、時間が再び動き出すか、反復を引き受ける。
+        guidance: 周回で得たものを選択に結びつける。反復を終える代償、または引き受ける理由を示し、起点との対比で締める。
+        act: 3
+        weight: 2
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心人物の選択を時間の再開として場の変化で示す。
+        world_sections: [place, future]
+        object: true
+        climax: true
+  surrealism:
+    stages:
+      - id: dream-threshold
+        name: 歪みの入口
+        definition: 現実の風景に最初の歪みが滑り込み、主人公が境界を越える。
+        guidance: 現実の細部から始め、一つの不自然な事物を置く。主人公は理由を問うが、答えは与えない。
+        act: 1
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心人物の感覚が揺らぐ様子を風景の変化として示す。
+        world_sections: [place, customs]
+        object: false
+        climax: false
+      - id: dream-drift
+        name: 連想の漂流
+        definition: 因果ではなく連想で場面が移り、事物が別の意味に変容する。
+        guidance: 前の場面の事物・音・色から次の場面へ飛ぶ。象徴を反復し、論理的な説明を避ける。段階の出来事数が多いほど漂流が長くなる。
+        act: 2
+        weight: 3
+        roles: [messenger, adversary]
+        absent_role_note: 使者または敵対者が不在なら、風景や事物そのものが主人公を導き、惑わせる。
+        world_sections: [place, interpretation, past_events]
+        object: true
+        climax: false
+      - id: dream-awakening
+        name: 目覚めの像
+        definition: 漂流した象徴が一つの像に収束し、主人公が変容を受け入れて現実に戻る。
+        guidance: これまでの象徴を結びつけるが、意味を断定しない。戻った現実に歪みの痕跡を残す。
+        act: 3
+        weight: 2
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心人物の変容を場に残る痕跡として示す。
+        world_sections: [place, future]
+        object: true
+        climax: true
+  fragmentary:
+    stages:
+      - id: fragment-scatter
+        name: 断片の散布
+        definition: 時点も視点も異なる断片を、つながりを説明せずに並べる。
+        guidance: 各断片は独立して読めるようにし、時点と視点を毎回変える。物や言葉の共通点だけを手がかりとして残す。
+        act: 1
+        weight: 2
+        roles: [protagonist, supporter]
+        absent_role_note: 主人公または支援者が不在なら、記録や痕跡が断片の語り手になる。
+        world_sections: [place, media, past_events]
+        object: false
+        climax: false
+      - id: fragment-echo
+        name: 断片の呼応
+        definition: 断片の間で物や言葉が反復し、関係が少しずつ浮かぶ。
+        guidance: 前の断片の物・言葉・出来事を、別の時点から別の意味で反復する。空白は残し、推測を可能にする。
+        act: 2
+        weight: 3
+        roles: [supporter, adversary]
+        absent_role_note: 支援者または敵対者が不在なら、残された記録や欠落そのものが断片の対立を担う。
+        world_sections: [people, media, past_events]
+        object: true
+        climax: false
+      - id: fragment-assembly
+        name: 断片の集成
+        definition: 最後の断片が全体像を示し、断片の意味が結びつく。
+        guidance: 散らした手がかりを一点に集め、見落としていた断片の意味を反転させる。全体像は断定しすぎない。
+        act: 3
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、残された断片の並びから全体像を示す。
+        world_sections: [interpretation, future]
+        object: true
+        climax: true
+  metafiction:
+    stages:
+      - id: frame-opening
+        name: 語りの開幕
+        definition: 通常の物語として始め、語りの枠が意識される小さな兆しを置く。
+        guidance: 物語の約束事に従って始め、語り手の存在をほのめかす。後で崩す枠を最初に示しておく。
+        act: 1
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心人物が語られる側であることを語りの癖として示す。
+        world_sections: [place, customs]
+        object: false
+        climax: false
+      - id: frame-breaking
+        name: 枠の破れ
+        definition: 語りの枠が破れ、人物が自分たちの語られ方に気づく。
+        guidance: 語りの書き直しや、語り手の介入を示す。人物の反応を具体的な行動にし、虚構の仕掛けを説明しすぎない。
+        act: 2
+        weight: 3
+        roles: [messenger, adversary]
+        absent_role_note: 使者または敵対者が不在なら、語りの矛盾や書き換えの痕跡が主人公に気づきを促す。
+        world_sections: [media, interpretation, past_events]
+        object: true
+        climax: false
+      - id: frame-closing
+        name: 語りの閉幕
+        definition: 語りの枠を引き受けるか、枠の外へ出る選択をして物語を閉じる。
+        guidance: 枠の破れで得た気づきを選択に結びつける。語りの形で結末を示し、読者に残る問いを置く。
+        act: 3
+        weight: 2
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、語りが閉じる様子を場と語りの形で示す。
+        world_sections: [media, future]
+        object: true
+        climax: true
+  lyrical:
+    stages:
+      - id: image-seed
+        name: イメージの種
+        definition: 感情の発端となるイメージを、感覚の細部とともに置く。
+        guidance: 光・音・温度など感覚の細部で一つのイメージを示す。説明せず、後で反復する核にする。
+        act: 1
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心人物の感情を風景の様子として示す。
+        world_sections: [place, customs]
+        object: false
+        climax: false
+      - id: image-swell
+        name: イメージの高まり
+        definition: 同じイメージが形を変えて反復し、感情が波のように高まる。
+        guidance: 前の場面のイメージを別の場や時に移して反復する。高まりと静まりを交互に置き、出来事より感覚を前に出す。
+        act: 2
+        weight: 3
+        roles: [supporter, adversary]
+        absent_role_note: 支援者または敵対者が不在なら、風景や記憶の中の存在が感情を揺さぶる。
+        world_sections: [place, interpretation, past_events]
+        object: true
+        climax: false
+      - id: image-calm
+        name: イメージの静まり
+        definition: 感情が一つのイメージに結晶し、余韻とともに静まる。
+        guidance: 反復したイメージを最終の像へ集め、断定せず余白を残す。感情の名前を直接書きすぎない。
+        act: 3
+        weight: 2
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、残された風景の静けさで感情の収束を示す。
+        world_sections: [place, future]
+        object: true
+        climax: true
+  documentary-essay:
+    stages:
+      - id: record-opening
+        name: 記録の開始
+        definition: 観察の対象と目的を、日付と場所のある記録として示す。
+        guidance: 事実を先に置く。観察の動機と範囲を述べ、語り手の位置を明確にする。
+        act: 1
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、記録者の視点を資料の来歴として示す。
+        world_sections: [place, customs, media]
+        object: false
+        climax: false
+      - id: record-observation
+        name: 観察の積み重ね
+        definition: 観察と証言を重ね、事実の間の矛盾や共通点を拾う。
+        guidance: 具体的な観察、証言、物証を順に並べる。解釈は短く挟み、事実と解釈を区別する。
+        act: 2
+        weight: 3
+        roles: [supporter, adversary]
+        absent_role_note: 支援者または敵対者が不在なら、残された資料や痕跡が証言の役割を担う。
+        world_sections: [people, observation, past_events]
+        object: true
+        climax: false
+      - id: record-reflection
+        name: 考察の結び
+        definition: 集めた観察から考察を引き出し、結論を断定せずに記す。
+        guidance: 観察の中から一つの主題を取り出し、残る問いを示す。事実と考察を分けて締める。
+        act: 3
+        weight: 2
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、資料の並びから考察を示す。
+        world_sections: [interpretation, future]
+        object: true
+        climax: true
+  anticlimax:
+    stages:
+      - id: expectation
+        name: 期待の提示
+        definition: 何かが起こるという予感を日常の中に置く。
+        guidance: 約束、知らせ、変化の兆しを一つ置く。大きな出来事は起こさず、待つ理由を具体的にする。
+        act: 1
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、中心人物の待機を場の様子として示す。
+        world_sections: [place, customs]
+        object: false
+        climax: false
+      - id: suspension
+        name: 宙づりの持続
+        definition: 出来事が起こらないまま、日常と待機が続く。
+        guidance: 小さな動作、会話、天候を繰り返す。緊張をほのめかして解消し、決定的な行動を避ける。
+        act: 2
+        weight: 4
+        roles: [supporter, adversary]
+        absent_role_note: 支援者または敵対者が不在なら、時間の経過や環境の変化が主人公の待機を支える。
+        world_sections: [place, people, events]
+        object: true
+        climax: false
+      - id: remainder
+        name: 残された日常
+        definition: 何も起こらなかったことを受け止め、日常が続く。
+        guidance: 期待が満たされなかった事実を静かに受け止める。大きな変化はなく、細かな差だけを残して終える。
+        act: 3
+        weight: 1
+        roles: [protagonist]
+        absent_role_note: 主人公が不在なら、場に残る日常の続きで結末を示す。
+        world_sections: [place, future]
+        object: true
+        climax: true

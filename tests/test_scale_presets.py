@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from storyteller.cli import main
+from storyteller.tables import load_table
 from storyteller.scale import ScaleError, derive_scale
 from tests.test_story_s3 import _assignment, _rich_pools, _run
 
@@ -21,7 +22,15 @@ def _expand(tmp_path: Path, preset: str, seed: int, **kwargs):
     return scale, _assignment(orchestrator, run_id)
 
 
-def _template(events: int) -> str:
+_PLOT_STRUCTURE = {
+    plot["id"]: plot["structure"]
+    for plot in load_table("plot_types", repository_root=ROOT)["types"]
+}
+
+
+def _template(events: int, plot_type: str) -> str:
+    if _PLOT_STRUCTURE[plot_type] != "standard":
+        return _PLOT_STRUCTURE[plot_type]
     return "three-beat" if events <= 5 else "kishotenketsu" if events <= 11 else "heros-journey-12"
 
 
@@ -40,7 +49,7 @@ def test_main_plus_subthreads_are_expanded(
     assert sum(t["events"] for t in threads) == scale["derived"]["events"]
     assert threads[0]["kind"] == "main"
     assert threads[0]["events"] >= 3
-    assert threads[0]["structure"] == _template(threads[0]["events"])
+    assert threads[0]["structure"] == _template(threads[0]["events"], threads[0]["plot_type"])
     for side in threads[1:]:
         assert side["kind"] == "subthread"
         assert 4 <= side["events"] <= 6
@@ -60,7 +69,7 @@ def test_saga_decides_events_per_part(tmp_path: Path, seed: int) -> None:
     assert [t["part"] for t in threads] == [1, 2, 3]
     assert [t["events"] for t in threads] == derived["part_events"]
     assert all(t["kind"] == "main" for t in threads)
-    assert all(t["structure"] == "heros-journey-12" for t in threads)
+    assert all(t["structure"] == _template(t["events"], t["plot_type"]) for t in threads)
 
 
 def test_saga_default_parts_come_from_the_seed_within_2_to_4() -> None:
