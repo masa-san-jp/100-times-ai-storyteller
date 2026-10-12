@@ -26,11 +26,12 @@ calculation and its tests.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .scale import DEV_PRESET
 from .tables import load_table
 
 
@@ -43,8 +44,13 @@ def multiplier_for_preset(
     *,
     repository_root: str | Path | None = None,
 ) -> int:
-    """Return the scale's volume multiplier (``tables/scales.yaml``)."""
+    """Return the scale's volume multiplier (``tables/scales.yaml``).
 
+    ``dev`` has no floor (scale.md), so its multiplier is 0.
+    """
+
+    if preset == DEV_PRESET:
+        return 0
     scales = load_table("scales", repository_root=repository_root)
     multipliers = scales["volume_multiplier"]
     if preset not in multipliers:
@@ -87,7 +93,9 @@ def compute_initial_volume(
 
     return {
         "multiplier": multiplier,
-        "world": _allocate_world(multiplier, world_sections, volume_table),
+        "world": _allocate_world(
+            multiplier, world_sections, volume_table, pick=_picker(preset)
+        ),
         "story": _allocate_story(multiplier, event_count, volume_table),
     }
 
@@ -114,7 +122,11 @@ def compute_character_volume(
 
     multiplier = multiplier_for_preset(preset, repository_root=repository_root)
     volume_table = load_table("volume", repository_root=repository_root)
-    return {"characters": _allocate_characters(multiplier, characters, volume_table)}
+    return {
+        "characters": _allocate_characters(
+            multiplier, characters, volume_table, pick=_picker(preset)
+        )
+    }
 
 
 def apply_volume_update(
@@ -155,6 +167,12 @@ def _median(bounds: Sequence[int]) -> int:
     return math.ceil((bounds[0] + bounds[1]) / 2)
 
 
+def _picker(preset: str) -> Callable[[Sequence[int]], int]:
+    """The per-task length: the range's midpoint, or its lower bound for ``dev``."""
+
+    return (lambda bounds: bounds[0]) if preset == DEV_PRESET else _median
+
+
 def _resolve_world_sections(
     scale: Mapping[str, Any],
     selected_ids: Sequence[str],
@@ -165,6 +183,7 @@ def _resolve_world_sections(
     section_by_id = {section["id"]: section for section in sections}
     scales = load_table("scales", repository_root=repository_root)
     level = _world_level(scale, scales)
+    dev = scales["dev"] if scale.get("preset") == DEV_PRESET else None
 
     resolved: list[dict[str, Any]] = []
     for section_id in selected_ids:
@@ -176,8 +195,14 @@ def _resolve_world_sections(
                 {
                     "id": section_id,
                     "kind": "single",
-                    "viewpoints": list(section["viewpoints"]),
+                    "viewpoints": list(section["viewpoints"])[
+                        : dev["viewpoints_per_section"] if dev else None
+                    ],
                 }
+            )
+        elif dev is not None:
+            resolved.append(
+                {"id": section_id, "kind": "list", "item_count": dev["list_item_count"]}
             )
         else:
             counts = scales.get("world_counts", {}).get(section_id)
@@ -209,10 +234,12 @@ def _allocate_world(
     multiplier: int,
     world_sections: Sequence[Mapping[str, Any]],
     volume_table: Mapping[str, Any],
+    *,
+    pick: Callable[[Sequence[int]], int] = _median,
 ) -> dict[str, Any]:
     task_chars = volume_table["task_chars"]
-    facet_median = _median(task_chars["world_facet"])
-    list_median = _median(task_chars["world_list_item"])
+    facet_median = pick(task_chars["world_facet"])
+    list_median = pick(task_chars["world_list_item"])
     target_chars = volume_table["floor_chars"]["world"] * multiplier
 
     single_sections = [section for section in world_sections if section["kind"] == "single"]
@@ -288,9 +315,11 @@ def _allocate_characters(
     multiplier: int,
     characters: Sequence[Mapping[str, Any]],
     volume_table: Mapping[str, Any],
+    *,
+    pick: Callable[[Sequence[int]], int] = _median,
 ) -> list[dict[str, Any]]:
     item_ranges = volume_table["task_chars"]["character"]
-    item_medians = {key: _median(bounds) for key, bounds in item_ranges.items()}
+    item_medians = {key: pick(bounds) for key, bounds in item_ranges.items()}
     fixed_items = sorted(key for key in item_ranges if key not in {"backstory", "relationship"})
     fixed_total = sum(item_medians[key] for key in fixed_items)
 

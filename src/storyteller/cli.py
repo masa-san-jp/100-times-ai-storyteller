@@ -515,7 +515,7 @@ def _format(args: argparse.Namespace) -> int:
 
 
 def _new(args: argparse.Namespace) -> int:
-    if args.scale not in {"vignette", "short", "novella", "novel", "saga"}:
+    if args.scale not in {"vignette", "short", "novella", "novel", "saga", "dev"}:
         raise CliArgumentError("未知の規模プリセットです")
     if args.count is not None and args.count < 1:
         raise CliArgumentError("--count は1以上の整数で指定してください")

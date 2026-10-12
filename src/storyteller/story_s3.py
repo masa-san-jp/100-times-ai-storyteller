@@ -979,6 +979,12 @@ def _selected_world_sections(
         if not isinstance(section_id, str) or section_id not in section_by_id:
             raise ValueError(f"未知の世界セクションです: {section_id}")
         selected.append(deepcopy(section_by_id[section_id]))
+    if manifest.get("scale", {}).get("preset") == "dev":
+        # scale.md「開発用の規模 dev」：単一型のセクションの観点を絞る。
+        limit = load_table("scales", repository_root=repository_root)["dev"]["viewpoints_per_section"]
+        for section in selected:
+            if section["kind"] == "single":
+                section["viewpoints"] = section["viewpoints"][:limit]
     return selected
 
 

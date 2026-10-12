@@ -14,6 +14,7 @@ from .tables import load_table
 
 
 SCALE_AXES = ("time", "space", "cast", "threads", "change")
+DEV_PRESET = "dev"
 _CAST_RANGE = re.compile(r"^(\d+)-(\d+)$")
 
 
@@ -42,6 +43,8 @@ def derive_scale(
     if isinstance(seed, bool) or not isinstance(seed, int):
         raise ScaleError("seed は整数で指定してください")
     scales = load_table("scales", repository_root=repository_root)
+    if preset == DEV_PRESET:
+        return _derive_dev(scales, overrides, parts, repository_root)
     presets = scales["presets"]
     if preset not in presets:
         raise ScaleError(f"未知の規模プリセットです: {preset}")
@@ -125,6 +128,42 @@ def derive_scale(
             },
         },
         warnings=tuple(warnings),
+    )
+
+
+def _derive_dev(
+    scales: Mapping[str, Any],
+    overrides: Mapping[str, str] | None,
+    parts: int | None,
+    repository_root: str | Path | None,
+) -> ScaleResult:
+    """The development scale (scale.md): fixed values, no event lower bound."""
+
+    if overrides or parts is not None:
+        raise ScaleError("dev では --axis と --parts を指定できません")
+    dev = scales["dev"]
+    element_axes = tuple(
+        axis["key"]
+        for axis in load_table("element_axes", repository_root=repository_root)["axes"]
+    )
+    return ScaleResult(
+        value={
+            "preset": DEV_PRESET,
+            "axes": dict(dev["axes"]),
+            "overrides": {},
+            "derived": {
+                "events": dev["events"],
+                "part_events": None,
+                "threads": 1,
+                "cast": dev["cast"],
+                "parts": None,
+                "world_sections": list(dev["world_sections"]),
+                "pool_need": _pool_needs(
+                    dev["cast"], int(scales["candidate_multiplier"]), element_axes
+                ),
+            },
+        },
+        warnings=(),
     )
 
 

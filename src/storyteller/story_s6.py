@@ -310,7 +310,10 @@ def _assign_characters(
         for person in cast
         if isinstance(person, Mapping) and person.get("id") not in selected_ids
     ]
-    extra_count = context.random.randint(0, min(2, len(remaining))) if remaining else 0
+    # An event needs at least one character: when every required role is absent
+    # (a small cast), the "0-2 more" draw cannot come up empty.
+    minimum_extra = 0 if selected else 1
+    extra_count = context.random.randint(minimum_extra, min(2, len(remaining))) if remaining else 0
     if extra_count:
         selected.extend(context.random.sample(remaining, extra_count))
 

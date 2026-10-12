@@ -4,7 +4,7 @@
   "title": "Story scale table",
   "type": "object",
   "additionalProperties": false,
-  "required": ["axes", "level_min_events", "presets", "world_sections_by_level", "world_counts", "volume_multiplier", "parts", "subthread_events", "input_ratio", "candidate_multiplier"],
+  "required": ["axes", "level_min_events", "presets", "world_sections_by_level", "world_counts", "volume_multiplier", "parts", "subthread_events", "input_ratio", "candidate_multiplier", "dev"],
   "properties": {
     "axes": {
       "type": "object",
@@ -82,6 +82,24 @@
     "candidate_multiplier": {
       "type": "integer",
       "minimum": 1
+    },
+    "dev": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axes", "events", "cast", "world_sections", "viewpoints_per_section", "list_item_count"],
+      "properties": {
+        "axes": {"$ref": "#/$defs/preset/properties/axes"},
+        "events": {"type": "integer", "minimum": 1},
+        "cast": {"type": "integer", "minimum": 1},
+        "world_sections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "viewpoints_per_section": {"type": "integer", "minimum": 1},
+        "list_item_count": {"type": "integer", "minimum": 1}
+      }
     }
   },
   "$defs": {

@@ -168,3 +168,18 @@ parts:
 subthread_events: [4, 6]
 input_ratio: [0.5, 0.9]
 candidate_multiplier: 3
+
+# 開発用の規模 dev（ADR-0009、scale.md「開発用の規模 dev」）。ユーザー向けのプリセットではない。
+# 出来事数は、最小の構造テンプレート three-beat の段階数（3）に合わせる。
+dev:
+  axes:
+    time: hours
+    space: spot
+    cast: 1-2
+    threads: single
+    change: inner
+  events: 3
+  cast: 2
+  world_sections: [place, people]
+  viewpoints_per_section: 1
+  list_item_count: 1
