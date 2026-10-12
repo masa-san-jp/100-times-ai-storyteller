@@ -1768,6 +1768,8 @@ class Orchestrator:
                     manifest[key] = value
                 elif key == "scale":
                     manifest[key] = dict(value)
+                elif key == "status":
+                    manifest[key] = value
                 else:
                     manifest[key].extend(value)
         _commit_dynamic_tasks(
@@ -3289,12 +3291,15 @@ def _validate_manifest_updates(value: Any) -> None:
             "table_snapshot",
             "warnings",
             "scale",
+            "status",
         }:
             raise DAGError(f"コードタスクが更新できない manifest 項目です: {key!r}")
         if key == "input_ratio" and (
             isinstance(item, bool) or not isinstance(item, (int, float))
         ):
             raise DAGError("manifest の input_ratio は数値でなければなりません")
+        if key == "status" and item != "duplicate":
+            raise DAGError("コードタスクが設定できる run の状態は duplicate だけです")
         if key == "scale" and not isinstance(item, Mapping):
             raise DAGError("manifest の scale はオブジェクトでなければなりません")
         if key == "table_snapshot" and not isinstance(item, Mapping):
