@@ -140,6 +140,9 @@ def test_s9_assembles_three_canonical_files_and_clears_last_foreshadowing(tmp_pa
     assert characters_md.index("### 事実のシート") < characters_md.index("### 描写")
     assert "| 身長（cm） | 170.0 |" in characters_md
     assert story["meta"]["volume"]["characters"]["chars"] == sum(not char.isspace() for char in characters_md)
+    # The 生成の記録 (task-model §6.7) is not counted as story text.
+    story_body = story_md[: story_md.index("## 生成の記録")]
+    assert story["meta"]["volume"]["story"]["chars"] == sum(not char.isspace() for char in story_body)
     assert "## 場の描写" in world_md
 
 
@@ -230,7 +233,7 @@ def test_s9_summary_resolves_multiple_names_and_keeps_detail_in_event_order(tmp_
     story_md = (context.run_dir / "story" / "story.md").read_text(encoding="utf-8")
     assert "- 誰が：カナ、リオ\n" in story_md
     assert "- 結果：道が開いた\n\n最初の場面。\n\n二番目の場面。\n\n## 2. 始まり" in story_md
-    assert story_md.endswith("次の出来事の場面。\n")
+    assert story_md.endswith("次の出来事の場面。\n\n## 生成の記録\n\n- 省略したタスク：0件\n")
 
 
 def test_s9_aggregates_volume_and_records_shortfall_warnings(tmp_path: Path) -> None:

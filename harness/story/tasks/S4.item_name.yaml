@@ -29,3 +29,5 @@ validate:
         slot: name_sound
         n: 2
 max_input_chars: 3000
+# 後続の工程がこの出力なしには成り立たないため、上限に達したら run を止める（task-model §6.3）。
+on_exhausted: fail

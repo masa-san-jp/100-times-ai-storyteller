@@ -32,7 +32,7 @@
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
-| `on_exhausted` | llm | 任意 | `fail` / `skip` | `fail` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
+| `on_exhausted` | llm | 任意 | `fail` / `skip` | `skip` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
 | `extend_to_min` | llm | 任意 | 真偽値 | `false` | `output: text` のタスクで、字数の不足を継続で補う（§8） |
 | `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー。`element` が `text` 以外のタスクでは `false` |
 | `element` | llm | 必須 | `text` / `number` / `integer` / `name` / `labeled` / `choice` / `judgement` | — | §2.5 |

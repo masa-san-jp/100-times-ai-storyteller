@@ -62,6 +62,9 @@ def story_s7_assemble(context: CodeTaskContext) -> CodeTaskResult:
     sources: list[str] = []
     for field in EVENT_FIELDS:
         task_id = f"S7.event-{event_id}-{field}"
+        if task_id not in context.dependency_outputs:
+            output[field] = "（未定）"  # the element task was skipped (task-model §6.7)
+            continue
         value = context.dependency_outputs[task_id]
         if not isinstance(value, str) or not 1 <= output_char_count(value) <= 120:
             raise ValueError(f"S7 の項目の本文が不正です: {task_id}")

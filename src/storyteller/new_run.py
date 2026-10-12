@@ -67,6 +67,8 @@ def create_run_from_paragraphs(
     parts: int | None,
     plot_type: str | None,
     repository_root: str | Path,
+    batch_id: str | None = None,
+    seed_source: str | None = None,
 ) -> str:
     """Derive S0 from a normalized input and create the initial S1 DAG."""
 
@@ -121,6 +123,8 @@ def create_run_from_paragraphs(
         scale=scale_value,
         table_snapshot={axis: 0 for axis in _element_axes(repository_root)},
         harness_kind="story",
+        batch_id=batch_id,
+        seed_source=seed_source,
     )
     if scale.warnings:
         manifest = orchestrator.load_run(run_id)
