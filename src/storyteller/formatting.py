@@ -243,7 +243,15 @@ def make_handlers(
         plan = context.inputs["plan"]
         part = next(item for item in plan["parts"] if item["id"] == part_id)
         write = f2_id(part_id, name, plan["continuation"])
-        body = context.dependency_outputs[write]
+        body = context.dependency_outputs.get(write)
+        if body is None:
+            # Exhausting submission attempts skips F2 before F4 ever sees a
+            # body. There is nothing to invalidate; F3 supplies （未定）.
+            reason = "本文が省略されたため検証できません"
+            return CodeTaskResult(
+                output={"part": part_id, "passed": False, "failures": [reason]},
+                manifest_updates={"warnings": [f"{verify_id(part_id, name)}: {reason}"]},
+            )
         failures = check_body(body, part, plan["code_checks"], root)
         warnings: list[str] = []
         for number, question in enumerate(plan["questions"], start=1):
@@ -260,17 +268,22 @@ def make_handlers(
             manifest_updates={"warnings": warnings} if warnings else {},
         )
 
-    def assemble(context: CodeTaskContext) -> dict[str, Any]:
+    def assemble(context: CodeTaskContext) -> CodeTaskResult:
         """F3: pour the unit texts into the template and write the file."""
 
         name = context.task["index"][0]
         selection, plan = context.inputs["selection"], context.inputs["plan"]
         story = read_story(context.run_dir, root)
         bodies: dict[str, list[str]] = {unit["id"]: [] for unit in plan["units"]}
+        warnings: list[str] = []
         for part in plan["parts"]:
-            text = context.dependency_outputs.get(f2_id(part["id"], name, plan["continuation"]))
+            write = f2_id(part["id"], name, plan["continuation"])
+            text = context.dependency_outputs.get(write)
             if not isinstance(text, str):
-                raise ValueError(f"本文がありません: {part['id']}")
+                # task-model §6.7: 無効化・試行の上限に達して省略された単位は
+                # （未定）として示し、run は止めない（format-pipeline.md「F4 検証」）。
+                text = "（未定）"
+                warnings.append(f"{write}: 省略されたため本文を（未定）とした")
             bodies[part["unit"]].append(text.strip())
         units = [
             {**unit, "body": "\n\n".join(bodies[unit["id"]])} for unit in plan["units"]
@@ -283,7 +296,11 @@ def make_handlers(
         suffix = Path(selection["profile"]["template"]).suffix or ".txt"
         relative = f"formats/{name}/{name}{suffix}"
         atomic_write_text(context.run_dir / relative, text, encoding="utf-8")
-        return {"path": relative, "chars": len("".join(text.split()))}
+        output = {"path": relative, "chars": len("".join(text.split()))}
+        return CodeTaskResult(
+            output=output,
+            manifest_updates={"warnings": warnings} if warnings else {},
+        )
 
     return {
         "format_f0_select": select,

@@ -182,8 +182,7 @@ def test_export_has_one_calendar_measurement_year_and_sorted_timeline():
     assert "| 標高 | 200.0 | m | 300 | カナ暦 |" in markdown
     assert markdown.index("| カナ暦 | 12 | リオ") < markdown.index("| カナ暦 | 200 |")
     del outputs["S4.fact-place.height"]
-    with pytest.raises(ValueError, match="世界の事実がありません"):
-        render_world_facts_markdown(assignment, outputs)
+    assert "| 標高 |" not in render_world_facts_markdown(assignment, outputs)  # skipped facts are omitted
 
 
 def test_glossary_ids_and_fact_context_are_section_scoped_and_survive_budget():
@@ -501,3 +500,76 @@ def test_s5_name_fact_exemption_needs_the_whole_decided_name():
     for partial in ("ハシ", "ソリ", "ミズ"):
         result = validate_output(definition, f'{{"name":"{partial}","reading":"ホホ"}}', inputs, harness_root=ROOT)
         assert any("uses_given" in error for error in result.errors), partial
+
+
+@pytest.mark.parametrize("task_type", ["S4.fact", "S5.fact"])
+def test_fact_definitions_skip_on_exhaustion(task_type):
+    # task-model §6.7: one missing fact must not stop the run.
+    definition = load_and_validate_yaml(ROOT / f"harness/story/tasks/{task_type}.yaml",
+                                        ROOT / "schemas/task-definition.schema.json")
+    assert definition.get("on_exhausted", "skip") == "skip"
+
+
+def test_render_world_facts_omits_skipped_fact_without_error():
+    assignment, outputs = _assembled()
+    full = render_world_facts_markdown(assignment, outputs)
+    del outputs["S4.fact-place.height"]
+    markdown = render_world_facts_markdown(assignment, outputs)
+    assert "| 標高 |" in full and "| 標高 |" not in markdown
+    assert "## 年表" in markdown
+
+
+@pytest.mark.parametrize("bad", ["450〜500", "あ" * 41])
+def test_exhausted_fact_is_skipped_and_dependents_proceed(tmp_path, bad):
+    from storyteller.orchestrator import ClaimError
+    from storyteller.new_run import create_story_orchestrator
+    from storyteller.orchestrator import TaskSpec
+    from storyteller.world_facts import build_world_fact_specs
+
+    assignment, _ = _assembled()
+    sound = {"set_id": "sound-01", "description": "短い響き", "sounds": ["カ", "ナ", "リ", "オ", "セ", "ト"]}
+    assignment["calendar"]["name_sound"] = sound
+    assignment["world_fact_tasks"] = assignment["world_fact_tasks"][:3]
+    if bad.startswith("あ"):
+        assignment["world_fact_tasks"][1]["element"] = "text"
+        assignment["world_fact_tasks"][1]["max_chars"] = 40
+    for entry in assignment["world_fact_tasks"]:
+        entry["section"] = {"id": "place", "name": "場", "definition": "水路の町"}
+        if entry["element"] == "name":
+            entry["name_sound"] = sound
+        else:
+            entry["range"] = {"min": 1, "max": 300}
+    assignment["world"] = {"place": {"id": "place:t1", "text": "水路の町"},
+                           "era": {"id": "era:t1", "text": "開拓の後"}}
+    assignment["cast"] = [{"id": "c1", "role": "protagonist", "name_sound": sound}]
+    harness = create_story_orchestrator(tmp_path)
+    harness.task_definitions["S4.fact"]["max_attempts"] = 2
+    run_id = harness.create_run(seed=9, escalation=["small", "large"], task_specs=[
+        TaskSpec("S2.merge", "S2.merge"), TaskSpec("S3.assign", "S3.assign", deps=("S2.merge",))])
+    harness._complete_task(run_id, "S2.merge", {"pools": {}})
+    harness._complete_task(run_id, "S3.assign", assignment)
+    specs = build_world_fact_specs("S3.assign", assignment)
+    harness._add_tasks(run_id, "S3.assign", specs)
+    claim = harness.claim_task(run_id, "S4.calendar_name", executor_id="test")
+    assert harness.submit(claim["ticket"], '{"name":"カナ暦","reading":"カナ"}').accepted
+    claim = harness.claim_task(run_id, "S4.fact-place.location_name", executor_id="test")
+    assert harness.submit(claim["ticket"], '{"name":"カナ","reading":"カナ"}').accepted
+    scalar_id = "S4.fact-place.height"
+    for executor in ("small", "large"):
+        claim = harness.claim_task(run_id, scalar_id, executor_id=executor)
+        assert not harness.submit(claim["ticket"], bad).accepted
+        claim = harness.claim_task(run_id, scalar_id, executor_id=executor)
+        assert "### 不合格の理由" in claim["card"]
+        assert not harness.submit(claim["ticket"], bad).accepted
+        if executor == "small":
+            task = harness.load_run(run_id)["tasks"][scalar_id]
+            assert task["executor"] == "large" and task["tries"] == 0
+            with pytest.raises(ClaimError):
+                harness.claim_task(run_id, scalar_id, executor_id="small")
+    manifest = harness.load_run(run_id)
+    assert manifest["tasks"][scalar_id]["state"] == "skipped"
+    assert manifest["status"] == "active"
+    dependents = [spec.task_id for spec in specs if scalar_id in spec.deps]
+    for task_id in dependents:
+        assert manifest["tasks"][task_id]["state"] in {"ready", "blocked", "claimed"}
+        assert manifest["tasks"][task_id]["state"] != "failed"

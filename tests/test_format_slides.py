@@ -99,7 +99,7 @@ def _assemble(
         inputs={"selection": {"profile": profile, "template_text": template}, "plan": plan},
         dependency_outputs=outputs,
     )
-    return formatting.make_handlers(ROOT)["format_f3_assemble"](context)
+    return formatting.make_handlers(ROOT)["format_f3_assemble"](context).output
 
 
 def test_f3_assemble_writes_a_checked_deck(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

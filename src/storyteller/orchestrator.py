@@ -1536,6 +1536,14 @@ class Orchestrator:
             retry_reason = None
         repair = latest_repair_source(self.task_dir(run_id, task_id), task)
         if repair is not None:
+            if task["type"] in {"F2.write", "F2.write_once"}:
+                plan = context.dependency_outputs[f"F1.split-{task['index'][-1]}"]
+                part = next(item for item in plan["parts"] if item["id"] == task["index"][0])
+                definition = deepcopy(definition)
+                definition["validate"] = {"checks": [
+                    {check: {"n": part[check]}} if check in {"min_chars", "max_chars"} else check
+                    for check in plan["code_checks"] if check in {"min_chars", "max_chars", "ends_complete"}
+                ]}
             return (
                 generate_repair_card(
                     definition,
@@ -2840,17 +2848,44 @@ def _apply_invalidation(
     current_count = int(target["invalidations"])
     if current_count >= max_invalidations:
         target["error"] = reason
-        _force_task_state(manifest, task_id, "failed", at, reason=reason)
+        # F2 follows format-pipeline「F4 検証」 at the invalidation limit;
+        # other tasks retain task-model §4.3's invalidation contract.
+        on_exhausted = (definition.get("on_exhausted", "skip")
+                        if target["type"] in {"F2.write", "F2.write_once"} else "fail")
+        next_state = "failed" if on_exhausted == "fail" else "skipped"
+        _force_task_state(manifest, task_id, next_state, at, reason=reason)
+        if next_state == "skipped":
+            manifest["warnings"].append(
+                f"{task_id}: 無効化の上限に達したため省略: {reason}"
+            )
+            _refresh_blocked_tasks(manifest, at)
         _update_run_status(manifest)
         _touch_manifest(manifest, at)
         write_manifest(run_dir / "manifest.json", manifest)
         return
 
     next_count = current_count + 1
+    # F4 validates the completed F2 body, outside submit(). Preserve that
+    # body before invalidation removes it so length failures can be repaired.
+    if target["type"] in {"F2.write", "F2.write_once"} and all(
+        error.startswith(("min_chars:", "max_chars:", "ends_complete:"))
+        for error in reason.split("；")
+    ):
+        directory = run_dir / "tasks" / task_id
+        body = read_task_output(directory, target["type"])
+        atomic_write_json(directory / "attempts" / f"{_next_attempt_number(directory / 'attempts')}.json", {
+            "output": body, "reason": reason, "errors": reason.split("；"),
+            "attempt": int(target["attempt"]) + 1, "tries": int(target["tries"]),
+            "at": at, "executor_id": next((event["executor_id"] for event in reversed(target["history"])
+                                             if event.get("executor_id")), "コード／未実行"),
+            "repairable": True,
+        })
     target["error"] = reason
     target["cache_key"] = None
     target["attempt"] = int(target["attempt"]) + 1
     target["invalidations"] = next_count
+    if target["type"] in {"F2.write", "F2.write_once"}:
+        target["continuation_step"] = 0
     _force_task_state(manifest, task_id, "ready", at, reason=reason)
 
     descendants = _dependent_closure(manifest, task_id)
@@ -2879,6 +2914,8 @@ def _apply_invalidation(
     write_manifest(run_dir / "manifest.json", manifest)
     for cleanup_id in cleanup_outputs:
         _remove_task_outputs(run_dir, cleanup_id)
+        if target["type"] in {"F2.write", "F2.write_once"}:
+            _remove_partial_output(run_dir / "tasks" / cleanup_id)
     for revoked_id in revoked_claims:
         _release_claim(
             run_dir,

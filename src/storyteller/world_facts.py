@@ -301,7 +301,8 @@ def render_world_facts_markdown(assignment: Mapping[str, Any], outputs: Mapping[
                 continue
             task_id = f"S4.fact-{entry['id']}"
             if task_id not in outputs:
-                raise ValueError(f"世界の事実がありません: {entry['id']}")
+                # 上限に達して省略された事実は行ごと外す（task-model §6.7）。
+                continue
             value = fact_value(entry, outputs[task_id])
             item = outputs.get(f"S4.item_name-{entry.get('item_id')}", {}).get("name", "—")
             lines.append("| " + " | ".join(cell(v) for v in (item, entry["viewpoint"], entry["label"],

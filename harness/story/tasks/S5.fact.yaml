@@ -103,5 +103,6 @@ validate:
   - max_chars:
       n: 40
 max_input_chars: 3000
-# 後続の工程がこの出力なしには成り立たないため、上限に達したら run を止める（task-model §6.3）。
-on_exhausted: fail
+# 個々の事実は多数あり、1件が欠けても後続の工程は成り立つ（省略した事実は一覧から外れる）。
+# 止めない失敗の既定に従い、上限に達したら省略して先へ進む（task-model §6.7、ADR-0009）。
+on_exhausted: skip
