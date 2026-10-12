@@ -142,6 +142,10 @@
             },
             "sha256": {
               "$ref": "#/$defs/sha256"
+            },
+            "plot_type": {
+              "type": "string",
+              "minLength": 1
             }
           }
         }
