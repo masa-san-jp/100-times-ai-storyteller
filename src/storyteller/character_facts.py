@@ -76,6 +76,7 @@ def render_character_sheet(output: Mapping[str, Any], glossary: Sequence[Mapping
 def assign_character_fact_tasks(
     cast: Sequence[Mapping[str, Any]], name_sets: Sequence[Mapping[str, Any]],
     random_source: Any, repository_root: Path,
+    *, counts: Mapping[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Expand repeated fields in catalog order; randomness belongs to S3."""
     catalog = load_table("character_facts", repository_root=repository_root)
@@ -83,7 +84,7 @@ def assign_character_fact_tasks(
         raise ValueError("人物の事実のキーが重複しています")
     result = []
     for person in cast:
-        family_count = random_source.randint(0, 3)
+        family_count = random_source.randint(0, 3) if counts is None else counts["family"]
         for group in ("scalar", "family", "timeline", "skills"):
             fields = [field for field in catalog["facts"] if (
                 "family" if field["key"].startswith("family.") else
@@ -91,6 +92,8 @@ def assign_character_fact_tasks(
                 "skills" if field["key"] == "skills" else "scalar") == group]
             count = {"scalar": 1, "family": family_count,
                      "timeline": catalog["timeline_count"], "skills": 3}[group]
+            if counts is not None and group != "scalar":
+                count = counts[group]
             for ordinal in range(1, count + 1):
                 for field in fields:
                     key = field["key"] if group == "scalar" else (

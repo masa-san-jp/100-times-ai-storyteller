@@ -102,7 +102,19 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         name_sets, context.random,
         current_year=assignment["calendar"]["current_year"], repository_root=repository_root,
     )
-    assignment["character_fact_tasks"] = assign_character_fact_tasks(assignment["cast"], name_sets, context.random, repository_root)
+    dev = scales["dev"] if manifest["scale"].get("preset") == "dev" else None
+    if dev is not None and dev["world_facts_scope"] == "described_viewpoints":
+        relevant_ids = {
+            entry["id"] for world_task in assignment["world_tasks"]
+            for entry in description_entries(world_task, assignment["world_fact_tasks"])
+        }
+        assignment["world_fact_tasks"] = [
+            entry for entry in assignment["world_fact_tasks"] if entry["id"] in relevant_ids
+        ]
+    assignment["character_fact_tasks"] = assign_character_fact_tasks(
+        assignment["cast"], name_sets, context.random, repository_root,
+        counts=dev["character_fact_counts"] if dev is not None else None,
+    )
     validate_document(assignment, repository_root / "schemas" / "story" / "assignment.schema.json")
 
     # story-pipeline.md §8 / ADR-0007: decide each character's item counts
