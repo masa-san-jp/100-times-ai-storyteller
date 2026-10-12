@@ -517,8 +517,8 @@ def _format(args: argparse.Namespace) -> int:
 def _new(args: argparse.Namespace) -> int:
     if args.scale not in {"vignette", "short", "novella", "novel", "saga", "dev"}:
         raise CliArgumentError("未知の規模プリセットです")
-    if args.count not in {None, 1}:
-        raise CliArgumentError("--count は Phase 2 で対応します")
+    if args.count is not None and args.count < 1:
+        raise CliArgumentError("--count は1以上の整数で指定してください")
     overrides: dict[str, str] = {}
     for raw_override in args.axis:
         if "=" not in raw_override:
@@ -528,6 +528,23 @@ def _new(args: argparse.Namespace) -> int:
             raise CliArgumentError("--axis は異なる NAME=VALUE を指定してください")
         overrides[name] = value
     repository_root = Path(__file__).resolve().parents[2]
+    if args.count is not None:
+        from .batch import create_batch
+
+        batch_id = create_batch(
+            _data_dir(),
+            args.free if args.free is not None else args.narrative,
+            input_kind="free" if args.free is not None else "narrative",
+            count=args.count,
+            preset=args.scale,
+            axis_overrides=overrides,
+            seed=args.seed,
+            parts=args.parts,
+            plot_type=args.plot_type,
+            repository_root=repository_root,
+        )
+        print(batch_id)
+        return EXIT_OK
     create = create_free_run if args.free is not None else create_narrative_run
     run_id = create(
         _data_dir(),

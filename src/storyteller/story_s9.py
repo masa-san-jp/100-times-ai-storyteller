@@ -10,6 +10,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .batch import settle_batch_run
 from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult
 from .storage import atomic_write_json, atomic_write_text
@@ -102,10 +103,12 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
     atomic_write_text(story_dir / "world.md", world_markdown, encoding="utf-8")
     atomic_write_text(story_dir / "glossary.md", glossary_markdown, encoding="utf-8")
     atomic_write_text(story_dir / "world_facts.md", world_facts_markdown, encoding="utf-8")
-    return CodeTaskResult(
-        output=story,
-        manifest_updates={"warnings": warnings} if warnings else {},
-    )
+    updates: dict[str, Any] = {"warnings": warnings} if warnings else {}
+    if manifest.get("batch_id") and settle_batch_run(
+        context.data_dir, manifest["batch_id"], manifest["run_id"], story, context.run_input
+    ):
+        updates["status"] = "duplicate"
+    return CodeTaskResult(output=story, manifest_updates=updates)
 
 
 def _all_outputs(context: CodeTaskContext) -> dict[str, Any]:
