@@ -78,3 +78,37 @@ def test_check_deck_rejects_broken_decks() -> None:
     assert format_slides.check_deck("---\nmarp: false\n---\n# a")
     assert format_slides.check_deck("---\nmarp: true\n---\n# a\n\n---\n\n---\n# c")
     assert format_slides.check_deck("---\nmarp: true\n---\n# a\n<!-- x")
+
+
+def _assemble(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bodies: list[str]
+) -> dict[str, Any]:
+    from types import SimpleNamespace
+
+    story = _slides_story(len(bodies))
+    monkeypatch.setattr(formatting, "read_story", lambda run_dir, root=None: story)
+    profile = formatting.load_profile("slides")
+    plan = formatting.build_plan(story, profile, ROOT)
+    template = (ROOT / "formats" / "slides" / "template.md").read_text(encoding="utf-8")
+    outputs = {
+        formatting.f2_id(part["id"], "slides", False): body
+        for part, body in zip(plan["parts"], bodies)
+    }
+    context = SimpleNamespace(
+        task={"index": ["slides"]}, run_dir=tmp_path,
+        inputs={"selection": {"profile": profile, "template_text": template}, "plan": plan},
+        dependency_outputs=outputs,
+    )
+    return formatting.make_handlers(ROOT)["format_f3_assemble"](context)
+
+
+def test_f3_assemble_writes_a_checked_deck(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _assemble(tmp_path, monkeypatch, [SLIDE, SLIDE, SLIDE])
+    deck = (tmp_path / result["path"]).read_text(encoding="utf-8")
+    assert result["path"] == "formats/slides/slides.md"
+    assert format_slides.check_deck(deck, expected_slides=5) == []
+
+
+def test_f3_assemble_rejects_a_broken_deck(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="Marp"):
+        _assemble(tmp_path, monkeypatch, [SLIDE, "本文だけ", SLIDE])
