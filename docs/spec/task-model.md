@@ -203,6 +203,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 | `ready` → `failed` | コードタスクが例外で終了した、入力の生成に失敗した（§2.4, §3.2） |
 | `blocked` / `ready` → `skipped` | コードタスクが不要と判断した |
 | `done` → `ready` | 無効化された（§4.3） |
+| `done` → `skipped` | S4 の事実との整合検査で無効化の上限に達した（§4.3） |
 | `done` / `ready` / `claimed` → `blocked` | 依存先が無効化された（§4.3） |
 | `failed` → `ready` | `st retry` |
 
@@ -216,7 +217,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
   1. 状態を `ready` に戻し、`invalidations` と `attempt` を1ずつ増やす（`attempt` が変わるので、タスクの seed とキャッシュキーも変わる）。
   2. 次のカードの「前回の不合格理由」に、検査の理由を書く。
   3. 無効化されたタスクに直接・間接に依存するタスクを `blocked` に戻し、それらの出力を破棄する。`claimed` のものは claim を取り消す（`claim.json` を `claim.revoked.<n>.json` に改名し、その ticket による提出を終了コード 3 で拒否する）。
-- `invalidations` が `max_invalidations` を超える無効化が起きた場合は、無効化せずに `failed` にする。
+- `invalidations` が `max_invalidations` を超える無効化が起きた場合は、無効化せずに `failed` にする。ただし世界の描写（S4.section・S4.item）の事実との整合検査では、上限でも不合格の描写を `done` から `skipped` にし、失敗報告と警告を残し、後続は未定として進む。
 
 ## 5. claim と lease
 

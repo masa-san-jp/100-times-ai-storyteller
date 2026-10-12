@@ -293,6 +293,9 @@ def _fake_output(
         sentence = "人物は場面の状況を確認し、行動の結果を受け止めた。"
         return sentence + _filler_text(task_id, "場面の記述", 1500 - len(sentence))
 
+    if task_type == "S4.consistency":
+        return {"answer": "no", "reason": "確定した事実と両立する。"}
+
     if task_type == "S8.compare":
         event_a = inputs["event_a"]["id"]
         event_b = inputs["event_b"]["id"]

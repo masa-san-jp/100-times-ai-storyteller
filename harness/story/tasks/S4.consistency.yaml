@@ -1,0 +1,39 @@
+id: S4.consistency
+version: 1
+kind: llm
+element: judgement
+inputs:
+  facts:
+    label: 確定した事実（最大6行）
+    from: S4.fact
+    select: facts
+    required: true
+  section_body:
+    label: 世界の描写
+    from: S4.section
+    select: '[{slot}].body'
+    required: false
+  item_body:
+    label: 項目の描写
+    from: S4.item
+    select: '[{slot}].body'
+    required: false
+output: json
+card:
+  role: 確定した事実（最大6行）と描写が矛盾するか判定する。
+  steps:
+    - 入力の事実のいずれかと描写が両立しない場合だけ、answer を yes にする。数値・名称だけでなく制度・種類・成立条件の意味の食い違いも矛盾とする。
+    - 事実に言及していないこと、事実と両立する説明、未定の項目は矛盾にしない。矛盾がなければ answer を no にする。
+    - reason に確定値と食い違う記述または両立する理由を1文で書く。入力にない事情を補って矛盾を解消しない。
+  output_example: '{"answer": "...", "reason": "..."}'
+validate:
+  schema: schemas/tasks/S4.consistency.schema.json
+  checks:
+    - min_chars:
+        field: reason
+        n: 1
+    - max_chars:
+        field: reason
+        n: 160
+max_input_chars: 2200
+on_exhausted: skip

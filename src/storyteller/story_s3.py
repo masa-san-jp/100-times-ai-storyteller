@@ -16,7 +16,7 @@ from .validation import validate_document
 from .volume import apply_volume_update, compute_character_volume, compute_initial_volume
 from .world_facts import (
     assign_world_fact_tasks, assign_calendar, build_world_fact_specs,
-    description_entries, fact_ids_by_section,
+    description_entries, consistency_entries, fact_ids_by_section,
 )
 from .character_facts import assign_character_fact_tasks, initial_character_specs
 
@@ -768,7 +768,9 @@ def _build_downstream_tasks(
             for prerequisite in section.get("prerequisites", [])
             for task_id in world_task_ids.get(prerequisite, [])
         ]
-        deps = _unique_dependencies((parent_task_id, *prerequisite_ids))
+        prerequisite_judges = [f"S4.consistency_judge-{task_id.split('-', 1)[1]}"
+                               for task_id in prerequisite_ids]
+        deps = _unique_dependencies((parent_task_id, *prerequisite_ids, *prerequisite_judges))
         task_type = "S4.section" if section["kind"] == "single" else "S4.item"
         for world_task in section_tasks:
             item_deps = (*deps, "S4.calendar_name", *(
@@ -793,12 +795,28 @@ def _build_downstream_tasks(
                     index=(world_task["id"],),
                 )
             )
+        for world_task in section_tasks:
+            body_id = f"{task_type}-{world_task['id']}"
+            checks = []
+            entries = consistency_entries(world_task, assignment["world_fact_tasks"])
+            for offset in range(0, len(entries), 6):
+                chunk = f"k{offset // 6 + 1}"
+                check_id = f"S4.consistency-{world_task['id']}-{chunk}"
+                checks.append(check_id)
+                additions.append(TaskSpec(check_id, "S4.consistency",
+                    deps=(parent_task_id, body_id, "S4.calendar_name",
+                          *(f"S4.fact-{entry['id']}" for entry in entries[offset:offset + 6])),
+                    index=(world_task['id'], chunk)))
+            additions.append(TaskSpec(f"S4.consistency_judge-{world_task['id']}",
+                "S4.consistency_judge", deps=(parent_task_id, body_id, *checks),
+                index=(world_task['id'],)))
         if section["kind"] == "single":
             additions.append(
                 TaskSpec(
                     f"S4.diversity-{section_id}",
                     "S4.diversity",
-                    deps=(parent_task_id, *world_task_ids[section_id]),
+                    deps=(parent_task_id, *world_task_ids[section_id],
+                          *(f"S4.consistency_judge-{world_task['id']}" for world_task in section_tasks)),
                     index=(section_id,),
                 )
             )
