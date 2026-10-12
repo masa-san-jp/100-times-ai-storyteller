@@ -110,22 +110,35 @@ def create_batch(
     }
     with batch_lock(directory):
         _write_batch_manifest(directory, manifest)
-        for index in range(count):
-            _create_batch_run(
-                data_dir, directory, manifest, document, index, repository_root
+    # Each run is created outside ``batch.lock`` and registered under it, so the
+    # lock is held only briefly (data-layout.md §5) even for a large ``count``.
+    # Indices below ``count`` are reserved for these runs; replenishment uses
+    # the indices after them (see ``_next_index``).
+    for index in range(count):
+        run_id = _create_run(data_dir, manifest, document, index, repository_root)
+        with batch_lock(directory):
+            current = load_batch_manifest(data_dir, batch_id)
+            current["runs"].append(
+                {"run_id": run_id, "index": index, "outcome": "pending"}
             )
+            _write_batch_manifest(directory, current)
     return batch_id
 
 
-def _create_batch_run(
+def _next_index(manifest: Mapping[str, Any]) -> int:
+    """Index of the next replenishment run; indices below ``requested`` are reserved."""
+    indices = [entry["index"] for entry in manifest["runs"]]
+    return max([manifest["requested"] - 1, *indices]) + 1
+
+
+def _create_run(
     data_dir: str | Path,
-    directory: Path,
-    manifest: dict[str, Any],
+    manifest: Mapping[str, Any],
     document: Mapping[str, Any],
     index: int,
     repository_root: str | Path,
 ) -> str:
-    """Create run ``index`` of the batch (the caller holds ``batch.lock``)."""
+    """Create run ``index`` of the batch and return its run ID."""
 
     from .new_run import create_run_from_paragraphs
 
@@ -144,8 +157,6 @@ def _create_batch_run(
         batch_id=manifest["batch_id"],
         seed_source="batch",
     )
-    manifest["runs"].append({"run_id": run_id, "index": index, "outcome": "pending"})
-    _write_batch_manifest(directory, manifest)
     return run_id
 
 
@@ -222,6 +233,10 @@ def settle_batch_run(
         entry = next((r for r in manifest["runs"] if r["run_id"] == run_id), None)
         if entry is None:
             return False
+        if entry["outcome"] != "pending":
+            # S9 was executed again (retry after a later failure): keep the
+            # earlier decision and do not replenish twice.
+            return entry["outcome"] == "duplicate"
         others = [
             _read_story(data_dir, r["run_id"])
             for r in manifest["runs"]
@@ -231,13 +246,15 @@ def settle_batch_run(
         entry["outcome"] = "duplicate" if duplicate else "accepted"
         manifest["completed"] = sum(r["outcome"] == "accepted" for r in manifest["runs"])
         manifest["duplicates"] = sum(r["outcome"] == "duplicate" for r in manifest["runs"])
-        if duplicate and len(manifest["runs"]) < manifest["max_created"]:
-            _create_batch_run(
-                data_dir, directory, manifest, run_input,
-                len(manifest["runs"]), repository_root,
+        index = _next_index(manifest)
+        if duplicate and index < manifest["max_created"]:
+            new_run_id = _create_run(
+                data_dir, manifest, run_input, index, repository_root
             )
-        else:
-            _write_batch_manifest(directory, manifest)
+            manifest["runs"].append(
+                {"run_id": new_run_id, "index": index, "outcome": "pending"}
+            )
+        _write_batch_manifest(directory, manifest)
     return duplicate
 
 

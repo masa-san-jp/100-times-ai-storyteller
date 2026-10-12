@@ -179,3 +179,37 @@ def test_s9_marks_duplicate_and_replenishes(tmp_path: Path) -> None:
     assert updates[1]["status"] == "duplicate"
     batch = load_batch_manifest(data_dir, batch_id)
     assert [r["outcome"] for r in batch["runs"]] == ["accepted", "duplicate", "pending"]
+
+
+def test_settling_the_same_run_twice_does_not_replenish_again(tmp_path: Path) -> None:
+    data_dir, batch_id = _batch(tmp_path, 2)
+    first, second = [r["run_id"] for r in load_batch_manifest(data_dir, batch_id)["runs"]]
+    _settle(data_dir, batch_id, first, _story())
+    assert _settle(data_dir, batch_id, second, _story()) is True
+    # S9 executed again for the same run (e.g. st retry after a later failure).
+    document = {"kind": "free", "paragraphs": [{"id": "p001", "text": "素材"}]}
+    assert settle_batch_run(data_dir, batch_id, second, _story(), document, repository_root=ROOT) is True
+    assert settle_batch_run(data_dir, batch_id, first, _story(), document, repository_root=ROOT) is False
+    batch = load_batch_manifest(data_dir, batch_id)
+    assert len(batch["runs"]) == 3
+    assert (batch["completed"], batch["duplicates"]) == (1, 1)
+
+
+def test_replenishment_does_not_reuse_indices_reserved_for_initial_runs(tmp_path: Path) -> None:
+    data_dir, batch_id = _batch(tmp_path, 3)
+    path = data_dir / "batches" / batch_id / "manifest.json"
+    batch = load_batch_manifest(data_dir, batch_id)
+    batch["runs"] = batch["runs"][:2]  # index 2 is still being created
+    path.write_text(json.dumps(batch), encoding="utf-8")
+    first, second = [r["run_id"] for r in batch["runs"]]
+    _settle(data_dir, batch_id, first, _story())
+    assert _settle(data_dir, batch_id, second, _story()) is True
+    assert [r["index"] for r in load_batch_manifest(data_dir, batch_id)["runs"]] == [0, 1, 3]
+
+
+def test_near_duplicate_threshold_is_inclusive() -> None:
+    left = {"cast": [{"name": "A"}], "events": [{"what": "abcde", "result": ""}]}
+    right = {"cast": [{"name": "B"}], "events": [{"what": "abcdf", "result": ""}]}
+    assert trigram_jaccard("abcde", "abcdf") == 0.5
+    assert is_duplicate_story(right, [left], 0.5)
+    assert not is_duplicate_story(right, [left], 0.51)
