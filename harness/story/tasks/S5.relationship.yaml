@@ -1,5 +1,5 @@
 id: S5.relationship
-version: 11
+version: 12
 kind: llm
 element: text
 inputs:
@@ -73,4 +73,4 @@ validate:
     - max_chars:
         n: 600
         fix: trim
-max_input_chars: 2800
+max_input_chars: 3000
