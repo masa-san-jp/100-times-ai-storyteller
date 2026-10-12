@@ -28,6 +28,11 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$mode" ] || usage
 
+# 相対パスは呼び出し元の作業ディレクトリを基準にする（下でリポジトリへ移動するため）。
+absolute() { case "$1" in ""|/*|[A-Za-z]:*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
+free="$(absolute "$free")"
+data_dir="$(absolute "$data_dir")"
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 data_dir="${data_dir:-${STORYTELLER_HOME:-$(mktemp -d)}}"
