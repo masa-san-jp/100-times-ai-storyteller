@@ -334,6 +334,11 @@ def _run_check(
     common_words_path: str | Path | None,
     registered_names: Sequence[str] = (),
 ) -> tuple[list[str], list[str]]:
+    if name == "event_subject":
+        if not isinstance(output, str):
+            raise ValidationConfigurationError("event_subject requires text output")
+        from .event_subject import subject_errors
+        return subject_errors(output, inputs), []
     if name == "no_story_metadata":
         from .plot_quality import prose_errors
         return [error for text in body_texts(output) for error in prose_errors(text)], []

@@ -1943,6 +1943,8 @@ class Orchestrator:
                     name: UNDECIDED if name in undecided else inputs[name]
                     for name in definition["inputs"] if name in undecided or name in inputs
                 }
+            if task["type"] == "S7.select" and "candidates" in undecided:
+                inputs["candidates"] = {}
         except (KeyError, SelectorError, TypeError) as error:
             raise TaskCardError(f"入力の生成に失敗しました: {error}") from error
         from .world_facts import specialize_fact_definition
@@ -2058,6 +2060,14 @@ class Orchestrator:
                 if not hit:
                     changed = True
                     continue
+                if task["type"] == "S7.event" and card_inputs.get("event_field") in {
+                    "何が起きたか", "結果", "出来事の結果"
+                }:
+                    from .event_subject import subject_errors
+                    if not isinstance(output, str) or subject_errors(output, card_inputs):
+                        # A cache rejection consumes no inference attempt.
+                        changed = True
+                        continue
                 output = _postprocess_accepted_output(task, output)
                 atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
                 _write_submitted_output(

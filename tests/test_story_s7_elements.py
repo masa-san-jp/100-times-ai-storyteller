@@ -144,7 +144,7 @@ def test_s8_invalidates_what_and_rebuilds_all_event_fields(tmp_path):
         for suffix in ("what-c1", "what-c2", "what-c3", *EVENT_FIELDS[1:])
     )
     assert tasks["S7.select-e001"]["state"] == "done"
-    _submit_event(harness, run_id, "e002", what="人物は水門の仕組みを変える。")
+    _submit_event(harness, run_id, "e002", what="カナは水門の仕組みを変える。")
     claimed = harness.claim_next(run_id, executor_id="test", isolation="none")
     assert harness.submit(claimed["ticket"], json.dumps({"answer": "no", "reason": "事実は両立する。"}, ensure_ascii=False)).accepted
     assert harness.advance(run_id)["status"] == "completed"
@@ -152,7 +152,7 @@ def test_s8_invalidates_what_and_rebuilds_all_event_fields(tmp_path):
 
 def test_assembly_uses_the_shared_character_count_rule(tmp_path):
     harness, run_id = _harness(tmp_path)
-    what = " ".join(["扉が開く。"] * 24)
+    what = "カナは" + " ".join(["扉が開く。"] * 23)
     assert len(what) > 120
     _submit_event(harness, run_id, "e001", what=what)
     assert harness.advance(run_id)["status"] == "completed"

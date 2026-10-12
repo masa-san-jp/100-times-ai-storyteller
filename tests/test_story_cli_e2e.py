@@ -293,13 +293,15 @@ def _fake_output(
         return {"answer": "no", "reason": "場面の確定事項を守り、再演していない。"}
 
     if task_type == "S7.event":
+        actor = next((person["name"] for person in inputs["characters"]
+                      if isinstance(person.get("name"), str) and person["name"] not in {"未定", "（未定）"}), "人物")
         return {
             "when": "町に変化の兆しが現れたとき。",
             "where": "町の境界で。",
             "why": "状況を確かめるため。",
             "intent": "小さな選択をする。",
-            "what": f"人物は境界の仕組みを動かし、{int(task['index'][0][1:])}番目の区画を開く。",
-            "result": f"新しい道筋の{int(task['index'][0][1:])}番目の区画が見える（試行{task.get('attempt', 0)}）。",
+            "what": f"{actor}は境界の仕組みを動かし、{int(task['index'][0][1:])}番目の区画を開く。",
+            "result": f"{actor}は新しい道筋の{int(task['index'][0][1:])}番目の区画が見える（試行{task.get('attempt', 0)}）。",
             "emotion": "静かな決意を抱く。",
             "foreshadowing": "遠くで次の変化が始まる。",
         }[task["index"][1]]
@@ -419,7 +421,8 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             elif task["type"] == "S5.voice":
                 output = _filler_text(task_id, "voice", 800)
             elif task["type"] == "S7.event":
-                output = _filler_text(task_id, "行動", 120)
+                prefix = next(person["name"] for person in inputs["characters"]) + "は"
+                output = prefix + _filler_text(task_id, "行動", 120 - len(prefix))
         if task["type"] == "S4.section":
             if not similar_facets:
                 similar_facets = sorted(
