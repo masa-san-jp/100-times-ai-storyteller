@@ -1023,6 +1023,13 @@ class Orchestrator:
                     definition,
                     stored_value,
                 )
+                if task["type"] == "S2.counter":
+                    from .table_append import append_counter_element
+                    _, append_warning = append_counter_element(
+                        self.data_dir, run_id, task_id, card_inputs, stored_value
+                    )
+                    if append_warning:
+                        recorded_warnings = (*recorded_warnings, append_warning)
                 task["cache_key"] = key
                 _release_claim(run_dir, task_id, task)
                 _set_task_state(
@@ -1669,6 +1676,57 @@ class Orchestrator:
                 additions,
                 (),
                 self.task_definitions,
+            )
+            self._preflight_ranges(manifest, run_id, additions)
+            _create_dynamic_task_dirs(run_id, additions, self.task_dir)
+            _commit_dynamic_tasks(manifest, additions, self.task_definitions)
+            _refresh_blocked_tasks(manifest, self._now())
+            _update_run_status(manifest)
+            _touch_manifest(manifest, self._now())
+            self._persist_manifest(run_dir, manifest)
+            return manifest
+
+    def add_tasks_to_completed_run(
+        self,
+        run_id: str,
+        tasks: Iterable[TaskSpec | Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        """Add tasks to a ``completed`` run, which becomes ``active`` again.
+
+        Used by ``st format`` (cli.md).  The tasks are validated together with
+        the existing graph; a run in any other status is rejected.
+        """
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            if manifest["status"] not in {"completed", "active"}:
+                raise InvalidTransition(
+                    f"completed または active の run だけにタスクを追加できます（現在: {manifest['status']}）"
+                )
+            additions = _normalise_task_specs(tasks, self.task_definitions)
+            duplicates = {spec.task_id for spec in additions} & set(manifest["tasks"])
+            if duplicates:
+                raise DAGError(f"追加タスクのIDが重複しています: {sorted(duplicates)[0]}")
+            # 追加するタスクと、それが依存する既存のタスク（推移的）だけを検査する。
+            related: set[str] = set()
+            for spec in additions:
+                for dependency in spec.deps:
+                    if dependency in manifest["tasks"]:
+                        related.add(dependency)
+                        related |= _dependency_closure(manifest, dependency)
+            existing = [
+                TaskSpec(
+                    task_id=task_id,
+                    type=manifest["tasks"][task_id]["type"],
+                    deps=tuple(manifest["tasks"][task_id]["deps"]),
+                    index=tuple(manifest["tasks"][task_id]["index"]),
+                )
+                for task_id in sorted(related)
+            ]
+            _validate_graph(
+                [*existing, *additions],
+                self.task_definitions,
+                allow_deferred_dependencies=True,
             )
             self._preflight_ranges(manifest, run_id, additions)
             _create_dynamic_task_dirs(run_id, additions, self.task_dir)
@@ -3404,6 +3462,12 @@ def _source_outputs(
             from .character_facts import character_source_context
             if slot not in result:
                 result[slot] = character_source_context(dependency_outputs, task)
+            continue
+
+        from .formatting import FORMAT_SINGLE_SOURCES, format_source_value
+        if slot in FORMAT_SINGLE_SOURCES and len(matching) == 1:
+            # 様式化の1つの依存は、添字（様式名）で包まずそのまま渡す。
+            result[slot] = format_source_value(slot_name, dependency_outputs[matching[0]])
             continue
 
         indexed = any(

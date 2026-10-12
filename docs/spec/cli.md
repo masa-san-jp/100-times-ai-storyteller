@@ -20,6 +20,7 @@
 | `st format` | 人間 | 正本から様式化を開始する | 3 |
 | `st cache prune` | 人間 | 古いキャッシュを削除する | 4 |
 | `st report` | 人間 | バッチの傾向分析を開始する | 4 |
+| `st table list/add/check` | 人間 | 要素テーブルの一覧・増補テーブルへの行の追加・検査 | 5 |
 
 - 各フェーズでは、そのフェーズまでに導入するコマンドだけを登録する。未導入のコマンドは `st --help` に表示しない。
 - 開発用に `st dev new-dummy`（§2）を置く。
@@ -117,6 +118,21 @@ st workspace init PATH [--data-dir DIR] [--executor-id ID] [--agent claude-code|
 - `--agent` の既定は `generic`。`claude-code` は権限設定を書き出し、隔離の種類を `permission` とする。`codex` は書き込み範囲だけを設定し、読み取りを制限できないため、隔離の種類を `placement` とする。`generic` は権限設定を書き出さず、隔離の種類を `placement` とする。
 - `--executor-id` を省略したときは、ホスト名とランダムな文字列から作る。
 - 作成完了時、`claude-code` または `codex` の起動コマンドを標準出力に表示する。
+
+### `st table`
+
+```
+st table list [AXIS]
+st table add AXIS TEXT [--source SOURCE]
+st table check [AXIS]
+```
+
+- 対象は要素テーブル（[story-pipeline.md](story-pipeline.md) §3）に限る。AXIS は `tables/element_axes.yaml` の軸の key で、存在しない軸は終了コード 1。AXIS を省略した `list` と `check` は、すべての軸を対象にする。
+- 既定テーブル（`tables/elements/<axis>.yaml`）は読み取り専用で、`st` は書き換えない。書き込み先は増補テーブル（`<データディレクトリ>/tables/<axis>.json`、[data-layout.md](data-layout.md) §2）だけである。
+- 重複の判定は、NFKC 正規化・空白除去の後の `text` の一致とする（[story-pipeline.md](story-pipeline.md) S2 と同じ）。
+- `list`：AXIS を省略したときは、軸ごとに既定テーブルの行数と増補テーブルの行数を表示する。AXIS を指定したときは、増補テーブルの行を ID（`<axis>:x<行番号>`）・`text` とともに表示し、既定テーブルの行と重複する行には「既定と重複」と付ける。末尾に、既定テーブルの行数、増補テーブルの行数、そのうち既定と重複する行数を表示する。出力の形式は固定しない。
+- `add`：増補テーブルの末尾に1行（`text` と、あれば `source`）を追記し、標準出力に付与した ID を出力する。追記は `tables.lock` を取ってから行う。次の場合は、何も書かずに終了コード 1 とし、理由を標準エラー出力に出す：`text` が NFKC 正規化・空白除去の後に空、`source` が空文字、正規化後の `text` が既定テーブルまたは増補テーブルの既存の行と同じ、増補テーブルが `check` の検査に通らない。
+- `check`：既定テーブルが `schemas/tables/elements.schema.json` に適合すること、増補テーブルが読めて各行が有効な行であること（増補テーブルは、行の配列、または `items` に行の配列を持つオブジェクトのどちらでもよい。行は、空でない文字列〔`text` として扱う〕、または `text` が空でない文字列で `source` が省略可の空でない文字列のオブジェクト。S3 は行の未知の項目を無視するが、`check` は他の項目を持つ行を厳格に不正とする）、増補テーブルの中で重複する行と既定テーブルと重複する行がないこと、を検査する。増補テーブルがない軸は、行がないものとして扱う。問題がなければ終了コード 0。問題があれば、軸・行番号・理由を標準エラー出力に出し、終了コード 1 とする。
 
 ### `st check-input` / `st format` / `st cache prune` / `st report`
 
