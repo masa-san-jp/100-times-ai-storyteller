@@ -1,0 +1,4 @@
+id: R5.assemble
+version: 1
+kind: code
+handler: report_assemble

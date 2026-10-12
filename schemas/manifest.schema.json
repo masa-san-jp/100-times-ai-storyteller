@@ -70,7 +70,7 @@
     },
     "harness_kind": {
       "type": "string",
-      "enum": ["story", "dummy"]
+      "enum": ["story", "dummy", "report"]
     },
     "input_ratio": {
       "type": ["number", "null"]

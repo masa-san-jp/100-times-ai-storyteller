@@ -1,0 +1,19 @@
+name: reference-book
+unit: section
+unit_mapping: world_cast
+chars_per_event: [60, 200]
+max_chars_per_task: 4000
+template: template.md
+continuation: true
+
+rules:
+  - Markdown の本文で書く。見出しは付けず、段落または箇条書きで書く。
+  - 入力の項目をすべて取り上げる。項目の名前と人物の名前は、入力のとおりに書く。
+  - 入力にない設定・人物・出来事を加えない。
+  - 資料として説明する文体で書き、物語の本文のように展開しない。
+
+checks:
+  code: [min_chars, max_chars, ends_complete, contains_names]
+  llm:
+    - 入力の項目のうち、書かれていないものがありますか
+    - 入力にない設定や人物が書かれていますか

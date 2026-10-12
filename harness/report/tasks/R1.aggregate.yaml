@@ -1,0 +1,4 @@
+id: R1.aggregate
+version: 1
+kind: code
+handler: report_aggregate

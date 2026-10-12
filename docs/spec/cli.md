@@ -75,7 +75,7 @@ st status [--run RUN_ID | --batch BATCH_ID] [--json]
   - 引数なし：`{"runs": [{"run_id": 文字列, "status": run の状態, "counts": {6つの状態すべて: 整数（0を含む）}}]}`。runs は作成順。
   - `--run`：`{"run_id": 文字列, "status": run の状態, "warnings": [文字列], "tasks": [{"task_id": 文字列, "type": 文字列, "state": 状態, "tries": 整数, "invalidations": 整数, "executor_id": 文字列または null, "isolation": 文字列または null, "error": 文字列または null, "failure_report": 文字列または null}]}`。tasks は task_id の辞書順。`failure_report` は、`failed` のタスクの失敗の報告（[task-model.md](task-model.md) §6.3 の `failure.md`）の、run のディレクトリからの相対パス（`/` 区切り。例：`tasks/S4.fact-place.area/failure.md`）。`failed` 以外、または報告がない場合は null。
   - すべての項目は必須で、表にない項目を出力しない。
-  - `--batch`：Phase 2（P2-05）で定める。
+  - `--batch`：`{"batch_id": 文字列, "requested": 整数または null, "completed": 整数, "duplicates": 整数, "created": 整数, "runs": [{"run_id", "status", "counts"}（引数なしの runs と同じ形式。作成順）], "problem_runs": [{"run_id": 文字列, "status": "stalled" または "halted", "warnings": [文字列]}], "failed_tasks": [{"run_id": 文字列, "task_id": 文字列, "reason": 文字列または null}]}`。`batch_id` が一致する run の manifest から作る（バッチの manifest は `requested` を読むだけ）。`completed` は `completed` の run の数、`duplicates` は `duplicate` の run の数、`created` は run の数。`requested` はバッチの manifest の `requested`（整数）で、ファイルや値がなければ null。`failed_tasks` の `reason` は manifest の `error`。run もバッチの manifest もなければ終了コード 1。
 - 引数なし：run ごとの状態と、状態別のタスク数。
 - `--run`：タスクごとの状態・試行回数・無効化の回数・実行者ID・隔離の種類、manifest の warnings。`failed` のタスクには失敗の報告のパスを示す。引数なしの一覧には報告のパスを示さない。
 - `--batch`：バッチの要求件数・完了数・重複数・作成数、`stalled` / `halted` の run と、`failed` のタスクの理由。

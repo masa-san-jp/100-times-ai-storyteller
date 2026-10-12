@@ -15,7 +15,9 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from . import format_visual
 from .format_units import UNIT_MAPPERS
+from . import reference_book
 from .orchestrator import CodeTaskContext, CodeTaskResult, Orchestrator, TaskSpec
 from .storage import atomic_write_text
 from .tables import load_table
@@ -36,7 +38,7 @@ FORMAT_SINGLE_SOURCES = frozenset({"F0.select", "F1.split", "F2.write", "F2.writ
 # Syntax checks (Fountain, Marp ...) for ``checks.code``.  A check takes the
 # text of one F2 task and its part record, and returns error messages.
 SyntaxCheck = Callable[[str, Mapping[str, Any]], list[str]]
-SYNTAX_CHECKS: dict[str, SyntaxCheck] = {}
+SYNTAX_CHECKS: dict[str, SyntaxCheck] = {"contains_names": reference_book.check_contains_names}
 
 
 def default_formats_root() -> Path:
@@ -97,7 +99,7 @@ def load_profile(
     low, high = profile["chars_per_event"]
     if low > high:
         raise ValueError("chars_per_event の下限が上限を超えています")
-    if profile["unit_mapping"] not in UNIT_MAPPERS:
+    if profile["unit_mapping"] not in UNIT_MAPPERS and profile["unit_mapping"] != reference_book.UNIT_MAPPING:
         raise ValueError(f"unit_mapping が未対応です: {profile['unit_mapping']}")
     unknown = [
         check for check in profile["checks"]["code"]
@@ -288,11 +290,13 @@ def build_plan(
 ) -> dict[str, Any]:
     """F1: units, parts, and the per-part range of characters."""
 
+    if profile["unit_mapping"] == reference_book.UNIT_MAPPING:
+        return reference_book.build_reference_plan(story, profile, _role_names(repository_root))
     low, high = profile["chars_per_event"]
     events = {event["id"]: event for event in story["events"]}
     order = {event_id: position for position, event_id in enumerate(events)}
     units = UNIT_MAPPERS[profile["unit_mapping"]](story, profile, repository_root)
-    if any(not unit.event_ids for unit in units):
+    if any(not unit.event_ids and unit.person_id is None for unit in units):
         raise ValueError("出来事のない単位があります")
     assigned = [event_id for unit in units for event_id in unit.event_ids]
     if sorted(assigned) != sorted(events) or len(set(assigned)) != len(assigned):
@@ -304,7 +308,19 @@ def build_plan(
 
     unit_records: list[dict[str, Any]] = []
     parts: list[dict[str, Any]] = []
+    visual = format_visual.is_visual(profile)
+    describe = format_visual.visual_character_text if visual else character_text
     for unit in units:
+        if unit.person_id is not None:
+            part = format_visual.person_part(
+                unit, people[unit.person_id], story["events"], names, roles, (low, high)
+            )
+            parts.append(part)
+            unit_records.append({
+                "id": unit.id, "title": unit.title, "part": unit.part,
+                "event_ids": [], "part_ids": [part["id"]],
+            })
+            continue
         ordered = sorted(unit.event_ids, key=order.__getitem__)
         part_ids: list[str] = []
         start = 0
@@ -322,7 +338,7 @@ def build_plan(
                 "unit": unit.id,
                 "event_ids": chunk,
                 "events": [{"id": event_id, "text": event_text(events[event_id], names)} for event_id in chunk],
-                "characters": [{"id": person, "text": character_text(people[person], roles)} for person in who],
+                "characters": [{"id": person, "text": describe(people[person], roles)} for person in who],
                 "min_chars": low * len(chunk),
                 "max_chars": high * len(chunk),
                 "range": f"{low * len(chunk)}〜{high * len(chunk)}字",
@@ -372,13 +388,20 @@ def check_body(
 # --- template ---------------------------------------------------------------
 
 _BLOCK = re.compile(r"\{\{#units\}\}(.*?)\{\{/units\}\}", re.DOTALL)
+_PART_START = re.compile(r"\{\{#part_start\}\}(.*?)\{\{/part_start\}\}", re.DOTALL)
 _VARIABLE = re.compile(r"\{\{\s*([a-z_]+(?:\.[a-z_]+)?)\s*\}\}")
 
 
 def render_template(
     template: str, story: Mapping[str, Any], units: Sequence[Mapping[str, Any]], name: str
 ) -> str:
-    """Pour the unit texts into the template (one ``{{#units}}`` block)."""
+    """Pour the unit texts into the template (one ``{{#units}}`` block).
+
+    Inside the block, ``{{unit.chapter}}`` counts units anew in each part
+    (it equals ``{{unit.number}}`` without parts), and a
+    ``{{#part_start}}…{{/part_start}}`` section is kept only for the first
+    unit of each part (for the part heading of a saga).
+    """
 
     blocks = _BLOCK.findall(template)
     if len(blocks) != 1 or len(_BLOCK.split(template)) != 3:
@@ -403,16 +426,23 @@ def render_template(
         return _VARIABLE.sub(replace, text)
 
     rendered_units = []
+    chapter = 0
+    previous_part: Any = object()
     for number, unit in enumerate(units, start=1):
+        starts_part = unit["part"] is not None and unit["part"] != previous_part
+        chapter = 1 if unit["part"] != previous_part else chapter + 1
+        previous_part = unit["part"]
+        block = _PART_START.sub(lambda match: match.group(1) if starts_part else "", blocks[0])
         scope = {
             **values,
             "unit.number": str(number),
+            "unit.chapter": str(chapter),
             "unit.id": unit["id"],
             "unit.title": unit["title"],
             "unit.part": "" if unit["part"] is None else str(unit["part"]),
             "unit.body": unit["body"],
         }
-        rendered_units.append(fill(blocks[0], scope))
+        rendered_units.append(fill(block, scope))
     before, _, after = _BLOCK.split(template)
     return fill(before, values) + "".join(rendered_units) + fill(after, values)
 
