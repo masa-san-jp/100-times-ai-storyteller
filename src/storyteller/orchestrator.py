@@ -841,6 +841,8 @@ class Orchestrator:
             inputs = _load_card_inputs(self.task_dir(run_id, task_id))
             from .world_facts import specialize_fact_definition
             definition = specialize_fact_definition(definition, inputs)
+            from .volume import dev_task_definition
+            definition, _ = dev_task_definition(definition, manifest.get("scale", {}), self.repository_root)
 
         continuation = _continuation_enabled(definition)
         extend_to_min = (
@@ -1456,7 +1458,7 @@ class Orchestrator:
             card = self._build_task_card(manifest, run_id, task_id, ticket)
             context = self._build_context(manifest, run_id, task_id)
             card_inputs = _prepare_card_inputs(
-                self.task_definitions[task["type"]], context.inputs
+                context.definition, context.inputs
             )
         except Exception as error:
             # Input rendering failure is a task failure according to the
@@ -1945,6 +1947,10 @@ class Orchestrator:
             raise TaskCardError(f"入力の生成に失敗しました: {error}") from error
         from .world_facts import specialize_fact_definition
         definition = specialize_fact_definition(definition, inputs)
+        from .volume import dev_task_definition
+        definition, output_chars = dev_task_definition(definition, manifest.get("scale", {}), self.repository_root)
+        if output_chars is not None:
+            inputs = {**inputs, "output_chars": output_chars}
         return CodeTaskContext(
             run_id=run_id,
             task_id=task_id,
@@ -2000,7 +2006,7 @@ class Orchestrator:
                 try:
                     context = self._build_context(manifest, run_id, task_id)
                     card_inputs = _prepare_card_inputs(
-                        self.task_definitions[task["type"]],
+                        context.definition,
                         context.inputs,
                     )
                     fixed = None

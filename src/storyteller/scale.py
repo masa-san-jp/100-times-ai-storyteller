@@ -159,7 +159,7 @@ def _derive_dev(
                 "parts": None,
                 "world_sections": list(dev["world_sections"]),
                 "pool_need": _pool_needs(
-                    dev["cast"], int(scales["candidate_multiplier"]), element_axes
+                    dev["cast"], int(dev["candidate_multiplier"]), element_axes
                 ),
             },
         },

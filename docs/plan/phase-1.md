@@ -49,6 +49,7 @@
 | P1-36 | オーケストレータの性能：manifest の読み込み・検証・書き込みの費用をタスク数に対して抑える（検証の重複の除去、変更のない読み込みの再利用など）、`st next --wait` の待機中にロックを長く持たない、テストの所要時間の短縮（通しのテストの重複の削減） | P1-35 | task-model §5、data-layout | 1,500 タスクの run で claim と submit が各 0.2 秒以内。8 並列の実行者でロックの待ち時間切れが起きない。CI の各ジョブが 30 分以内 |
 | P1-37 | 止めない失敗の扱い（task-model §6.7、ADR-0009）：修正の推論（字数・文末・書き方の揺れを、元の出力と理由から手直しする1要素の推論）、実行者の格上げ（manifest の `escalation`、実行者 ID の指定による claim）、記録して進む（`on_exhausted` の既定を `skip`、後続とS9での「未定」の表示、生成の記録）。task-model §6.3 の旧規則に依存するテストの更新 | P1-36 | task-model §6.3, §6.7、ADR-0009 | 字数の超過・選択肢の揺れ・固有名詞の誤検出を起こす応答を与えても、run が `stalled` にならずに completed になる（統合テスト）。`dev` の実機の run で同じことを確かめる |
 | P1-38 | 開発用の最小規模 `dev`：すべての種類の LLM タスクを1回以上含み、本物のモデルで数分で終わる規模（世界は各種類のセクション1つ・観点1つ・面1つ、人物2人、出来事3件、場面3つなど）。`st new --scale dev`。`tools/dev_run.sh`（`dev` の run を作り、指定の実行者で最後まで回し、所要時間と `skipped`・`warnings` を表示する）。作業項目の受け入れ条件への組み込み（docs/process/implementation.md） | P1-37 | scale.md、ADR-0009 | `dev` の run が gpt-oss:20b で10分以内、claude-haiku-5-5 で5分以内に completed になる |
+| P1-39 | `dev` の確認用推論量（素材数・S2必要量・短い描写）と本番から分離したキャッシュ入力 | P1-38 | scale「開発用の規模 dev」、ADR-0009 | 全物語LLM種別を保持し、本番の候補数・字数・検証を変えず、gpt-oss:20b の実機で10分以内に完走する |
 | P1-15 | end-to-end：ローカルモデルとコーディングエージェントでの短編の完走（P1-16〜P1-19 の後、分量の最低ラインを満たすこと）。開発者が書いた自由入力による生成例を `examples/` に置く | P1-11, P1-12, P1-13 | ROADMAP Phase 1 | 完了条件 1〜4 |
 
 ## 順序
@@ -122,6 +123,7 @@ P1-11 + P1-12 + P1-13 → P1-15
 | `tables/common_words.yaml` | `words`：文字列の配列 |
 | `config/models.yaml` | `models`：モデル名ごとに `provider`・`endpoint`（既定 `http://127.0.0.1:11434`）・`temperature`・`max_tokens`・`context_length`・`json_mode`・`think`（推論の深さ。Ollama の `think` にそのまま渡す：`false`・`low`・`medium`・`high`。省略時は送らない）・`timeout_seconds`（既定 600） |
 | `adapters/state.json` | `{"models": {モデル名: {"json_mode": 値, "empty_streak": 整数}}}`。更新は `adapters.lock`（data-layout §5 のロック）を取ってから行う。`empty_streak` はプロセスをまたいでモデル単位で数え、空でない応答で0に戻す |
+
 
 ## 作業項目ごとの決定事項
 

@@ -90,6 +90,9 @@ def create_run_from_paragraphs(
         if plot_type not in plot_ids:
             raise ValueError(f"未知のプロット型です: {plot_type}")
 
+    material_count = (load_table("scales", repository_root=repository_root)["dev"]["materials_per_paragraph"]
+                      if preset == "dev" else 5)
+
     task_specs = [
         TaskSpec(
             task_id=f"S1.extract-{paragraph['id']}-{number}",
@@ -98,7 +101,7 @@ def create_run_from_paragraphs(
             index=(paragraph["id"], str(number)),
         )
         for paragraph in paragraphs
-        for number in range(1, 6)
+        for number in range(1, material_count + 1)
     ]
     s1_task_ids = tuple(spec.task_id for spec in task_specs)
     task_specs.append(

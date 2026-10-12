@@ -43,7 +43,8 @@ def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
         required = pool_need.get(axis_key)
         if isinstance(required, bool) or not isinstance(required, int) or required < 0:
             raise ValueError(f"pool_need の値が不正です: {axis_key}")
-        task_count = math.ceil(required / 5) + 1
+        is_dev = manifest.get("scale", {}).get("preset") == "dev"
+        task_count = math.ceil(required / 5) + (0 if is_dev else 1)
         for ordinal in range(task_count):
             material = materials[ordinal % len(materials)]
             plan_key = f"{material['id']}-{axis_key}"
@@ -54,7 +55,8 @@ def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
                 "axis": deepcopy(axis),
             }
             previous_ids: list[str] = []
-            for number in range(1, 6):
+            count = min(5, required - ordinal * 5) if is_dev else 5
+            for number in range(1, count + 1):
                 task_id = f"S2.expand-{plan_key}-{number}"
                 expand_tasks.append(TaskSpec(
                     task_id=task_id, type="S2.expand",

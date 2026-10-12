@@ -199,6 +199,12 @@ def _fake_output(
     task_type = task["type"]
     index = task.get("index", [])
 
+    if "output_chars" in inputs:
+        minimum, maximum = inputs["output_chars"]
+        prefix = inputs["facts"]["name"] + "は" if task_type in {
+            "S5.profile", "S5.intro", "S5.appearance", "S5.personality", "S5.values", "S5.inner_conflict", "S5.backstory"} else ""
+        return prefix + _filler_text(task_id, "歩み", (minimum + maximum) // 2 - len(prefix))
+
     if task_type == "S1.extract":
         paragraph_number = int(index[0][1:])
         number = int(index[1])

@@ -4,31 +4,66 @@
   "title": "Story scale table",
   "type": "object",
   "additionalProperties": false,
-  "required": ["axes", "level_min_events", "presets", "world_sections_by_level", "world_counts", "volume_multiplier", "parts", "subthread_events", "input_ratio", "candidate_multiplier", "dev"],
+  "required": [
+    "axes",
+    "level_min_events",
+    "presets",
+    "world_sections_by_level",
+    "world_counts",
+    "volume_multiplier",
+    "parts",
+    "subthread_events",
+    "input_ratio",
+    "candidate_multiplier",
+    "dev"
+  ],
   "properties": {
     "axes": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["time", "space", "cast", "threads", "change"],
+      "required": [
+        "time",
+        "space",
+        "cast",
+        "threads",
+        "change"
+      ],
       "properties": {
-        "time": {"$ref": "#/$defs/axis"},
-        "space": {"$ref": "#/$defs/axis"},
-        "cast": {"$ref": "#/$defs/axis"},
-        "threads": {"$ref": "#/$defs/axis"},
-        "change": {"$ref": "#/$defs/axis"}
+        "time": {
+          "$ref": "#/$defs/axis"
+        },
+        "space": {
+          "$ref": "#/$defs/axis"
+        },
+        "cast": {
+          "$ref": "#/$defs/axis"
+        },
+        "threads": {
+          "$ref": "#/$defs/axis"
+        },
+        "change": {
+          "$ref": "#/$defs/axis"
+        }
       }
     },
     "level_min_events": {
       "type": "array",
       "minItems": 5,
       "maxItems": 5,
-      "items": {"type": "integer", "minimum": 1}
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
     },
     "presets": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {"pattern": "^[a-z][a-z0-9-]*$"},
-      "additionalProperties": {"$ref": "#/$defs/preset"}
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/preset"
+      }
     },
     "world_sections_by_level": {
       "type": "array",
@@ -36,7 +71,10 @@
       "maxItems": 5,
       "items": {
         "type": "array",
-        "items": {"type": "string", "minLength": 1},
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
         "uniqueItems": true
       }
     },
@@ -46,27 +84,48 @@
         "type": "array",
         "minItems": 5,
         "maxItems": 5,
-        "items": {"type": "integer", "minimum": 1}
+        "items": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "volume_multiplier": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {"pattern": "^[a-z][a-z0-9-]*$"},
-      "additionalProperties": {"type": "integer", "minimum": 1}
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      }
     },
     "parts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["min", "max", "default"],
+      "required": [
+        "min",
+        "max",
+        "default"
+      ],
       "properties": {
-        "min": {"type": "integer", "minimum": 1},
-        "max": {"type": "integer", "minimum": 1},
+        "min": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 1
+        },
         "default": {
           "type": "array",
           "minItems": 2,
           "maxItems": 2,
-          "items": {"type": "integer", "minimum": 1}
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       }
     },
@@ -77,7 +136,11 @@
       "type": "array",
       "minItems": 2,
       "maxItems": 2,
-      "items": {"type": "number", "minimum": 0, "maximum": 1}
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
     },
     "candidate_multiplier": {
       "type": "integer",
@@ -86,19 +149,211 @@
     "dev": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["axes", "events", "cast", "world_sections", "viewpoints_per_section", "list_item_count"],
+      "required": [
+        "axes",
+        "events",
+        "cast",
+        "world_sections",
+        "viewpoints_per_section",
+        "list_item_count",
+        "materials_per_paragraph",
+        "candidate_multiplier",
+        "task_chars"
+      ],
       "properties": {
-        "axes": {"$ref": "#/$defs/preset/properties/axes"},
-        "events": {"type": "integer", "minimum": 1},
-        "cast": {"type": "integer", "minimum": 1},
+        "axes": {
+          "$ref": "#/$defs/preset/properties/axes"
+        },
+        "events": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cast": {
+          "type": "integer",
+          "minimum": 1
+        },
         "world_sections": {
           "type": "array",
           "minItems": 1,
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         },
-        "viewpoints_per_section": {"type": "integer", "minimum": 1},
-        "list_item_count": {"type": "integer", "minimum": 1}
+        "viewpoints_per_section": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "list_item_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "materials_per_paragraph": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "candidate_multiplier": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "task_chars": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "story_beat",
+            "world_facet",
+            "world_list_item",
+            "character"
+          ],
+          "properties": {
+            "story_beat": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "world_facet": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "world_list_item": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "character": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "profile",
+                "backstory",
+                "relationship",
+                "appearance",
+                "personality",
+                "values",
+                "voice",
+                "inner_conflict",
+                "motive",
+                "intro",
+                "catchphrase"
+              ],
+              "properties": {
+                "profile": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "backstory": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "relationship": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "appearance": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "personality": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "values": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "voice": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "inner_conflict": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "motive": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "intro": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "catchphrase": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -106,9 +361,15 @@
     "axis": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "values"],
+      "required": [
+        "name",
+        "values"
+      ],
       "properties": {
-        "name": {"type": "string", "minLength": 1},
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
         "values": {
           "type": "array",
           "minItems": 5,
@@ -116,11 +377,25 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["level", "value", "description"],
+            "required": [
+              "level",
+              "value",
+              "description"
+            ],
             "properties": {
-              "level": {"type": "integer", "minimum": 0, "maximum": 4},
-              "value": {"type": "string", "minLength": 1},
-              "description": {"type": "string", "minLength": 1}
+              "level": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         }
@@ -129,29 +404,62 @@
     "preset": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "axes", "event_range"],
+      "required": [
+        "name",
+        "axes",
+        "event_range"
+      ],
       "properties": {
-        "name": {"type": "string", "minLength": 1},
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
         "axes": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["time", "space", "cast", "threads", "change"],
+          "required": [
+            "time",
+            "space",
+            "cast",
+            "threads",
+            "change"
+          ],
           "properties": {
-            "time": {"type": "string", "minLength": 1},
-            "space": {"type": "string", "minLength": 1},
-            "cast": {"type": "string", "minLength": 1},
-            "threads": {"type": "string", "minLength": 1},
-            "change": {"type": "string", "minLength": 1}
+            "time": {
+              "type": "string",
+              "minLength": 1
+            },
+            "space": {
+              "type": "string",
+              "minLength": 1
+            },
+            "cast": {
+              "type": "string",
+              "minLength": 1
+            },
+            "threads": {
+              "type": "string",
+              "minLength": 1
+            },
+            "change": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
-        "event_range": {"$ref": "#/$defs/integer-range"}
+        "event_range": {
+          "$ref": "#/$defs/integer-range"
+        }
       }
     },
     "integer-range": {
       "type": "array",
       "minItems": 2,
       "maxItems": 2,
-      "items": {"type": "integer", "minimum": 1}
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
     }
   }
 }

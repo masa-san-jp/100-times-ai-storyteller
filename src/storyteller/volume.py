@@ -26,6 +26,7 @@ calculation and its tests.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
@@ -86,7 +87,7 @@ def compute_initial_volume(
         raise VolumeError("scale.derived.world_sections が不正です")
 
     multiplier = multiplier_for_preset(preset, repository_root=repository_root)
-    volume_table = load_table("volume", repository_root=repository_root)
+    volume_table = _volume_table(scale, repository_root)
     world_sections = _resolve_world_sections(
         scale, selected_ids, repository_root=repository_root
     )
@@ -121,7 +122,7 @@ def compute_character_volume(
         raise VolumeError("人物が1人もいません")
 
     multiplier = multiplier_for_preset(preset, repository_root=repository_root)
-    volume_table = load_table("volume", repository_root=repository_root)
+    volume_table = _volume_table(scale, repository_root)
     return {
         "characters": _allocate_characters(
             multiplier, characters, volume_table, pick=_picker(preset)
@@ -385,3 +386,59 @@ __all__ = [
     "compute_character_volume",
     "apply_volume_update",
 ]
+
+
+def _volume_table(scale: Mapping[str, Any], repository_root: str | Path | None) -> dict[str, Any]:
+    table = deepcopy(load_table("volume", repository_root=repository_root))
+    if scale.get("preset") == DEV_PRESET:
+        dev = load_table("scales", repository_root=repository_root)["dev"]
+        table["task_chars"] = deepcopy(dev["task_chars"])
+    return table
+
+
+def dev_task_definition(
+    definition: Mapping[str, Any],
+    scale: Mapping[str, Any],
+    repository_root: str | Path,
+) -> tuple[Mapping[str, Any], list[int] | None]:
+    """Use table-owned small prose bounds only for development runs."""
+    if scale.get("preset") != DEV_PRESET or definition.get("kind") != "llm":
+        return definition, None
+    task_type = definition["id"]
+    keys = {
+        "S4.section": "world_facet",
+        "S4.item": "world_list_item",
+        "S7.detail": "story_beat",
+    }
+    character_types = {
+        f"S5.{name}" for name in (
+            "profile", "intro", "appearance", "personality", "values", "voice",
+            "inner_conflict", "backstory", "relationship", "motive", "catchphrase",
+        )
+    }
+    if task_type not in keys and task_type not in character_types:
+        return definition, None
+    ranges = load_table("scales", repository_root=repository_root)["dev"]["task_chars"]
+    if task_type in keys:
+        bounds = ranges[keys[task_type]]
+    else:
+        bounds = ranges["character"][task_type.removeprefix("S5.")]
+    if bounds[0] > bounds[1]:
+        raise VolumeError("確認用の字数の下限が上限を超えています")
+    result = deepcopy(dict(definition))
+    result["inputs"]["output_chars"] = {
+        "label": "確認用の字数範囲", "from": "input", "select": "output_chars", "required": True,
+    }
+    checks = result["validate"]["checks"]
+    for name, offset in (("min_chars", 0), ("max_chars", 1)):
+        matching = [check[name] for check in checks if name in check and "field" not in check[name]]
+        if matching:
+            for check in matching:
+                check["n"] = bounds[offset]
+        else:
+            checks.append({name: {"n": bounds[offset]}})
+    result["card"]["steps"] = [
+        re.sub(r"[0-9]+[〜～][0-9]+字", f"{bounds[0]}〜{bounds[1]}字", step)
+        for step in result["card"]["steps"]
+    ]
+    return result, list(bounds)

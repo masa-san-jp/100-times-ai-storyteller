@@ -1,5 +1,5 @@
 id: S7.detail
-version: 11
+version: 12
 kind: llm
 element: text
 inputs:
