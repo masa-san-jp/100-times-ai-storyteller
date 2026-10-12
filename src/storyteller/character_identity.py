@@ -39,7 +39,7 @@ def identity_errors(output: str, facts: Any, *, require_subject: bool = False) -
     year = (rf"(?:{re.escape(calendar)})?\s*" if calendar else "") + r"([0-9]+)年"
     patterns = {
         "age": subject + r"(?:は(?:現在)?|の年齢は)\s*([0-9]+)歳(?!の(?:とき|時|頃|ころ)|当時|だった|であった|ではない|でない|ではなく)",
-        "birth_year": subject + r"(?:(?:は|が)\s*" + year + r"(?:に生まれた|生まれ)|の生年は\s*" + year + r")",
+        "birth_year": subject + r"(?:(?:は|が)\s*" + year + r"(?:に生まれた|生まれ)|の生年は\s*" + year + r")(?!ではない|でない|ではなく|わけではない|のではない)",
     }
     for field, pattern in patterns.items():
         expected = facts.get(field)
