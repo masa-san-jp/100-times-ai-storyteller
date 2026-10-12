@@ -533,3 +533,40 @@ def test_description_does_not_invent_a_subject_when_accepted_name_is_unavailable
     definition = {"element": "text", "output": "text", "validate": {"checks": [
         {"character_identity": {"require_subject": True}}]}}
     assert validate_output(definition, "人物の名前は未定。", {"facts": source["c1"]}).passed
+
+
+def test_old_profile_cache_with_wrong_signed_birth_year_is_not_reused(tmp_path):
+    from storyteller.cache import save_cache
+
+    harness, run_id, assignment = _harness(tmp_path, age=1000)
+    _finish(harness, run_id)
+    facts = [f"S5.fact-{entry['id']}" for entry in assignment["character_fact_tasks"]]
+    task_id = "S5.profile-c1"
+    harness._add_tasks(run_id, "S3.assign", [
+        TaskSpec(task_id, "S5.profile", deps=("S3.assign", "S5.name-c1", *facts), index=("c1",))
+    ])
+    manifest = harness.load_run(run_id)
+    context = harness._build_context(manifest, run_id, task_id)
+    definition = harness.task_definitions["S5.profile"]
+    inputs = prepare_task_inputs(definition, context.inputs)
+    current_key = harness._cache_key_for_task(manifest, task_id, inputs)
+    definition["version"] -= 1
+    try:
+        old_key = harness._cache_key_for_task(manifest, task_id, inputs)
+    finally:
+        definition["version"] += 1
+    wrong_text = "リオはカナ暦-699年に生まれた。" + "水路を点検する。" * 110
+    save_cache(tmp_path, old_key, wrong_text)
+    # Force a fresh lookup rather than the ready-task cache-miss shortcut.
+    manifest["tasks"][task_id]["cache_key"] = None
+    harness._persist_manifest(harness.run_dir(run_id), manifest)
+
+    claim = harness.claim_task(run_id, task_id, executor_id="test")
+    task = harness.load_run(run_id)["tasks"][task_id]
+    assert current_key != old_key
+    assert task["cache_key"] == current_key
+    assert task["state"] == "claimed"
+    assert not (harness.task_dir(run_id, task_id) / "output.txt").exists()
+    result = harness.submit(claim["ticket"], wrong_text)
+    assert not result.accepted
+    assert any("birth_year" in error for error in result.errors)
