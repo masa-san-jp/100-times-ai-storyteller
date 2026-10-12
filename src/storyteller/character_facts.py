@@ -250,7 +250,8 @@ def supplement_character_outputs(
     # world registration. Recover their names so the required sheet includes
     # the definitions of every location, affiliation and family reference.
     assignment = result.get("S3.assign", {})
-    name_ids = {"S4.calendar_name"}
+    person_id = task["index"][0].split("-", 1)[0]
+    name_ids = {"S4.calendar_name", f"S5.name-{person_id}"}
     name_ids.update(f"S4.fact-{entry['id']}" for entry in assignment.get("world_fact_tasks", [])
                     if entry["element"] == "name" and entry["section_id"] in CHARACTER_WORLD_SECTIONS)
     name_ids.update(f"S4.item_name-{entry['id']}" for entry in assignment.get("world_tasks", [])

@@ -501,3 +501,22 @@ def test_description_card_sheet_keeps_only_target_person_identity(tmp_path):
         plot_requirements=person["plot_context"]))
     assert "獏賀暮" not in card
     assert "birth_year: 229" in card and "age: 71" in card and "name: リオ" in card
+
+
+def test_description_recovers_subject_name_without_a_direct_name_dependency(tmp_path):
+    harness, run_id, _ = _harness(tmp_path, age=71)
+    _finish(harness, run_id)
+    outputs = _accepted_outputs(harness, run_id)
+    facts = tuple(task_id for task_id in outputs if task_id.startswith("S5.fact-c1-"))
+    harness._add_tasks(run_id, "S3.assign", [TaskSpec(
+        "S5.profile-c1", "S5.profile", deps=("S3.assign", "S5.name-c1", *facts), index=("c1",))])
+    harness._complete_task(run_id, "S5.profile-c1", {"profile": "リオは水路を点検する。"})
+    harness._add_tasks(run_id, "S5.profile-c1", [TaskSpec(
+        "S5.intro-c1", "S5.intro", deps=("S3.assign", "S5.profile-c1", *facts), index=("c1",))])
+    assert "S5.name-c1" not in harness.load_run(run_id)["tasks"]["S5.intro-c1"]["deps"]
+    context = harness._build_context(harness.load_run(run_id), run_id, "S5.intro-c1")
+    inputs = context.inputs
+    assert inputs["facts"]["name"] == "リオ"
+    assert inputs["facts"]["age"] == 71
+    card = generate_task_card(_definition("S5.intro"), "ticket", inputs)
+    assert "リオ" in card
