@@ -2655,6 +2655,17 @@ def _prepare_card_inputs(
     continuation actually becomes necessary.
     """
     budget = int(definition.get("max_input_chars", 3000))
+    choices = inputs.get("choices")
+    if (definition.get("id") == "S5.fact" and inputs.get("shape") == "choice"
+        and isinstance(choices, list)
+        and all(isinstance(choice, Mapping) and isinstance(choice.get("id"), str)
+                and isinstance(choice.get("name"), str) for choice in choices)):
+        # Use the existing [id] text rendering instead of repeating JSON keys
+        # for every registered organization. Keep names for choice parsing:
+        # every offered ID and name must survive fitting and validation.
+        inputs = {**inputs, "choices": [
+            {**choice, "text": choice["name"]} for choice in choices
+        ]}
     world_rows = inputs.get("world_facts")
     if (definition.get("id") == "S5.fact" and isinstance(world_rows, list)
         and definition.get("inputs", {}).get("world_facts", {}).get("truncate") == "tail"
