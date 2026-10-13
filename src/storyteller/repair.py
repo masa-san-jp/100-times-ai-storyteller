@@ -15,13 +15,24 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from .cards import TaskCardError, _render_value
+from .cards import InputBudgetError, TaskCardError, _render_value
 
 # The role line doubles as the marker that failure reports use to recognise a
 # repair card and hide its body.
 REPAIR_ROLE = "前回の出力を、元の内容を保ったまま、条件を満たすように書き直す。"
 REPAIR_STEP = "元の内容を保ったまま、条件を満たすように書き直す。"
 _MAX_ORIGINAL_CHARS = 6000
+_OMITTED = "\n（中間を省略）\n"
+
+
+def _elide_middle(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    available = limit - len(_OMITTED)
+    if available < 2:
+        raise InputBudgetError("修正カードの入力が予算を超える")
+    head = (available + 1) // 2
+    return text[:head] + _OMITTED + text[-(available - head):]
 
 
 def latest_repair_source(task_dir: Path, task: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -61,9 +72,13 @@ def repair_conditions(
             arguments = {}
         where = f"（{arguments['field']}）" if "field" in arguments else ""
         if name == "max_chars":
-            lines.append(f"{arguments.get('n')}字以内にする{where}。")
+            lines.append(f"{arguments.get('n')}字以内にする{where}。超えていれば、要点を残して短くする。")
         elif name == "min_chars":
-            lines.append(f"{arguments.get('n')}字以上にする{where}。")
+            lines.append(f"{arguments.get('n')}字以上にする{where}。足りなければ、元の内容を具体的に描写して書き足す。")
+        elif name == "no_story_metadata":
+            lines.append("構造の説明と内部 ID を本文から除く。")
+        elif name == "no_repeated_scene":
+            lines.append("直前の場面の行動・結果を再演せず、担当部分だけを書く。")
         elif name == "ends_complete":
             lines.append(f"文末を「。」などで完結させる{where}。")
     element = definition.get("element")
@@ -97,8 +112,9 @@ def generate_repair_card(
         if isinstance(original_output, str)
         else json.dumps(original_output, ensure_ascii=False)
     )
-    original = unicodedata.normalize("NFC", original)[:_MAX_ORIGINAL_CHARS]
+    original = _elide_middle(unicodedata.normalize("NFC", original), _MAX_ORIGINAL_CHARS)
     reason = unicodedata.normalize("NFC", str(reason))
+    repeated_scene = "no_repeated_scene" in reason
     if len(reason) > 500:
         reason = reason[:499] + "…"
     lines = [
@@ -106,8 +122,40 @@ def generate_repair_card(
         "### 元の出力", original, "### 不合格の理由", reason, "### 満たすべき条件",
         *(f"- {condition}" for condition in repair_conditions(definition, inputs)),
     ]
+    for name in ("conditions", "decided_conditions"):
+        if name in inputs:
+            lines.extend(["### 確定した筋の条件（変更・追加しない）", _render_value(inputs[name])])
+    previous_index = None
+    if repeated_scene and isinstance(inputs.get("previous_scene"), str):
+        lines.extend(["### 直前の場面（再演しない）", unicodedata.normalize("NFC", inputs["previous_scene"])[-600:]])
+        previous_index = len(lines) - 1
     if definition.get("element") == "choice" and "choices" in inputs:
         lines.extend(["### 選択肢", _render_value(inputs["choices"])])
+    budget = definition.get("max_input_chars", 3000)
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget < 1:
+        raise TaskCardError("max_input_chars must be a positive integer")
+    input_start = lines.index("## 入力") + 1
+    original_index = lines.index("### 元の出力") + 1
+    reason_index = original_index + 2
+
+    def input_size() -> int:
+        return len(unicodedata.normalize("NFC", "\n".join(lines[input_start:])))
+
+    if input_size() > budget:
+        lines[reason_index] = reason[:159] + "…" if len(reason) > 160 else reason
+        minimum_original = min(len(original), len(_OMITTED) + 2)
+        allowance = budget - input_size() + len(original)
+        if allowance < minimum_original and previous_index is not None:
+            lines[previous_index] = lines[previous_index][-100:]
+            allowance = budget - input_size() + len(original)
+        if allowance < minimum_original:
+            lines[reason_index] = lines[reason_index][:63] + "…" if len(lines[reason_index]) > 64 else lines[reason_index]
+            allowance = budget - input_size() + len(original)
+        if allowance < minimum_original:
+            raise InputBudgetError("修正カードの入力が予算を超える")
+        lines[original_index] = _elide_middle(original, allowance)
+    if input_size() > budget:
+        raise InputBudgetError("修正カードの入力が予算を超える")
     lines.extend(["", "## 手順", f"1. {REPAIR_STEP}",
                   "作り方の指示は本文に書かず、指定された処理を行うためだけに使う。", "",
                   "## 出力形式"])
@@ -124,11 +172,11 @@ def generate_repair_card(
         )
     lines.extend([
         "", "## 守ること",
-        "- 元の出力にない内容を付け加えない。",
+        "- 元の出力にない事実・出来事・人物・固有名詞を付け加えない。",
         "- 出力形式以外の文章を書かない。",
         "- 日本語で書く（ID・列挙値を除く）。",
     ])
-    return "\n".join(lines)
+    return unicodedata.normalize("NFC", "\n".join(lines))
 
 
 def is_repair_card(card: str) -> bool:

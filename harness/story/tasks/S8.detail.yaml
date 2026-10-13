@@ -1,0 +1,39 @@
+id: S8.detail
+version: 1
+kind: llm
+element: judgement
+output: json
+inputs:
+  event:
+    label: この出来事の確定事項
+    from: S7.assemble
+    select: '[{slot}]'
+    required: true
+  body:
+    label: 検査する本文
+    from: S7.detail
+    select: body
+    required: false
+  previous:
+    label: 直前の場面（再演しない）
+    from: S7.detail
+    select: previous
+    required: false
+    truncate: tail
+card:
+  role: この場面の本文だけを検査する。
+  steps:
+  - 確定した出来事・筋の条件を追加・反転・置換しているか、直前の場面の行動や結果を進展なく再演しているかを検査する。未定の条件は判定しない。
+  - 構造の説明と内部 ID が本文にないかも検査する。
+  - いずれかに該当すれば answer は yes、なければ no。reason は根拠を1文で書く。入力にない事情を補わない。
+  output_example: '{"answer": "...", "reason": "..."}'
+validate:
+  schema: schemas/tasks/S8.compare.schema.json
+  checks:
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - min_chars:
+      field: reason
+      n: 1
+max_input_chars: 3500

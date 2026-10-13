@@ -183,7 +183,8 @@ def _filler_text(person_id: str, field: str, length: int) -> str:
     other fake S5 outputs would fail those checks.
     """
 
-    unit = f"{person_id}の{field}に関する具体的な記述。"
+    marker = hashlib.sha256(person_id.encode("utf-8")).hexdigest()[:12]
+    unit = f"記録x{marker}の{field}に関する具体的な記述。"
     repeated = unit * (length // len(unit) + 2)
     return repeated[:length - 1] + "。"
 
@@ -276,14 +277,20 @@ def _fake_output(
         target_length = (minimum + maximum) // 2
         return _filler_text(task_id, field, target_length)
 
+    if task_type == "S7.condition":
+        return {"trigger": "仕組みを動かすと道が現れる。", "prohibition": "灯を消すことは禁じられ、消すと道を失う。", "resolution": "開いた道を進むと問題が解決する。"}[task["index"][1]]
+
+    if task_type == "S8.detail":
+        return {"answer": "no", "reason": "場面の確定事項を守り、再演していない。"}
+
     if task_type == "S7.event":
         return {
             "when": "町に変化の兆しが現れたとき。",
             "where": "町の境界で。",
             "why": "状況を確かめるため。",
             "intent": "小さな選択をする。",
-            "what": "人物は境界の仕組みを動かす。",
-            "result": f"新しい道筋が見える（試行{task.get('attempt', 0)}）。",
+            "what": f"人物は境界の仕組みを動かし、{int(task['index'][0][1:])}番目の区画を開く。",
+            "result": f"新しい道筋の{int(task['index'][0][1:])}番目の区画が見える（試行{task.get('attempt', 0)}）。",
             "emotion": "静かな決意を抱く。",
             "foreshadowing": "遠くで次の変化が始まる。",
         }[task["index"][1]]
@@ -297,7 +304,7 @@ def _fake_output(
         return {"answer": "no", "reason": "確定した事実と両立する。"}
 
     if task_type == "S8.compare":
-        event_a = inputs["event_a"]["id"]
+        event_a = inputs["event_a"].get("id", "conditions")
         event_b = inputs["event_b"]["id"]
         answer = "yes" if send_comparison_yes else "no"
         reason = "比較対象と結果が矛盾する。" if answer == "yes" else "二つの記述は整合している。"
@@ -402,7 +409,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             elif task["type"] == "S5.voice":
                 output = _filler_text(task_id, "voice", 800)
             elif task["type"] == "S7.event":
-                output = _filler_text(task_id, task["type"], 120)
+                output = _filler_text(task_id, "行動", 120)
         if task["type"] == "S4.section":
             if not similar_facets:
                 similar_facets = sorted(

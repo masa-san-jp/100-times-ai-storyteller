@@ -1,0 +1,10 @@
+id: S8.detail_judge
+version: 1
+kind: code
+handler: story_s8_detail_judge
+inputs:
+  judgement:
+    label: この場面の検証結果
+    from: S8.detail
+    select: output
+    required: false

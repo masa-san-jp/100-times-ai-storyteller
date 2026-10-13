@@ -715,6 +715,19 @@ def _build_downstream_tasks(
     additions: list[TaskSpec] = []
     s7_ids_in_time_order: list[str] = []
     previous_by_thread: dict[str, str] = {}
+    from .plot_quality import condition_ids
+    conditions_by_thread: dict[str, tuple[str, ...]] = {}
+    for slot in slots:
+        if slot["thread"] in conditions_by_thread:
+            continue
+        ids = condition_ids(slot["id"])
+        conditions_by_thread[slot["thread"]] = ids
+        for number, task_id in enumerate(ids):
+            upstream = getattr(context, "task", {}).get("deps", ())
+            assignment_deps = tuple(x for x in upstream if x == "S3.assign")
+            additions.append(TaskSpec(task_id, "S7.condition",
+                deps=(parent_task_id, *assignment_deps, *ids[:number]),
+                index=(slot["id"], task_id.rsplit("-", 1)[1])))
 
     for slot in slots:
         event_id = slot["id"]
@@ -728,7 +741,7 @@ def _build_downstream_tasks(
             previous_judge.replace("S8.judge-", "S7.assemble-", 1)
             if previous_judge is not None else None
         )
-        additions.extend(event_tasks(parent_task_id, event_id, deps, previous_event))
+        additions.extend(event_tasks(parent_task_id, event_id, deps, previous_event, conditions_by_thread[thread_id]))
         s7_ids_in_time_order.append(s7_id)
         previous_by_thread[thread_id] = f"S8.judge-{event_id}"
 
@@ -736,12 +749,13 @@ def _build_downstream_tasks(
             TaskSpec(
                 f"S8.plan-{event_id}",
                 "S8.plan",
-                deps=_unique((parent_task_id, s7_id, *s7_ids_in_time_order[:-1])),
+                deps=_unique((parent_task_id, s7_id, *s7_ids_in_time_order[:-1], *conditions_by_thread[thread_id])),
                 index=(event_id,),
             )
         )
 
     detail_ids: list[str] = []
+    detail_judges: list[str] = []
     for slot in slots:
         event_id = slot["id"]
         beat_definitions = slot.get("beats")
@@ -750,9 +764,9 @@ def _build_downstream_tasks(
         previous_detail: str | None = None
         for number, _beat in enumerate(beat_definitions, start=1):
             detail_id = f"S7.detail-{event_id}-b{number}"
-            deps = [parent_task_id, f"S7.assemble-{event_id}", f"S8.judge-{event_id}"]
+            deps = [parent_task_id, f"S7.assemble-{event_id}", f"S8.judge-{event_id}", *conditions_by_thread[slot["thread"]]]
             if previous_detail is not None:
-                deps.append(previous_detail)
+                deps.extend((previous_detail, previous_detail.replace("S7.detail-", "S8.detail_judge-", 1)))
             additions.append(
                 TaskSpec(
                     detail_id,
@@ -761,6 +775,14 @@ def _build_downstream_tasks(
                     index=(event_id, f"b{number}"),
                 )
             )
+            comparison_id = f"S8.detail-{event_id}-b{number}"
+            judge_id = f"S8.detail_judge-{event_id}-b{number}"
+            compare_deps = [parent_task_id, detail_id, f"S7.assemble-{event_id}"]
+            if previous_detail:
+                compare_deps.append(previous_detail)
+            additions.append(TaskSpec(comparison_id, "S8.detail", deps=tuple(compare_deps), index=(event_id, f"b{number}")))
+            additions.append(TaskSpec(judge_id, "S8.detail_judge", deps=(parent_task_id, comparison_id, detail_id), index=(event_id, f"b{number}")))
+            detail_judges.append(judge_id)
             detail_ids.append(detail_id)
             previous_detail = detail_id
 
@@ -786,6 +808,7 @@ def _build_downstream_tasks(
                     *s7_ids_in_time_order,
                     *judge_ids,
                     *detail_ids,
+                    *detail_judges,
                 )
             ),
         )

@@ -1,5 +1,5 @@
 id: F2.write_once
-version: 1
+version: 2
 kind: llm
 element: text
 output: text
@@ -7,12 +7,12 @@ inputs:
   events:
     label: 書く対象の出来事
     from: F1.split
-    select: "parts[{slot}].events"
+    select: parts[{slot}].events
     required: true
   characters:
     label: 登場人物
     from: F1.split
-    select: "parts[{slot}].characters"
+    select: parts[{slot}].characters
     required: true
     truncate: head
   rules:
@@ -23,7 +23,7 @@ inputs:
   range:
     label: 分量の範囲
     from: F1.split
-    select: "parts[{slot}].range"
+    select: parts[{slot}].range
     required: true
   previous_unit:
     label: 直前の本文の末尾（最大600字）
@@ -31,16 +31,27 @@ inputs:
     select: output
     required: false
     truncate: tail
+  conditions:
+    label: 確定した筋の条件（変更・追加しない）
+    from: F1.split
+    select: parts[{slot}].conditions
+    required: false
 card:
   role: 与えられた出来事を、書き方の規則に従って本文に書き起こす。
   steps:
-    - 入力の出来事を、与えられた順序のまま、すべて本文に書く。出来事の順序を入れ替えない。
-    - 入力にない出来事・人物を加えない。登場人物は入力の名前と読みだけを使う。
-    - 書き方の規則をすべて守る。
-    - 分量の範囲に収まる字数で書く。
-    - 直前の本文の末尾がある場合は、そこから自然につなげる。繰り返して書かない。
-    - 本文は完結した文で終える。
+  - 確定した筋の条件と出来事の因果関係を守る。入力にない発動・禁止・解決条件を足さず、反転・置換しない。内部 ID と「この場面は」などの構造の説明を書かない。同じ行動・結果を繰り返さない。
+  - 入力の出来事を、与えられた順序のまま、すべて本文に書く。出来事の順序を入れ替えない。
+  - 入力にない出来事・人物を加えない。登場人物は入力の名前と読みだけを使う。
+  - 書き方の規則をすべて守る。
+  - 分量の範囲に収まる字数で書く。
+  - 直前の本文の末尾がある場合は、そこから自然につなげる。繰り返して書かない。
+  - 本文は完結した文で終える。
 max_input_chars: 9000
 continuation: false
-on_exhausted: fail
+# 試行・無効化の上限に達した単位は省略し、F3 でその箇所を（未定）として示す
+# （task-model §6.7、format-pipeline.md「F4 検証」）。run は止めない。
+on_exhausted: skip
 max_invalidations: 2
+validate:
+  checks:
+  - no_story_metadata

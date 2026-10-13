@@ -1,5 +1,5 @@
 id: S7.assemble
-version: 1
+version: 2
 kind: code
 handler: story_s7_assemble
 inputs:

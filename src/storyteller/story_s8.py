@@ -65,9 +65,15 @@ def story_s8_plan(context: CodeTaskContext) -> CodeTaskResult:
             break
 
     target_ids = target_ids[:3]
+    from .plot_quality import conditions_from_outputs
+    conditions = conditions_from_outputs(context.dependency_outputs,
+        [key for key in getattr(context, "task", {}).get("deps", ()) if key.startswith("S7.condition-")])
+    targets = [{"id": target_id, "event": {key: deepcopy(value) for key, value in _event_output(context.dependency_outputs, target_id).items() if key != "conditions"}} for target_id in target_ids]
+    if conditions:
+        targets.append({"conditions": conditions})
     compare_ids: list[str] = []
     additions: list[TaskSpec] = []
-    for number, target_id in enumerate(target_ids, start=1):
+    for number, target_id in enumerate(targets, start=1):
         compare_id = f"S8.compare-{event_id}-k{number}"
         additions.append(
             TaskSpec(
@@ -91,16 +97,8 @@ def story_s8_plan(context: CodeTaskContext) -> CodeTaskResult:
     output = {
         "slot": event_id,
         "comparison_targets": target_ids,
-        "current": deepcopy(current_output),
-        "targets": [
-            {
-                "id": target_id,
-                "event": deepcopy(
-                    _event_output(context.dependency_outputs, target_id)
-                ),
-            }
-            for target_id in target_ids
-        ],
+        "current": {key: deepcopy(value) for key, value in current_output.items() if key != "conditions"},
+        "targets": targets,
     }
     # S7 invalidation causes this plan and its comparison/judge descendants to
     # be re-run.  The descendant task records remain in the DAG, so reuse them
@@ -284,3 +282,22 @@ def _who(output: Mapping[str, Any], event_id: str) -> list[str]:
 
 
 __all__ = ["story_s8_judge", "story_s8_plan"]
+
+
+def story_s8_detail_judge(context: CodeTaskContext) -> CodeTaskResult:
+    """Retry only the offending beat, retaining all earlier accepted beats."""
+    event_id, beat_id = context.task["index"]
+    target = f"S7.detail-{event_id}-{beat_id}"
+    judgements = context.inputs.get("judgement", {})
+    if not isinstance(judgements, Mapping):
+        judgements = {}
+    yes = [value for value in judgements.values() if isinstance(value, Mapping) and value.get("answer") == "yes"]
+    if not yes:
+        warnings = [] if judgements else [f"{target}: 場面の品質判定が未定"]
+        return CodeTaskResult(output={"passed": True}, manifest_updates={"warnings": warnings} if warnings else {})
+    count, warnings = _s7_invalidation_state(context, target)
+    reason = "／".join(str(value.get("reason", "品質不合格")) for value in yes)
+    if count is None or count < _S7_MAX_INVALIDATIONS:
+        return CodeTaskResult(output={"passed": False}, invalidations=[(target, reason)])
+    warning = f"{target}: 場面の品質不合格が無効化上限に達したため、最後の出力を採用：{reason}"
+    return CodeTaskResult(output={"passed": False}, manifest_updates={"warnings": [warning]} if warning not in warnings else {})

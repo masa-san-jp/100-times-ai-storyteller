@@ -101,7 +101,7 @@ _PROPER_NOUN_PATTERNS = (
         r"(?:王国|帝国|教団|国|町|村|市|島|山|川|会|社|家|様|氏)"
     ),
 )
-_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete"})
+_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete", "no_story_metadata", "no_repeated_scene"})
 _COMPLETE_ENDINGS = frozenset("。．.！!？?」』）)】…")
 _DEFAULT_HARNESS_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA_CACHE: dict[
@@ -334,6 +334,17 @@ def _run_check(
     common_words_path: str | Path | None,
     registered_names: Sequence[str] = (),
 ) -> tuple[list[str], list[str]]:
+    if name == "no_story_metadata":
+        from .plot_quality import prose_errors
+        return [error for text in body_texts(output) for error in prose_errors(text)], []
+    if name == "no_repeated_scene":
+        from .plot_quality import similarity
+        previous = inputs.get("previous_scene")
+        if isinstance(output, str) and isinstance(previous, str) and len(previous) >= 80:
+            threshold = _load_phrase_threshold(harness_root)
+            if similarity(output[:600], previous) >= threshold:
+                return ["no_repeated_scene: 直前の場面を語り直さず、担当部分から続けてください"], []
+        return [], []
     if name == "no_copy_from_inputs":
         root = Path(harness_root) if harness_root is not None else _DEFAULT_HARNESS_ROOT
         settings = load_and_validate_yaml(
@@ -1106,3 +1117,9 @@ def _format_validation_error(error: ValidationError) -> str:
         f"[{part}]" if isinstance(part, int) else f".{part}" for part in error.path
     )
     return f"{location.lstrip('.') or '<root>'}: {error.message}"
+
+
+def _load_phrase_threshold(harness_root: str | Path | None) -> float:
+    root = Path(harness_root) if harness_root is not None else _DEFAULT_HARNESS_ROOT
+    with (root / "tables" / "dedup.yaml").open(encoding="utf-8") as stream:
+        return float(yaml.safe_load(stream)["near_duplicate_threshold"])

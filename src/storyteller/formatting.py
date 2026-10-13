@@ -243,34 +243,63 @@ def make_handlers(
         plan = context.inputs["plan"]
         part = next(item for item in plan["parts"] if item["id"] == part_id)
         write = f2_id(part_id, name, plan["continuation"])
-        body = context.dependency_outputs[write]
+        body = context.dependency_outputs.get(write)
+        if body is None:
+            _require_skipped(context.run_dir, write)
+            # Exhausting submission attempts skips F2 before F4 ever sees a
+            # body. There is nothing to invalidate; F3 supplies （未定）.
+            reason = "本文が省略されたため検証できません"
+            return CodeTaskResult(
+                output={"part": part_id, "passed": False, "failures": [reason]},
+                manifest_updates={"warnings": [f"{verify_id(part_id, name)}: {reason}"]},
+            )
         failures = check_body(body, part, plan["code_checks"], root)
         warnings: list[str] = []
+        quality_only = all(error.startswith("no_story_metadata:") for error in failures)
         for number, question in enumerate(plan["questions"], start=1):
             judgement = context.dependency_outputs.get(judge_id(part_id, number, name))
             if judgement is None:
                 warnings.append(f"{verify_id(part_id, name)}: 質問{number}の判定がないため確認できていません")
             elif judgement["answer"] == "yes":
                 failures.append(f"質問「{question}」に該当：{judgement['reason']}")
+                quality_only = quality_only and question.startswith(("確定した筋の条件", "同じ行動や結果"))
         passed = not failures
         if not passed:
-            context.invalidate_task(write, "；".join(failures))
+            exhausted = False
+            run_dir = getattr(context, "run_dir", None)
+            if quality_only and run_dir is not None:
+                from .manifest import load_manifest
+                record = load_manifest(run_dir / "manifest.json")["tasks"][write]
+                # F2's existing invalidation limit is the durable boundary.
+                exhausted = record["invalidations"] >= 2
+            if exhausted:
+                warnings.append(f"{write}: 品質の不合格が無効化上限に達したため、最後の本文を採用：{'；'.join(failures)}")
+            else:
+                context.invalidate_task(write, "；".join(failures))
         return CodeTaskResult(
             output={"part": part_id, "passed": passed, "failures": failures},
             manifest_updates={"warnings": warnings} if warnings else {},
         )
 
-    def assemble(context: CodeTaskContext) -> dict[str, Any]:
+    def assemble(context: CodeTaskContext) -> CodeTaskResult:
         """F3: pour the unit texts into the template and write the file."""
 
         name = context.task["index"][0]
         selection, plan = context.inputs["selection"], context.inputs["plan"]
         story = read_story(context.run_dir, root)
         bodies: dict[str, list[str]] = {unit["id"]: [] for unit in plan["units"]}
+        warnings: list[str] = []
         for part in plan["parts"]:
-            text = context.dependency_outputs.get(f2_id(part["id"], name, plan["continuation"]))
+            write = f2_id(part["id"], name, plan["continuation"])
+            text = context.dependency_outputs.get(write)
             if not isinstance(text, str):
-                raise ValueError(f"本文がありません: {part['id']}")
+                _require_skipped(context.run_dir, write)
+                # task-model §6.7: 無効化・試行の上限に達して省略された単位は
+                # （未定）として示し、run は止めない（format-pipeline.md「F4 検証」）。
+                # Marp（スライド）形式では裸の文字列では見出し要件を満たせず
+                # F3 の check_deck が失敗するため、構文を満たす代替スライドにする。
+                text = _placeholder_body(plan)
+                warnings.append(f"{write}: 省略されたため本文を（未定）とした")
             bodies[part["unit"]].append(text.strip())
         units = [
             {**unit, "body": "\n\n".join(bodies[unit["id"]])} for unit in plan["units"]
@@ -283,7 +312,11 @@ def make_handlers(
         suffix = Path(selection["profile"]["template"]).suffix or ".txt"
         relative = f"formats/{name}/{name}{suffix}"
         atomic_write_text(context.run_dir / relative, text, encoding="utf-8")
-        return {"path": relative, "chars": len("".join(text.split()))}
+        output = {"path": relative, "chars": len("".join(text.split()))}
+        return CodeTaskResult(
+            output=output,
+            manifest_updates={"warnings": warnings} if warnings else {},
+        )
 
     return {
         "format_f0_select": select,
@@ -293,6 +326,29 @@ def make_handlers(
     }
 
 
+_UNDECIDED = "（未定）"
+
+
+def _require_skipped(run_dir: Path, task_id: str) -> None:
+    from .manifest import load_manifest
+
+    manifest = load_manifest(run_dir / "manifest.json")
+    if manifest["tasks"][task_id]["state"] != "skipped":
+        raise ValueError(f"省略されていないタスクの出力がありません: {task_id}")
+
+
+def _placeholder_body(plan: Mapping[str, Any]) -> str:
+    """A substitute for a skipped F2 body that still satisfies code checks.
+
+    Marp decks (``marp_syntax`` in ``code_checks``) require every slide to
+    start with a heading line (format-pipeline.md §4.2); a bare （未定）
+    would make F3's ``check_deck`` fail.  Other formats keep the plain text.
+    """
+    if format_slides.CHECK_NAME in plan["code_checks"]:
+        return f"# {_UNDECIDED}\n\n{_UNDECIDED}\n\n<!--\n{_UNDECIDED}\n-->"
+    return _UNDECIDED
+
+
 def build_plan(
     story: Mapping[str, Any], profile: Mapping[str, Any], repository_root: Path
 ) -> dict[str, Any]:
@@ -300,6 +356,9 @@ def build_plan(
 
     if profile["unit_mapping"] == reference_book.UNIT_MAPPING:
         return reference_book.build_reference_plan(story, profile, _role_names(repository_root))
+    from .plot_quality import unique_events
+    from .tables import load_table
+    story = {**story, "events": list(unique_events(story["events"], load_table("dedup", repository_root=repository_root)["near_duplicate_threshold"]))}
     low, high = profile["chars_per_event"]
     events = {event["id"]: event for event in story["events"]}
     order = {event_id: position for position, event_id in enumerate(events)}
@@ -345,6 +404,7 @@ def build_plan(
                 "id": part_id,
                 "unit": unit.id,
                 "event_ids": chunk,
+                "conditions": list(dict.fromkeys(condition for event_id in chunk for condition in events[event_id].get("conditions", []))),
                 "events": [{"id": event_id, "text": event_text(events[event_id], names)} for event_id in chunk],
                 "characters": [{"id": person, "text": describe(people[person], roles)} for person in who],
                 "min_chars": low * len(chunk),
@@ -372,7 +432,7 @@ def check_body(
 ) -> list[str]:
     """F4 code checks of one part.  Returns failure messages (empty = pass)."""
 
-    builtin: list[Any] = []
+    builtin: list[Any] = ["no_story_metadata"]
     for check in code_checks:
         if check == "min_chars":
             builtin.append({"min_chars": {"n": part["min_chars"]}})
