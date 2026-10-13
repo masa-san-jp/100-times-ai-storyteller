@@ -301,18 +301,39 @@ def _truncate_value_until_fit(
 
 
 def _input_char_count(definition: Mapping[str, Any], values: Mapping[str, Any]) -> int:
-    return _char_len(_render_input_body(definition, values))
+    return _char_len(_render_input_body(definition, values, display_order=False))
 
 
 def input_char_count(
     definition: Mapping[str, Any], values: Mapping[str, Any]
 ) -> int:
-    """Return the NFC character count of the rendered input section."""
+    """Count the input budget in definition order, independent of display order."""
     return _input_char_count(definition, values)
 
 
+
+def _input_slot_order(
+    definition: Mapping[str, Any], slots: Mapping[str, Any], *, display_order: bool,
+) -> Sequence[str]:
+    card = definition.get("card", {})
+    if not isinstance(card, Mapping) or "input_order" not in card:
+        return list(slots)
+    order = card["input_order"]
+    if not isinstance(order, list) or any(not isinstance(name, str) for name in order):
+        raise TaskCardError("card.input_order must be a string array")
+    if len(set(order)) != len(order):
+        raise TaskCardError("card.input_order has duplicate keys")
+    unknown = set(order) - slots.keys()
+    if unknown:
+        raise TaskCardError("card.input_order has unknown keys: " + ", ".join(sorted(unknown)))
+    missing = slots.keys() - set(order)
+    if missing:
+        raise TaskCardError("card.input_order has missing keys: " + ", ".join(sorted(missing)))
+    return order if display_order else list(slots)
+
+
 def _render_input_body(
-    definition: Mapping[str, Any], values: Mapping[str, Any]
+    definition: Mapping[str, Any], values: Mapping[str, Any], *, display_order: bool = True,
 ) -> str:
     lines: list[str] = []
     slots = definition.get("inputs", {})
@@ -321,7 +342,8 @@ def _render_input_body(
     material, instructions = split_card_inputs(values)
     grouped = bool(instructions) or str(definition.get("id", "")).startswith("S")
     last_heading = None
-    for name, slot in slots.items():
+    for name in _input_slot_order(definition, slots, display_order=display_order):
+        slot = slots[name]
         for heading, group in (("物語の素材", material), ("作り方の指示", instructions)):
             if name not in group:
                 continue

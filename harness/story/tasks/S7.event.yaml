@@ -1,5 +1,5 @@
 id: S7.event
-version: 16
+version: 17
 kind: llm
 element: text
 inputs:
@@ -86,6 +86,22 @@ output: text
 candidates: 3
 select_candidate: least_similar
 card:
+  input_order:
+  - conditions
+  - previous_result
+  - object
+  - characters
+  - world_sections
+  - conflict
+  - climax
+  - theme
+  - glossary
+  - event_field
+  - decided_fields
+  - stage_definition
+  - stage_guidance
+  - required_events
+  - absent_role_note
   material_rule: 入力にない人物・物・設定・事実を加えない。入力の素材から、手順が求める当段階の局所行動・変化を具体化してよい。
   role: 局所文脈から指定された出来事の項目1つだけを書く。
   steps:

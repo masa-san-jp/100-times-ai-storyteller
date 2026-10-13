@@ -72,4 +72,4 @@ def test_s7_material_rule_replaces_only_one_footer_line():
     assert '入力に書かれていないことを付け加えない。' not in card
     assert '灯りを消したときだけ水門が開く。' in card
     assert inputs == original
-    assert definition['version'] == 16
+    assert definition['version'] == 17

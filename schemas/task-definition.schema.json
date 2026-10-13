@@ -309,6 +309,11 @@
         "material_rule": {
           "type": "string",
           "minLength": 1
+        },
+        "input_order": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
         }
       }
     },
