@@ -578,3 +578,119 @@ def test_exhausted_fact_is_skipped_and_dependents_proceed(tmp_path, bad):
     for task_id in dependents:
         assert manifest["tasks"][task_id]["state"] in {"ready", "blocked", "claimed"}
         assert manifest["tasks"][task_id]["state"] != "failed"
+
+
+def _joining_year_harness(tmp_path, age, limits=None):
+    from storyteller.new_run import create_story_orchestrator
+    from storyteller.orchestrator import CodeTaskResult, TaskSpec
+    from storyteller.world_facts import build_world_fact_specs
+
+    assignment, _ = _assembled()
+    assignment['world_sections'] = [{'id': 'people', 'name': '人々', 'prerequisites': []}]
+    assignment['world_fact_tasks'] = []
+    for item, item_age in [('people-001', age), ('people-002', 299)]:
+        for key, shape, bounds in [('age', 'integer', {'min': 0, 'max': 1000}),
+                                   ('affiliation_year', 'year', limits or {'min': 1, 'max': 300})]:
+            assignment['world_fact_tasks'].append({
+                'id': f'{item}-people.{key}', 'key': f'people.{key}', 'item_id': item,
+                'section_id': 'people', 'section': {'id': 'people', 'name': '人々', 'definition': '住民'},
+                'viewpoint': '所属', 'label': '年齢' if key == 'age' else '加入年', 'element': shape,
+                'range': bounds, 'refers': ['people.age'] if key == 'affiliation_year' else [],
+            })
+    assignment['world'] = {'place': {'id': 'place:t1', 'text': '水路の町'},
+                           'era': {'id': 'era:t1', 'text': '開拓の後'}}
+    sound = {'set_id': 'sound-01', 'description': '短い響き', 'sounds': ['カ', 'ナ', 'リ', 'オ', 'セ', 'ト']}
+    assignment['calendar']['name_sound'] = sound
+    assignment['world_tasks'] = [{'id': item, 'name_sound': sound, 'section_id': 'people'} for item in ['people-001', 'people-002']]
+    harness = create_story_orchestrator(tmp_path)
+    def assign(context):
+        return CodeTaskResult(assignment, add_tasks=build_world_fact_specs(context.task_id, assignment))
+    harness.code_handlers['story_s3_assign'] = assign
+    # Item names are ordinary prerequisite task records, populated directly.
+    specs = [TaskSpec('S2.merge', 'S2.merge'), TaskSpec('S3.assign', 'S3.assign', deps=('S2.merge',))]
+    specs.extend(TaskSpec(f'S4.item_name-{item}', 'S4.item_name', deps=('S3.assign',), index=(item,))
+                 for item in ['people-001', 'people-002'])
+    run_id = harness.create_run(seed=9, task_specs=specs)
+    harness._complete_task(run_id, 'S2.merge', {'pools': {}})
+    harness.advance(run_id)
+    harness._complete_task(run_id, 'S4.calendar_name', {'name': 'カナ暦', 'reading': 'カナ'})
+    for item, item_age in [('people-001', age), ('people-002', 299)]:
+        harness._complete_task(run_id, f'S4.item_name-{item}', {'name': 'カナ', 'reading': 'カナ'})
+        task_id = f'S4.fact-{item}-people.age'
+        if item_age is not None:
+            harness._complete_task(run_id, task_id, str(item_age))
+        else:
+            manifest = harness.load_run(run_id)
+            manifest['tasks'][task_id]['state'] = 'skipped'
+            harness._persist_manifest(harness.run_dir(run_id), manifest)
+    return harness, run_id
+
+
+@pytest.mark.parametrize('age,limits,expected', [
+    (32, None, {'min': 268, 'max': 300}),
+    (1000, None, {'min': 1, 'max': 300}),
+    (32, {'min': 280, 'max': 290}, {'min': 280, 'max': 290}),
+    (None, None, {'min': 1, 'max': 300}),
+])
+def test_joining_year_claim_and_submit_share_same_item_bounds(tmp_path, age, limits, expected):
+    harness, run_id = _joining_year_harness(tmp_path, age, limits)
+    task_id = 'S4.fact-people-001-people.affiliation_year'
+    task = harness.load_run(run_id)['tasks'][task_id]
+    assert 'S4.fact-people-001-people.age' in task['deps']
+    assert 'S4.fact-people-002-people.age' not in task['deps']
+    context = harness._build_context(harness.load_run(run_id), run_id, task_id)
+    assert context.inputs['bounds'] == expected
+    for value in [expected['min'] - 1, expected['max'] + 1]:
+        result = validate_output(_definition(), str(value), context.inputs, harness_root=ROOT)
+        assert not result.passed
+        claim = harness.claim_task(run_id, task_id, executor_id='test')
+        assert not harness.submit(claim['ticket'], str(value)).accepted
+    claim = harness.claim_task(run_id, task_id, executor_id='test')
+    assert harness.submit(claim['ticket'], str(expected['min'])).accepted
+
+
+def test_zero_age_joining_year_is_recorded_without_inference(tmp_path):
+    harness, run_id = _joining_year_harness(tmp_path, 0)
+    harness.advance(run_id)
+    task = harness.load_run(run_id)['tasks']['S4.fact-people-001-people.affiliation_year']
+    assert task['state'] == 'done' and task['tries'] == 0
+    assert (harness.task_dir(run_id, 'S4.fact-people-001-people.affiliation_year') / 'output.md').read_text(encoding='utf-8').strip() == '300'
+
+
+def test_joining_year_empty_intersection_fails_before_claim(tmp_path):
+    harness, run_id = _joining_year_harness(tmp_path, 32, {'min': 1, 'max': 267})
+    harness.advance(run_id)
+    task_id = 'S4.fact-people-001-people.affiliation_year'
+    task = harness.load_run(run_id)['tasks'][task_id]
+    assert task['state'] == 'failed'
+    assert 'range:' in task['error']
+    assert not (harness.task_dir(run_id, task_id) / 'claim.json').exists()
+
+
+def test_joining_year_selected_key_closure_retains_only_item_local_age(tmp_path):
+    from storyteller.world_facts import selected_key_entries
+
+    _, _, assignment = _planned(tmp_path)
+    selected = selected_key_entries(assignment['world_fact_tasks'], ['people.affiliation_year'], ROOT)
+    joining = [entry for entry in selected if entry['key'] == 'people.affiliation_year']
+    assert joining
+    for entry in joining:
+        ages = [row for row in selected if row['key'] == 'people.age' and row['item_id'] == entry['item_id']]
+        assert len(ages) == 1
+
+
+def test_year_assignment_intersects_catalog_range_without_changing_other_years():
+    from random import Random
+    from unittest.mock import patch
+    from storyteller.world_facts import assign_world_fact_tasks
+
+    sections = [{'id': 'people', 'kind': 'list', 'name': '人々', 'definition': '住民'},
+                {'id': 'future', 'kind': 'single', 'name': '未来', 'definition': '将来'}]
+    fields = [{'key': 'people.affiliation_year', 'element': 'year', 'section_id': 'people',
+               'range': {'min': 280, 'max': 400}},
+              {'key': 'future.year', 'element': 'year', 'section_id': 'future'}]
+    with patch('storyteller.world_facts.load_table', return_value={'facts': fields, 'item_facts': fields}):
+        entries = assign_world_fact_tasks(sections, [{'id': 'people-001', 'section_id': 'people'}],
+                                          [], Random(0), current_year=300, repository_root=ROOT)
+    assert entries[0]['range'] == {'min': 280, 'max': 300}
+    assert entries[1]['range'] == {'min': 301, 'max': 1300}
