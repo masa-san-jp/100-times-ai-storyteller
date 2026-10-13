@@ -112,3 +112,39 @@ def test_shared_action_with_a_different_condition_role_is_not_blanket_rejected()
     text = '帳簿を開いてはならず、開いたときは光が消えて記録を失う。'
     result = validate_output(task, text, inputs=inputs('prohibition'))
     assert result.passed, result.errors
+
+
+@pytest.mark.parametrize('kind', CONDITION_KINDS)
+def test_condition_maximum_input_and_retry_fit_original_model_context(kind):
+    from storyteller.cards import input_char_count, prepare_task_inputs
+    from storyteller.validation import load_yaml
+    task = definition()
+    source = inputs(kind)
+    source['world_sections'] = '界'
+    remaining = task['max_input_chars'] - input_char_count(task, source)
+    source['world_sections'] += '界' * remaining
+    fitted = prepare_task_inputs(task, inputs=source)
+    assert input_char_count(task, fitted) == 2800
+    assert fitted['decided_conditions'] == source['decided_conditions']
+    card = generate_task_card(task, 'a' * 32, inputs=fitted, retry_reason='理' * 500)
+    assert '理' * 500 in card
+    profiles = load_yaml(ROOT / 'config/models.yaml')['models']
+    for model in profiles.values():
+        # Match the existing non-JSON task budget regression convention,
+        # retaining the unchanged full model output maximum.
+        assert 2 * len(card) + model['max_tokens'] <= model['context_length']
+
+
+@pytest.mark.parametrize('kind', CONDITION_KINDS)
+def test_condition_v2_cannot_reuse_v1_cache(tmp_path, kind):
+    from storyteller.cache import cache_key, lookup_cache, save_cache
+    task = definition()
+    source = inputs(kind)
+    old = cache_key(task['id'], 1, source, seed=7)
+    current = cache_key(task['id'], task['version'], source, seed=7)
+    assert current != old
+    save_cache(tmp_path, old, '旧条件の本文。')
+    assert lookup_cache(tmp_path, old) == (True, '旧条件の本文。')
+    assert lookup_cache(tmp_path, current) == (False, None)
+    save_cache(tmp_path, current, '指定された役割の新条件。')
+    assert lookup_cache(tmp_path, current) == (True, '指定された役割の新条件。')
