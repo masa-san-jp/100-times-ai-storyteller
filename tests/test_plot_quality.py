@@ -100,7 +100,7 @@ def test_conditions_are_compared_even_for_the_first_event():
         inputs={'slots': [{'id': 'e001', 'thread': 't001'}]},
         dependency_outputs={'S7.assemble-e001': event, 'S7.condition-e001-trigger': event['conditions'][0]})
     plan = story_s8_plan(context)
-    assert plan.output['targets'] == [{'conditions': event['conditions']}]
+    assert plan.output['targets'] == [{'comparison_kind': 'conditions', 'conditions': event['conditions']}]
     assert [t.type for t in plan.add_tasks] == ['S8.compare', 'S8.judge']
     assert 'conditions' not in plan.output['current']  # each condition appears once in the bounded card
     judgement = story_s8_judge(SimpleNamespace(task_id='S8.judge-e001', task={'index': ['e001']},

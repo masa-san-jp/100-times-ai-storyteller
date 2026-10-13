@@ -98,7 +98,7 @@ def test_comparison_preserves_both_max_length_valid_events():
     event = _event()
     event.update({name: "記" * 120 for name, value in event.items() if isinstance(value, str)})
     event["who"] = [f"c{i}" for i in range(1, 6)]
-    inputs = {"event_a": {"id": "e001", "event": event}, "event_b": {"id": "e002", "event": event}}
+    inputs = {"comparison_kind": "events", "event_a": {"comparison_kind": "events", "id": "e001", "event": event}, "event_b": {"id": "e002", "event": event}}
     assert _assert_fits("S8.compare", inputs) == inputs
 
 
