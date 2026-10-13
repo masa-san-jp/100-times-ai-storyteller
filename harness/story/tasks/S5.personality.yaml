@@ -1,5 +1,5 @@
 id: S5.personality
-version: 12
+version: 13
 kind: llm
 element: text
 inputs:

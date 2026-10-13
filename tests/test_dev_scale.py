@@ -96,7 +96,57 @@ def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path) -> N
     used_types = {task["type"] for task in tasks.values()}
     # F* (formatting) tasks are created by `st format`, not by a story run.
     assert llm_types <= used_types, sorted(llm_types - used_types)
-    assert len(tasks) < 400  # a few minutes with a real model (ADR-0009)
+    assert len(tasks) < 240  # a few minutes with a real model (ADR-0009)
+
+
+def test_dev_prose_bounds_do_not_change_normal_definitions(tmp_path: Path) -> None:
+    from copy import deepcopy
+    from storyteller.volume import dev_task_definition
+
+    harness = create_story_orchestrator(tmp_path / "data")
+    original = harness.task_definitions["S5.profile"]
+    snapshot = deepcopy(original)
+    dev, bounds = dev_task_definition(original, {"preset": "dev"}, ROOT)
+    normal, normal_bounds = dev_task_definition(original, {"preset": "short"}, ROOT)
+    assert bounds == [80, 160]
+    assert normal_bounds is None
+    assert normal is original and original == snapshot
+    checks = dev["validate"]["checks"]
+    assert next(c["min_chars"]["n"] for c in checks if "min_chars" in c) == 80
+    assert next(c["max_chars"]["n"] for c in checks if "max_chars" in c) == 160
+    assert dev["inputs"]["output_chars"]["required"] is True
+    # Identity and factual validation still apply to the smaller prose.
+    assert [c for c in checks if "character_identity" in c] == [
+        c for c in original["validate"]["checks"] if "character_identity" in c
+    ]
+
+
+def test_dev_source_allocation_has_one_task_per_paragraph(tmp_path: Path) -> None:
+    data_dir, run_id = _new_dev_run(tmp_path)
+    tasks = _manifest(data_dir, run_id)["tasks"]
+    sources = [task for task in tasks.values() if task["type"] == "S1.extract"]
+    assert len(sources) == 2
+    assert {tuple(task["index"]) for task in sources} == {("p001", "1"), ("p002", "1")}
+
+
+@pytest.mark.parametrize("length,accepted", [(14, False), (15, True), (60, True), (61, False)])
+def test_dev_catchphrase_validates_both_bounds(tmp_path: Path, length: int, accepted: bool) -> None:
+    from storyteller.validation import validate_output
+    from storyteller.volume import dev_task_definition
+
+    harness = create_story_orchestrator(tmp_path / "data")
+    original = harness.task_definitions["S5.catchphrase"]
+    dev, _ = dev_task_definition(original, {"preset": "dev"}, ROOT)
+    # Isolate the length checks; the full run exercises the retained semantic checks.
+    definition = dict(dev)
+    definition["validate"] = {"checks": [
+        check for check in dev["validate"]["checks"]
+        if isinstance(check, dict) and ("min_chars" in check or "max_chars" in check)
+    ]}
+    result = validate_output(definition, "あ" * (length - 1) + "。")
+    assert result.passed is accepted
+    assert not any(isinstance(check, dict) and "max_chars" in check
+                   for check in original["validate"]["checks"])
 
 
 def _test_bash() -> str | None:

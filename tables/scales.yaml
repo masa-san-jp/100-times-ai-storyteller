@@ -183,3 +183,26 @@ dev:
   world_sections: [place, people]
   viewpoints_per_section: 1
   list_item_count: 1
+  materials_per_paragraph: 1
+  world_facts_scope: described_viewpoints
+  character_fact_counts:
+    family: 1
+    timeline: 1
+    skills: 1
+  candidate_multiplier: 1
+  task_chars:
+    story_beat: [80, 160]
+    world_facet: [80, 160]
+    world_list_item: [80, 160]
+    character:
+      profile: [80, 160]
+      backstory: [80, 160]
+      relationship: [80, 160]
+      appearance: [80, 160]
+      personality: [80, 160]
+      values: [80, 160]
+      voice: [80, 160]
+      inner_conflict: [80, 160]
+      motive: [80, 120]
+      intro: [15, 50]
+      catchphrase: [15, 60]
