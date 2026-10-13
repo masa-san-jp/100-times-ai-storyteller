@@ -1,5 +1,5 @@
 id: S8.detail
-version: 4
+version: 5
 kind: llm
 element: judgement
 output: json
@@ -40,3 +40,4 @@ validate:
       field: reason
       n: 1
 max_input_chars: 3500
+max_output_tokens: 2048

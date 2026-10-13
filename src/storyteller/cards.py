@@ -88,6 +88,11 @@ def generate_task_card(
         )
 
     lines.extend(["", "## 出力形式"])
+    if "max_output_tokens" in task_definition:
+        maximum = task_definition["max_output_tokens"]
+        if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1:
+            raise TaskCardError("max_output_tokens must be a positive integer")
+        lines.append(f"生成上限：{maximum}トークン（モデル設定の上限が小さい場合はその値）。")
     if output == "json":
         lines.extend(
             [

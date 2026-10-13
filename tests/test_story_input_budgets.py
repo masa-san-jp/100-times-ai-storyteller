@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import json
+
 import pytest
 import yaml
 
+from storyteller.adapter import _without_string_constraints
 from storyteller.cards import generate_task_card, input_char_count
 from storyteller.character_facts import sheet_for_card
 from tests.test_character_facts import _output as _facts, _glossary
@@ -39,7 +42,14 @@ def _assert_fits(task_type, inputs):
         retry_reason="理" * 500, continuation_tail=tail, extend_to_min=tail is not None,
     )
     model = yaml.safe_load((ROOT / "config/models.yaml").read_text(encoding="utf-8"))["models"]["gpt-oss:20b"]
-    assert 2 * len(card) + model["max_tokens"] <= model["context_length"]
+    assert 2 * len(card) + min(model["max_tokens"], definition.get("max_output_tokens", model["max_tokens"])) <= model["context_length"]
+    if task_type == "S8.detail":
+        schema = json.loads((ROOT / definition["validate"]["schema"]).read_text(encoding="utf-8"))
+        # Include API JSON schema and conservative message-wrapper reservation.
+        wire_schema = json.dumps(_without_string_constraints(schema), ensure_ascii=False)
+        assert 2 * (len(card) + len(wire_schema) + 512) + min(
+            model["max_tokens"], definition["max_output_tokens"]
+        ) <= model["context_length"]
     return fitted
 
 
@@ -137,3 +147,25 @@ def test_relationship_keeps_counterpart_and_glossary_at_dev_scale_sizes():
     # The optional glossary is the first thing dropped under budget (task-model
     # §3.4); the fact sheet carries the glossary entries its own text needs.
     assert fitted["facts"]["glossary"]
+
+
+def test_detail_judge_preserves_inputs_at_maximum_budget_with_retry():
+    definition = _definition("S8.detail")
+    inputs = {"event": _event(), "body": "", "previous": "直前の場面。"}
+    remaining = definition["max_input_chars"] - input_char_count(definition, inputs)
+    inputs["body"] = "本" * remaining
+    assert input_char_count(definition, inputs) == 3500
+    assert _assert_fits("S8.detail", inputs) == inputs
+
+
+def test_detail_judge_valid_body_conditions_and_previous_fill_budget():
+    definition = _definition("S8.detail")
+    event = _event()
+    event["conditions"] = "扉を押すと灯りが点く。扉を開く前に鍵を回す。"
+    inputs = {"event": event, "body": "本" * 2499 + "。", "previous": ""}
+    remaining = definition["max_input_chars"] - input_char_count(definition, inputs)
+    assert remaining > 0
+    inputs["previous"] = "前" * (remaining - 1) + "。"
+    assert input_char_count(definition, inputs) == 3500
+    assert _assert_fits("S8.detail", inputs) == inputs
+    assert len(inputs["body"]) == 2500

@@ -93,6 +93,10 @@
       "minimum": 1,
       "default": 3000
     },
+    "max_output_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
     "candidates": {
       "type": "integer",
       "minimum": 1,
@@ -150,6 +154,7 @@
             {"required": ["card"]},
             {"required": ["validate"]},
             {"required": ["max_input_chars"]},
+            {"required": ["max_output_tokens"]},
             {"required": ["candidates"]},
             {"required": ["select_candidate"]},
             {"required": ["max_attempts"]},
