@@ -34,7 +34,7 @@ def test_only_selected_field_scope_is_card_instruction(field):
             assert scopes[other] not in card
     assert '灯りを消したときだけ水門が開く。' in card
     assert '閉じた水門の前まで到着した。' in card
-    assert definition['version'] == 14
+    assert definition['version'] == 15
     assert 'event_subject' in definition['validate']['checks']
 
 
@@ -130,7 +130,7 @@ def test_scope_key_presence_requires_all_eight_even_on_old_version(version):
         selected_event_steps(definition, {'event_field': EVENT_LABELS['what']})
 
 
-@pytest.mark.parametrize('version', [13, 14])
+@pytest.mark.parametrize('version', [13, 14, 15])
 def test_current_version_cannot_bypass_checks_by_removing_every_scope(version):
     from storyteller.event_fields import selected_event_steps
     definition = _load_definition()
@@ -138,3 +138,49 @@ def test_current_version_cannot_bypass_checks_by_removing_every_scope(version):
     definition['card']['steps'] = [step for step in definition['card']['steps'] if step.partition('：')[0] not in EVENT_FIELDS]
     with pytest.raises(ValueError, match='missing event field instruction'):
         selected_event_steps(definition, {'event_field': EVENT_LABELS['what']})
+
+
+@pytest.mark.parametrize('field', EVENT_FIELDS)
+def test_local_progress_uses_existing_materials_without_planning_other_stages(field):
+    definition = _load_definition()
+    source = event_source_for_card({'index': ('e001', field)}, 'S6.expand', {'slots': [_slot()]})
+    inputs = resolve_inputs(definition, outputs={'S6.expand': source}, index=('0', field))
+    inputs['previous_result'] = '閉じた水門の前まで到着した。'
+    inputs['conditions'] = [{'text': '灯りを消したときだけ水門が開く。'}]
+    card = generate_task_card(definition, 'progress', inputs=inputs)
+    assert '当段階の局所行動・変化を具体化する' in card
+    assert '根拠のない人物・物・設定・外部の出来事を加えず' in card
+    assert '条件を変更せず、前後の段階・全体を計画しない' in card
+    assert '閉じた水門の前まで到着した。' in card
+    assert '灯りを消したときだけ水門が開く。' in card
+    scope = _scopes(definition)['what']
+    assert ('既存素材への観察・扱い・照合・選択' in card) == (field == 'what')
+    assert ('固定条件の発動行動を毎回再実行する指示ではない' in card) == (field == 'what')
+    assert ('作り方の指示：' + scope in card) == (field == 'what')
+
+
+def test_previous_v14_definition_keeps_selected_scope_and_separate_cache(tmp_path):
+    from copy import deepcopy
+    from storyteller.cards import prepare_task_inputs
+    from storyteller.event_fields import selected_event_steps
+    from storyteller.orchestrator import Orchestrator
+    from tests.test_story_s7_elements import _harness
+
+    harness, run = _harness(tmp_path)
+    claim = harness.claim_next(run, executor_id='test')
+    manifest = harness.load_run(run)
+    task = harness.validate_claim(claim['ticket'])['task_id']
+    context = harness._build_context(manifest, run, task)
+    fitted = prepare_task_inputs(context.definition, context.inputs)
+    old_definitions = deepcopy(harness.task_definitions)
+    from pathlib import Path
+    import yaml
+    old_definitions['S7.event'] = yaml.safe_load((Path(__file__).parent / 'fixtures/s7-event-v14.yaml').read_text(encoding='utf-8'))
+    old_harness = Orchestrator(tmp_path, old_definitions)
+    assert old_harness._cache_key_for_task(manifest, task, fitted) != harness._cache_key_for_task(manifest, task, fitted)
+    steps = selected_event_steps(old_definitions['S7.event'], fitted)
+    assert len(steps) == len(old_definitions['S7.event']['card']['steps']) - 7
+    old_card = generate_task_card(old_definitions['S7.event'], 'legacy-v14', inputs=fitted)
+    old_scopes = _scopes(old_definitions['S7.event'])
+    assert old_scopes['what'] in old_card
+    assert all(old_scopes[field] not in old_card for field in EVENT_FIELDS if field != 'what')
