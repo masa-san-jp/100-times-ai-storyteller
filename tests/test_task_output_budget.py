@@ -38,7 +38,7 @@ def test_llm_only_and_cache_version():
     code = {'id': 'S9.test', 'version': 1, 'kind': 'code', 'handler': 'test', 'max_output_tokens': 2048}
     with pytest.raises(SchemaValidationError):
         validate_document(code, ROOT / 'schemas/task-definition.schema.json')
-    assert task['version'] == 5
+    assert task['version'] == 6
     assert cache_key(task['id'], 4, {}, seed=1) != cache_key(task['id'], task['version'], {}, seed=1)
     assert '生成上限：2048トークン' in generate_task_card(task, 'a' * 32, inputs={'event': {}})
 
