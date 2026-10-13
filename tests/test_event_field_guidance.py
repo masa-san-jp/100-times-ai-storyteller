@@ -24,6 +24,8 @@ def test_only_selected_field_scope_is_card_instruction(field):
     assert 'event_field_instruction' not in inputs
     card = generate_task_card(definition, 'ticket', inputs=inputs)
     assert '作り方の指示：' + scopes[field] in card
+    assert '書式例「' in scopes[field]
+    assert '例の人物・物・時・場所は本文に持ち込まず、入力内の素材だけを使う。' in scopes[field]
     for step in definition['card']['steps']:
         if step.partition('：')[0] not in EVENT_FIELDS:
             assert step in card
@@ -32,7 +34,7 @@ def test_only_selected_field_scope_is_card_instruction(field):
             assert scopes[other] not in card
     assert '灯りを消したときだけ水門が開く。' in card
     assert '閉じた水門の前まで到着した。' in card
-    assert definition['version'] == 13
+    assert definition['version'] == 14
     assert 'event_subject' in definition['validate']['checks']
 
 
@@ -128,9 +130,11 @@ def test_scope_key_presence_requires_all_eight_even_on_old_version(version):
         selected_event_steps(definition, {'event_field': EVENT_LABELS['what']})
 
 
-def test_v13_cannot_bypass_checks_by_removing_every_scope():
+@pytest.mark.parametrize('version', [13, 14])
+def test_current_version_cannot_bypass_checks_by_removing_every_scope(version):
     from storyteller.event_fields import selected_event_steps
     definition = _load_definition()
+    definition['version'] = version
     definition['card']['steps'] = [step for step in definition['card']['steps'] if step.partition('：')[0] not in EVENT_FIELDS]
     with pytest.raises(ValueError, match='missing event field instruction'):
         selected_event_steps(definition, {'event_field': EVENT_LABELS['what']})
