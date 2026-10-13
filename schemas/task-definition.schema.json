@@ -305,6 +305,10 @@
         "output_example": {
           "type": "string",
           "minLength": 1
+        },
+        "material_rule": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

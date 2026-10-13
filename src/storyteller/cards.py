@@ -116,11 +116,16 @@ def generate_task_card(
                 raise TaskCardError("card.output_example must be a non-empty string")
             lines.extend(["例：", example])
 
+    material_rule = (
+        _required_string(card, "material_rule")
+        if "material_rule" in card
+        else "入力に書かれていないことを付け加えない。"
+    )
     lines.extend(
         [
             "",
             "## 守ること",
-            "- 入力に書かれていないことを付け加えない。",
+            "- " + material_rule,
             "- 出力形式以外の文章を書かない。",
             "- 日本語で書く（ID・列挙値を除く）。",
         ]
