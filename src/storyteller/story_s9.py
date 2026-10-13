@@ -404,8 +404,17 @@ def _assemble_events(slots: Sequence[Mapping[str, Any]], outputs: Mapping[str, A
         event.update({"id": event_id, "stage": {"id": slot["stage"]["id"], "name": slot["stage"]["name"]}, "thread": thread_id})
         if event_id == last_by_thread[thread_id]:
             event["foreshadowing"] = ""
+        if "conditions" in output:
+            event["conditions"] = deepcopy(output["conditions"])
         events.append(event)
-    return events
+    from .plot_quality import unique_events
+    threshold = load_table("dedup", repository_root=_REPOSITORY_ROOT)["near_duplicate_threshold"]
+    retained = list(unique_events(events, threshold))
+    for thread in last_by_thread:
+        last = next((event for event in reversed(retained) if event["thread"] == thread), None)
+        if last is not None:
+            last["foreshadowing"] = ""
+    return retained
 
 
 def _collect_indexed_field(

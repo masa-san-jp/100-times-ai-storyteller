@@ -202,6 +202,7 @@
         "result": {"type": "string", "minLength": 1},
         "emotion": {"type": "string", "minLength": 1},
         "foreshadowing": {"type": "string"},
+        "conditions": {"type": "array", "items": {"type": "string"}},
         "sources": {"$ref": "#/$defs/sources"}
       }
     }

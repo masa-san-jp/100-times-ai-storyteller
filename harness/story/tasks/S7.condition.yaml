@@ -1,0 +1,56 @@
+id: S7.condition
+version: 1
+kind: llm
+element: text
+output: text
+inputs:
+  condition_kind:
+    label: 確定する条件1つ
+    from: S6.expand
+    select: condition_kind
+    required: true
+  object:
+    label: 対象の事物
+    from: S3.assign
+    select: world.object
+    required: true
+  world_sections:
+    label: 局所的な世界の抜粋
+    from: S6.expand
+    select: slots[{slot}].world_sections
+    required: true
+    truncate: head
+  conflict:
+    label: 葛藤
+    from: S6.expand
+    select: slots[{slot}].plot.conflict
+    required: true
+  taboo:
+    label: 主人公の禁忌
+    from: S3.assign
+    select: cast[0].elements.taboo
+    required: true
+  decided_conditions:
+    label: 先に確定した条件（変更しない）
+    from: S7.condition
+    select: output
+    required: false
+card:
+  role: 指定された筋の条件1つを確定する。
+  steps:
+  - 対象の事物・世界・葛藤・禁忌から、指定された条件1つだけを具体的に書く。
+  - 先に確定した条件を変更せず、それと両立する条件にする。入力にない人物・固有名詞を加えない。
+  - 何をすると何が起こるか、または何が禁じられどの帰結になるかを1文で書く。
+  - 本文だけを160字以内で書く。内部 ID や構造の説明を書かない。
+validate:
+  checks:
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - no_story_metadata
+  - min_chars:
+      n: 1
+  - max_chars:
+      n: 160
+max_input_chars: 2800
+on_exhausted: skip

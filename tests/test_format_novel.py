@@ -22,7 +22,7 @@ def _event(number: int, thread: str, stage: str) -> dict[str, Any]:
     return {
         "id": f"e{number:03d}", "stage": {"id": stage, "name": stage}, "thread": thread,
         "when": "朝", "where": "水路", "who": ["c1"], "why": "確かめる", "intent": "進む",
-        "what": "歩いた", "result": "開いた", "emotion": "安心", "foreshadowing": "",
+        "what": f"{number}番目の区画を歩いた", "result": f"{number}番目の入口が開いた", "emotion": "安心", "foreshadowing": "",
         "sources": [],
     }
 

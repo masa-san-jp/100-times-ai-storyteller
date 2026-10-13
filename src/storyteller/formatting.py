@@ -255,15 +255,27 @@ def make_handlers(
             )
         failures = check_body(body, part, plan["code_checks"], root)
         warnings: list[str] = []
+        quality_only = all(error.startswith("no_story_metadata:") for error in failures)
         for number, question in enumerate(plan["questions"], start=1):
             judgement = context.dependency_outputs.get(judge_id(part_id, number, name))
             if judgement is None:
                 warnings.append(f"{verify_id(part_id, name)}: 質問{number}の判定がないため確認できていません")
             elif judgement["answer"] == "yes":
                 failures.append(f"質問「{question}」に該当：{judgement['reason']}")
+                quality_only = quality_only and question.startswith(("確定した筋の条件", "同じ行動や結果"))
         passed = not failures
         if not passed:
-            context.invalidate_task(write, "；".join(failures))
+            exhausted = False
+            run_dir = getattr(context, "run_dir", None)
+            if quality_only and run_dir is not None:
+                from .manifest import load_manifest
+                record = load_manifest(run_dir / "manifest.json")["tasks"][write]
+                # F2's existing invalidation limit is the durable boundary.
+                exhausted = record["invalidations"] >= 2
+            if exhausted:
+                warnings.append(f"{write}: 品質の不合格が無効化上限に達したため、最後の本文を採用：{'；'.join(failures)}")
+            else:
+                context.invalidate_task(write, "；".join(failures))
         return CodeTaskResult(
             output={"part": part_id, "passed": passed, "failures": failures},
             manifest_updates={"warnings": warnings} if warnings else {},
@@ -344,6 +356,9 @@ def build_plan(
 
     if profile["unit_mapping"] == reference_book.UNIT_MAPPING:
         return reference_book.build_reference_plan(story, profile, _role_names(repository_root))
+    from .plot_quality import unique_events
+    from .tables import load_table
+    story = {**story, "events": list(unique_events(story["events"], load_table("dedup", repository_root=repository_root)["near_duplicate_threshold"]))}
     low, high = profile["chars_per_event"]
     events = {event["id"]: event for event in story["events"]}
     order = {event_id: position for position, event_id in enumerate(events)}
@@ -389,6 +404,7 @@ def build_plan(
                 "id": part_id,
                 "unit": unit.id,
                 "event_ids": chunk,
+                "conditions": list(dict.fromkeys(condition for event_id in chunk for condition in events[event_id].get("conditions", []))),
                 "events": [{"id": event_id, "text": event_text(events[event_id], names)} for event_id in chunk],
                 "characters": [{"id": person, "text": describe(people[person], roles)} for person in who],
                 "min_chars": low * len(chunk),
@@ -416,7 +432,7 @@ def check_body(
 ) -> list[str]:
     """F4 code checks of one part.  Returns failure messages (empty = pass)."""
 
-    builtin: list[Any] = []
+    builtin: list[Any] = ["no_story_metadata"]
     for check in code_checks:
         if check == "min_chars":
             builtin.append({"min_chars": {"n": part["min_chars"]}})

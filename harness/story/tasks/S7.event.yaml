@@ -1,5 +1,5 @@
 id: S7.event
-version: 8
+version: 9
 kind: llm
 element: text
 inputs:
@@ -77,12 +77,18 @@ inputs:
     from: S7.event
     select: output
     required: false
+  conditions:
+    label: 確定した筋の条件（変更・追加しない）
+    from: S7.condition
+    select: output
+    required: false
 output: text
 candidates: 3
 select_candidate: least_similar
 card:
   role: 与えられた局所的な文脈から、入力で指定された出来事の項目1つだけを書く。
   steps:
+  - 確定した発動・禁止・解決条件を守り、入力にない条件を追加・反転・置換しない。本文に内部 ID と構造の説明を書かない。
   - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
   - 段階の定義と指針に従い、必須の出来事があれば、それを満たす項目の本文を書く。
   - 割り当て人物のID・名前・役・動機、選択された世界セクション、直前の結果だけを使い、入力にない人物や出来事を加えない。
@@ -92,6 +98,7 @@ card:
   - 「生成する項目」に指定された本文だけを1〜120字で書く。他の項目、項目名、説明は出力しない。
 validate:
   checks:
+  - no_story_metadata
   - no_copy_from_inputs
   - avoid_listed:
       table: tables/meta_terms.yaml

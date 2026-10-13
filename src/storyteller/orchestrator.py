@@ -3545,6 +3545,16 @@ def _source_outputs(
         slot = slot_definition.get("from")
         if not isinstance(slot, str) or slot == "input":
             continue
+        if slot == "S7.condition":
+            expected = [dependency for dependency in dependencies
+                        if manifest["tasks"][dependency]["type"] == slot]
+            if expected:
+                result[slot] = {
+                    _dependency_index_key(dependency, manifest["tasks"][dependency]):
+                    dependency_outputs.get(dependency, "（未定）")
+                    for dependency in expected
+                }
+            continue
         matching = [
             dependency
             for dependency in dependencies
@@ -3633,6 +3643,18 @@ def _source_outputs(
             source_value = fact_source_context(
                 dependency_outputs.get("S3.assign", {}), dependency_outputs, task,
             )
+        if task.get("type") == "S8.detail" and slot == "S7.assemble":
+            source_value = {key: {field: value[field] for field in ("what", "result", "conditions") if field in value}
+                for key, value in source_value.items()}
+        if task.get("type") == "S8.detail" and slot == "S7.detail":
+            event_id, beat_id = task["index"]
+            current_id = f"S7.detail-{event_id}-{beat_id}"
+            previous_id = f"S7.detail-{event_id}-b{int(beat_id[1:]) - 1}"
+            source_value = {"body": dependency_outputs.get(current_id, "（未定）"),
+                "previous": dependency_outputs.get(previous_id, "")[-600:]}
+        if task.get("type") == "S7.condition" and slot == "S6.expand":
+            from .plot_quality import CONDITION_LABELS
+            source_value = {**source_value, "condition_kind": CONDITION_LABELS[task["index"][1]]}
         if task.get("type") == "S7.event":
             from .story_s7 import event_source_for_card
             source_value = event_source_for_card(
