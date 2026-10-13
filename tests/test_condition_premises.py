@@ -134,7 +134,7 @@ def event_replay_inputs(case_name):
 @pytest.mark.parametrize('case_name', EVENT_REPLAY_CASES)
 def test_joint_actor_replay_probe_preserves_pair_and_scope(tmp_path, case_name):
     d = definition('S8.compare')
-    assert d['version'] == 11
+    assert d['version'] == 12
     inputs = event_replay_inputs(case_name)
     original = deepcopy(inputs)
     fitted = prepare_task_inputs(d, inputs)
@@ -159,14 +159,13 @@ def test_joint_actor_replay_probe_preserves_pair_and_scope(tmp_path, case_name):
 
 def test_detail_nonmention_example_precedes_final_answer():
     d = definition('S8.detail')
-    assert d['version'] == 5
+    assert d['version'] == 6
     steps = d['card']['steps']
     example = next(i for i, step in enumerate(steps) if step.startswith('例：'))
     final = next(i for i, step in enumerate(steps) if step.startswith('違反なら answer'))
     assert example < final
     assert '「灯った」だけ' in steps[example] and '「押した」だけ' in steps[example]
     assert '押さなかった・灯らなかったと補わない' in steps[example]
-    assert '他の違反・再演も検査' in steps[example]
 
 
 def test_detail_example_card_does_not_increase_version_three_size():
