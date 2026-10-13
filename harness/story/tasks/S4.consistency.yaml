@@ -1,5 +1,5 @@
 id: S4.consistency
-version: 1
+version: 2
 kind: llm
 element: judgement
 inputs:
@@ -29,6 +29,9 @@ card:
 validate:
   schema: schemas/tasks/S4.consistency.schema.json
   checks:
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
     - min_chars:
         field: reason
         n: 1

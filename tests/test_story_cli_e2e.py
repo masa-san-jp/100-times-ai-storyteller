@@ -519,7 +519,15 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             name for name in final_manifest["tasks"]
             if name.startswith(f"S4.section-{section_id}-")
         }
-        assert set(record["deps"]) == {"S3.assign", *facet_ids}
+        consistency_judge_ids = {
+            name for name, task in final_manifest["tasks"].items()
+            if task["type"] == "S4.consistency_judge"
+            and f"S4.section-{task['index'][0]}" in facet_ids
+        }
+        assert consistency_judge_ids
+        assert set(record["deps"]) == {"S3.assign", *facet_ids, *consistency_judge_ids}
+        assert all(final_manifest["tasks"][name]["state"] == "done"
+                   for name in consistency_judge_ids)
         assert record["state"] == "done"
     assert any(
         history["to"] == "blocked"
