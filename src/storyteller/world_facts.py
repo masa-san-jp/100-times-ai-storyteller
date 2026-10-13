@@ -69,11 +69,22 @@ def referred_entries(entry: Mapping[str, Any], entries: Sequence[Mapping[str, An
 
 
 def description_entries(world_task: Mapping[str, Any], entries: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return _description_entries(world_task, entries, all_viewpoints=False)
+
+
+def consistency_entries(world_task: Mapping[str, Any], entries: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return _description_entries(world_task, entries, all_viewpoints=True)
+
+
+def _description_entries(world_task: Mapping[str, Any], entries: Sequence[Mapping[str, Any]], *, all_viewpoints: bool) -> list[Mapping[str, Any]]:
     own = [entry for entry in entries if entry["section_id"] == world_task["section_id"]
            and (entry.get("item_id") == world_task["id"] if world_task["kind"] == "list"
-                else entry["viewpoint"] == world_task["viewpoint"])]
+                else all_viewpoints or entry["viewpoint"] == world_task["viewpoint"])]
     ids = {entry["id"] for entry in own}
-    for entry in list(own):
+    cursor = 0
+    while cursor < len(own):
+        entry = own[cursor]
+        cursor += 1
         for other in referred_entries(entry, entries):
             if other["id"] not in ids:
                 own.append(other)
@@ -270,6 +281,12 @@ def fact_source_context(assignment: Mapping[str, Any], outputs: Mapping[str, Any
                     or other["section_id"] in prerequisites]
         return {"previous": fact_lines(assignment, outputs, previous, include_items=True),
                 "referred": fact_lines(assignment, outputs, referred_entries(entry, entries), include_items=True)}
+    if task["type"] == "S4.consistency":
+        world_task = next(entry for entry in assignment["world_tasks"] if entry["id"] == index[0])
+        offset = (int(index[1][1:]) - 1) * 6
+        selected = consistency_entries(world_task, entries)[offset:offset + 6]
+        lines = fact_lines(assignment, outputs, selected, include_items=True)
+        return {"facts": lines if lines else "（未定）"}
     if task["type"] in {"S4.section", "S4.item"}:
         world_task = next(entry for entry in assignment["world_tasks"] if entry["id"] == index[0])
         return {"own": fact_lines(assignment, outputs, description_entries(world_task, entries))}

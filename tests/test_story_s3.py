@@ -14,7 +14,7 @@ from storyteller.story_s3 import (
     story_s3_assign,
 )
 from storyteller.story_s5 import story_s5_relationship_context
-from storyteller.world_facts import description_entries
+from storyteller.world_facts import description_entries, consistency_entries
 from storyteller.tables import load_table
 from storyteller.validation import validate_document
 from storyteller.volume import multiplier_for_preset
@@ -81,6 +81,8 @@ def _definitions(material_kind: str = "suppression") -> dict[str, dict[str, obje
         "S4.calendar_name": _llm_definition("S4.calendar_name"),
         "S4.calendar_epoch": _llm_definition("S4.calendar_epoch"),
         "S4.diversity": _code_definition("S4.diversity", "diversity"),
+        "S4.consistency": _llm_definition("S4.consistency"),
+        "S4.consistency_judge": _code_definition("S4.consistency_judge", "consistency"),
         "S5.relationship_context": _code_definition(
             "S5.relationship_context", "relationship_context"
         ),
@@ -408,7 +410,8 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
             for prerequisite in world_sections[section_id]["prerequisites"]
             for dependency in s4_by_section.get(prerequisite, [])
         ]
-        expected_deps = ["S3.assign", *prerequisite_ids]
+        expected_deps = ["S3.assign", *prerequisite_ids,
+                         *(f"S4.consistency_judge-{dependency.split('-', 1)[1]}" for dependency in prerequisite_ids)]
         key = task_id.removeprefix("S4.section-").removeprefix("S4.item-")
         entry = next(entry for entry in assignment["world_tasks"] if entry["id"] == key)
         expected_deps.extend(["S4.calendar_name", *(f"S4.fact-{field['id']}" for field in
@@ -420,6 +423,14 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
             assert tasks[name_id]["deps"] == ["S3.assign"]
             assert tasks[name_id]["index"] == tasks[task_id]["index"]
         assert tasks[task_id]["deps"] == expected_deps
+        judge = tasks[f"S4.consistency_judge-{key}"]
+        fields = consistency_entries(entry, assignment['world_fact_tasks'])
+        expected_checks = [f"S4.consistency-{key}-k{offset // 6 + 1}" for offset in range(0, len(fields), 6)]
+        assert judge['deps'] == ['S3.assign', task_id, *expected_checks]
+        for offset, check_id in zip(range(0, len(fields), 6), expected_checks):
+            assert tasks[check_id]['deps'] == ['S3.assign', task_id, 'S4.calendar_name',
+                *(f"S4.fact-{field['id']}" for field in fields[offset:offset + 6])]
+
 
     person_ids = [person["id"] for person in assignment["cast"]]
     counts_by_person = {
@@ -508,7 +519,8 @@ def test_s3_downstream_edges_match_the_phase_one_dag(tmp_path: Path) -> None:
     for section_id, facet_ids in s4_by_section.items():
         diversity_id = f"S4.diversity-{section_id}"
         if world_sections[section_id]["kind"] == "single":
-            assert tasks[diversity_id]["deps"] == ["S3.assign", *facet_ids]
+            assert tasks[diversity_id]["deps"] == ["S3.assign", *facet_ids,
+                *(f"S4.consistency_judge-{facet.split('-', 1)[1]}" for facet in facet_ids)]
             assert tasks[diversity_id]["index"] == [section_id]
         else:
             assert diversity_id not in tasks

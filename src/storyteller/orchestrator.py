@@ -2871,10 +2871,10 @@ def _apply_invalidation(
     current_count = int(target["invalidations"])
     if current_count >= max_invalidations:
         target["error"] = reason
-        # F2 follows format-pipeline「F4 検証」 at the invalidation limit;
-        # other tasks retain task-model §4.3's invalidation contract.
+        # F2 bodies and S4 descriptions follow their specified exhaustion policy.
         on_exhausted = (definition.get("on_exhausted", "skip")
-                        if target["type"] in {"F2.write", "F2.write_once"} else "fail")
+                        if target["type"] in {"F2.write", "F2.write_once", "S4.section", "S4.item"}
+                        else "fail")
         next_state = "failed" if on_exhausted == "fail" else "skipped"
         _force_task_state(manifest, task_id, next_state, at, reason=reason)
         if next_state == "skipped":

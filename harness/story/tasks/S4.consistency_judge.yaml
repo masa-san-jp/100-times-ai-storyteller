@@ -1,0 +1,4 @@
+id: S4.consistency_judge
+version: 1
+kind: code
+handler: story_s4_consistency_judge

@@ -300,6 +300,9 @@ def _fake_output(
         sentence = "人物は場面の状況を確認し、行動の結果を受け止めた。"
         return sentence + _filler_text(task_id, "場面の記述", 1500 - len(sentence))
 
+    if task_type == "S4.consistency":
+        return {"answer": "no", "reason": "確定した事実と両立する。"}
+
     if task_type == "S8.compare":
         event_a = inputs["event_a"].get("id", "conditions")
         event_b = inputs["event_b"]["id"]
@@ -523,7 +526,15 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             name for name in final_manifest["tasks"]
             if name.startswith(f"S4.section-{section_id}-")
         }
-        assert set(record["deps"]) == {"S3.assign", *facet_ids}
+        consistency_judge_ids = {
+            name for name, task in final_manifest["tasks"].items()
+            if task["type"] == "S4.consistency_judge"
+            and f"S4.section-{task['index'][0]}" in facet_ids
+        }
+        assert consistency_judge_ids
+        assert set(record["deps"]) == {"S3.assign", *facet_ids, *consistency_judge_ids}
+        assert all(final_manifest["tasks"][name]["state"] == "done"
+                   for name in consistency_judge_ids)
         assert record["state"] == "done"
     assert any(
         history["to"] == "blocked"
