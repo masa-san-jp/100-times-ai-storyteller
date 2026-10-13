@@ -8,7 +8,6 @@ import pytest
 import yaml
 
 from storyteller.adapter import _without_string_constraints
-from storyteller.story_s7 import EVENT_FIELD_INSTRUCTIONS
 from storyteller.cards import generate_task_card, input_char_count
 from storyteller.character_facts import sheet_for_card
 from tests.test_character_facts import _output as _facts, _glossary
@@ -91,7 +90,6 @@ def test_event_with_long_world_and_character_items_fits():
     world = [dict(section, body="\n".join(["面" * 1199 + "。"] * 10)) for section in slot["world_sections"]]
     _assert_fits("S7.event", {
         "event_field": "後の出来事への伏線",
-        "event_field_instruction": EVENT_FIELD_INSTRUCTIONS["foreshadowing"],
         "decided_fields": {field: "記" * 120 for field in ("what", "where", "when", "why", "intent", "result", "emotion")},
         "stage_definition": slot["stage"]["definition"], "stage_guidance": slot["stage"]["guidance"],
         "required_events": slot["required_events"], "absent_role_note": None,

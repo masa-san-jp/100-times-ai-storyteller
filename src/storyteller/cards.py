@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from storyteller.selectors import resolve_inputs
+from storyteller.event_fields import selected_event_steps
 from storyteller.story_quality import split_card_inputs
 
 
@@ -72,7 +73,10 @@ def generate_task_card(
         "",
         "## 手順",
     ]
-    steps = card.get("steps")
+    try:
+        steps = selected_event_steps(task_definition, rendered_slots)
+    except ValueError as exc:
+        raise TaskCardError(str(exc)) from exc
     if not isinstance(steps, Sequence) or isinstance(steps, (str, bytes)):
         raise TaskCardError("card.steps must be a non-empty sequence")
     for number, step in enumerate(steps, start=1):
