@@ -150,7 +150,24 @@ def prepare_task_inputs(
         )
     else:
         slot_values = dict(inputs)
-    return _fit_inputs(task_definition, _without_sources(slot_values))
+    slot_values = _without_sources(slot_values)
+    if task_definition.get("id") in {
+        f"S5.{name}" for name in (
+            "profile", "intro", "appearance", "personality", "values", "voice",
+            "inner_conflict", "backstory", "relationship", "motive", "catchphrase",
+        )
+    }:
+        character = slot_values.get("character")
+        if isinstance(character, Mapping) and isinstance(character.get("elements"), Mapping):
+            # Only assigned element provenance is model metadata. Other source
+            # fields may contain required story material and must survive.
+            elements = {
+                axis: {key: value for key, value in element.items() if key != "source"}
+                if isinstance(element, Mapping) else element
+                for axis, element in character["elements"].items()
+            }
+            slot_values["character"] = {**character, "elements": elements}
+    return _fit_inputs(task_definition, slot_values)
 
 
 def _without_sources(value: Any) -> Any:

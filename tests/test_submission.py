@@ -189,7 +189,9 @@ def test_extend_to_min_reserves_tail_budget_for_large_optional_input(tmp_path: P
     second = harness.claim_next(run_id, executor_id="worker")
     assert second is not None
     assert "これまでの出力の末尾" in second["card"]
-    assert json.loads((task_dir / "input.json").read_text(encoding="utf-8")) == inputs
+    refitted = json.loads((task_dir / "input.json").read_text(encoding="utf-8"))
+    assert len(refitted["context"]) > len(inputs["context"])
+    assert second["card"].split("## これまでの出力の末尾\n")[1] == "短い文。"
     assert harness.submit(second["ticket"], "さらに具体的に説明する文。" * 2).accepted
 
 
@@ -304,7 +306,7 @@ def test_continuation_budget_shortage_fails_before_claim(tmp_path: Path) -> None
     run_id = orchestrator.create_run(seed=1, input_data={"given": "あ" * 300})
     first = orchestrator.claim_next(run_id, executor_id="worker")
     assert first is not None
-    assert orchestrator.submit(first["ticket"], "途中", truncated=True).accepted
+    assert orchestrator.submit(first["ticket"], "途" * 1000, truncated=True).accepted
 
     assert orchestrator.claim_next(run_id, executor_id="worker-2") is None
     task = orchestrator.load_run(run_id)["tasks"]["D1.story"]
