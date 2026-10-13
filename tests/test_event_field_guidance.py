@@ -101,3 +101,36 @@ def test_unknown_requested_field_is_rejected():
     from storyteller.event_fields import selected_event_steps
     with pytest.raises(ValueError, match='unknown event_field'):
         selected_event_steps(_load_definition(), {'event_field': 'その他'})
+
+
+def test_actual_legacy_v11_card_keeps_its_original_steps():
+    from pathlib import Path
+    import yaml
+    from storyteller.event_fields import selected_event_steps
+
+    definition = yaml.safe_load((Path(__file__).parent / 'fixtures/s7-event-v11.yaml').read_text(encoding='utf-8'))
+    assert definition['version'] == 11
+    source = event_source_for_card({'index': ('e001', 'what')}, 'S6.expand', {'slots': [_slot()]})
+    inputs = resolve_inputs(definition, outputs={'S6.expand': source}, index=('0', 'what'))
+    assert selected_event_steps(definition, inputs) is definition['card']['steps']
+    card = generate_task_card(definition, 'legacy-ticket', inputs=inputs)
+    for number, step in enumerate(definition['card']['steps'], start=1):
+        assert f'{number}. {step}' in card
+
+
+@pytest.mark.parametrize('version', [12, 13])
+def test_scope_key_presence_requires_all_eight_even_on_old_version(version):
+    from storyteller.event_fields import selected_event_steps
+    definition = _load_definition()
+    definition['version'] = version
+    definition['card']['steps'] = ['what：' + _scopes(definition)['what']]
+    with pytest.raises(ValueError, match='missing event field instruction'):
+        selected_event_steps(definition, {'event_field': EVENT_LABELS['what']})
+
+
+def test_v13_cannot_bypass_checks_by_removing_every_scope():
+    from storyteller.event_fields import selected_event_steps
+    definition = _load_definition()
+    definition['card']['steps'] = [step for step in definition['card']['steps'] if step.partition('：')[0] not in EVENT_FIELDS]
+    with pytest.raises(ValueError, match='missing event field instruction'):
+        selected_event_steps(definition, {'event_field': EVENT_LABELS['what']})

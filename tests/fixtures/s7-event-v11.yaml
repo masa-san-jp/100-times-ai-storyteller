@@ -1,0 +1,115 @@
+id: S7.event
+version: 11
+kind: llm
+element: text
+inputs:
+  stage_definition:
+    label: 段階の定義
+    from: S6.expand
+    select: slots[{slot}].stage.definition
+    required: true
+  stage_guidance:
+    label: 段階の指針
+    from: S6.expand
+    select: slots[{slot}].stage.guidance
+    required: true
+  required_events:
+    label: 必須の出来事
+    from: S6.expand
+    select: slots[{slot}].required_events
+    required: true
+    truncate: head
+  absent_role_note:
+    label: 不在の役の注記
+    from: S6.expand
+    select: slots[{slot}].absent_role_note
+    required: true
+  object:
+    label: 象徴的な事物
+    from: S6.expand
+    select: slots[{slot}].object
+    required: true
+  characters:
+    label: 割り当て人物
+    from: S6.expand
+    select: slots[{slot}].characters
+    required: true
+    truncate: head
+  world_sections:
+    label: 選択された世界セクション
+    from: S6.expand
+    select: slots[{slot}].world_sections
+    required: true
+    truncate: head
+  previous_result:
+    label: 同じ筋の直前の出来事の結果
+    from: S7.assemble
+    select: output
+    required: false
+  conflict:
+    label: 筋の葛藤
+    from: S6.expand
+    select: slots[{slot}].plot.conflict
+    required: true
+  climax:
+    label: 筋のクライマックス
+    from: S6.expand
+    select: slots[{slot}].plot.climax
+    required: false
+  theme:
+    label: 解決すべき主題
+    from: S6.expand
+    select: slots[{slot}].theme
+    required: true
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
+  event_field:
+    label: 生成する項目
+    from: S6.expand
+    select: event_field
+    required: true
+  decided_fields:
+    label: 先に決まった項目
+    from: S7.event
+    select: output
+    required: false
+  conditions:
+    label: 確定した筋の条件（変更・追加しない）
+    from: S7.condition
+    select: output
+    required: false
+output: text
+candidates: 3
+select_candidate: least_similar
+card:
+  role: 与えられた局所的な文脈から、入力で指定された出来事の項目1つだけを書く。
+  steps:
+  - 「何が起きたか」と「結果」は、割り当て人物の名前を冒頭に置き、「は」または「が」で主語にする。共同主語は割り当て人物の名前だけを「と」か「、」でつなぐ。ほかの人物への言及はできるが、主語を別人物に置き換えない。
+  - 確定した発動・禁止・解決条件は不変の因果制約であり、今の段階ですべて発動・解決する命令ではない。条件を守り、入力にない条件を追加・反転・置換しない。本文に内部 ID と構造の説明を書かない。
+  - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
+  - 現在の段階の定義と指針に従い、必須の出来事があれば、それを満たす項目1つの本文を書く。解決行動は現在の段階の定義・指針が要求する場合に書く。
+  - 割り当て人物のID・名前・役・動機、選択された世界セクション、直前の結果だけを使い、入力にない人物や出来事を加えない。
+  - 不在の役の注記と象徴的な事物を反映する。クライマックスの条件が入力にある場合だけ、それと葛藤を反映し、解決すべき主題との関係を示す。
+  - 先に決まった項目が入力にある場合は、その内容を引き継ぎ、矛盾しない本文を書く。
+  - 場所は場所、時は時、理由は原因、意思は目標、感情は状態、伏線は後につながる手がかりを書く。他の項目の行動・結果全文で置き換えず、この出来事に固有の内容にする。人物の動機をそのまま書き写さない。
+  - 「生成する項目」に指定された本文だけを1〜120字で書く。他の項目、項目名、説明は出力しない。
+validate:
+  checks:
+  - no_story_metadata
+  - event_subject
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - min_chars:
+      n: 1
+  - max_chars:
+      n: 120
+  - no_new_proper_nouns:
+      mode: warn
+max_input_chars: 2800
+max_invalidations: 2
+continuation: false

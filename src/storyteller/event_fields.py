@@ -32,6 +32,8 @@ def selected_event_steps(definition: Mapping[str, Any], inputs: Mapping[str, Any
             if not body.strip():
                 raise ValueError(f"empty event field instruction: {key}")
             scopes[key] = body
+    if not scopes and definition.get("version", 0) < 13:
+        return steps
     missing = set(EVENT_FIELDS) - scopes.keys()
     if missing:
         raise ValueError("missing event field instruction: " + ", ".join(sorted(missing)))
