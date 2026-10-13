@@ -16,7 +16,7 @@ from .validation import validate_document
 from .volume import apply_volume_update, compute_character_volume, compute_initial_volume
 from .world_facts import (
     assign_world_fact_tasks, assign_calendar, build_world_fact_specs,
-    description_entries, consistency_entries, fact_ids_by_section,
+    description_entries, consistency_entries, fact_ids_by_section, selected_key_entries,
 )
 from .character_facts import assign_character_fact_tasks, initial_character_specs
 
@@ -111,6 +111,10 @@ def story_s3_assign(context: CodeTaskContext) -> CodeTaskResult:
         assignment["world_fact_tasks"] = [
             entry for entry in assignment["world_fact_tasks"] if entry["id"] in relevant_ids
         ]
+    if dev is not None and dev["world_facts_scope"] == "selected_keys":
+        assignment["world_fact_tasks"] = selected_key_entries(
+            assignment["world_fact_tasks"], dev["world_fact_keys"], repository_root
+        )
     assignment["character_fact_tasks"] = assign_character_fact_tasks(
         assignment["cast"], name_sets, context.random, repository_root,
         counts=dev["character_fact_counts"] if dev is not None else None,

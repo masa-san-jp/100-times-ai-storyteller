@@ -37,14 +37,37 @@ def assign_world_fact_tasks(
                          "item_id": item_id, "section": {
                              key: section[key] for key in ("id", "name", "definition")}}
                 if field["element"] == "year":
-                    entry["range"] = ({"min": current_year + 1, "max": current_year + 1000}
-                                      if section["id"] == "future" else {"min": 1, "max": current_year})
+                    limits = ({"min": current_year + 1, "max": current_year + 1000}
+                              if section["id"] == "future" else {"min": 1, "max": current_year})
+                    explicit = field.get("range", {})
+                    entry["range"] = {"min": max(limits["min"], explicit.get("min", limits["min"])),
+                                      "max": min(limits["max"], explicit.get("max", limits["max"]))}
                 if field["element"] == "name":
                     sound = random_source.choice(name_sets)
                     entry["name_sound"] = {"set_id": sound["id"], "description": sound["description"],
                                            "sounds": random_source.sample(sound["sounds"], 6)}
                 result.append(entry)
     return result
+
+
+def fact_assignment_for_card(assignment: Mapping[str, Any], outputs: Mapping[str, Any],
+                             task: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Resolve item-local joining-year bounds without changing saved assignment."""
+    entry = next(row for row in assignment["world_fact_tasks"] if row["id"] == task["index"][0])
+    if entry["key"] != "people.affiliation_year":
+        return assignment
+    age_entry = next((row for row in referred_entries(entry, assignment["world_fact_tasks"])
+                      if row["key"] == "people.age" and row.get("item_id") == entry.get("item_id")), None)
+    age_output = outputs.get(f"S4.fact-{age_entry['id']}") if age_entry is not None else None
+    if age_output is None:
+        return assignment
+    age = fact_value(age_entry, age_output)
+    current_year = assignment["calendar"]["current_year"]
+    limits = entry.get("range", {})
+    selected = {**entry, "range": {"min": max(1, current_year - age, limits.get("min", 1)),
+                                  "max": min(current_year, limits.get("max", current_year))}}
+    return {**assignment, "world_fact_tasks": [selected if row["id"] == entry["id"] else row
+                                               for row in assignment["world_fact_tasks"]]}
 
 
 def assign_calendar(random_source: Any, name_sets: Sequence[Mapping[str, Any]],
@@ -66,6 +89,28 @@ def referred_entries(entry: Mapping[str, Any], entries: Sequence[Mapping[str, An
     """Resolve item-local references to that item, and world references once."""
     return [other for other in entries if other["key"] in entry.get("refers", [])
             and (other.get("item_id") is None or other.get("item_id") == entry.get("item_id"))]
+
+
+def selected_key_entries(entries: Sequence[Mapping[str, Any]], keys: Sequence[str],
+                         repository_root: Path) -> list[Mapping[str, Any]]:
+    """Select configured facts and their item-local recursive reference closure."""
+    catalog = load_table("world_facts", repository_root=repository_root)
+    known = {row["key"] for row in (*catalog["facts"], *catalog["item_facts"])}
+    available = {row["key"] for row in entries}
+    invalid = set(keys) - known
+    unavailable = set(keys) - available
+    if invalid or unavailable:
+        raise ValueError(f"確認用の世界の事実キーが不正です: {sorted(invalid | unavailable)}")
+    selected = [row for row in entries if row["key"] in keys]
+    ids = {row["id"] for row in selected}
+    cursor = 0
+    while cursor < len(selected):
+        for other in referred_entries(selected[cursor], entries):
+            if other["id"] not in ids:
+                ids.add(other["id"])
+                selected.append(other)
+        cursor += 1
+    return [row for row in entries if row["id"] in ids]
 
 
 def description_entries(world_task: Mapping[str, Any], entries: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:

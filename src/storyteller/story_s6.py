@@ -712,6 +712,12 @@ def _build_downstream_tasks(
     context: CodeTaskContext, slots: Sequence[Mapping[str, Any]]
 ) -> list[TaskSpec]:
     parent_task_id = context.task_id
+    scale = getattr(context, "scale", None)
+    run_dir = getattr(context, "run_dir", None)
+    if not isinstance(scale, Mapping) and isinstance(run_dir, Path):
+        scale = load_manifest(run_dir / "manifest.json").get("scale")
+    candidate_count = (load_table("scales", repository_root=_REPOSITORY_ROOT)["dev"].get("event_candidates")
+                       if isinstance(scale, Mapping) and scale.get("preset") == "dev" else None)
     additions: list[TaskSpec] = []
     s7_ids_in_time_order: list[str] = []
     previous_by_thread: dict[str, str] = {}
@@ -741,7 +747,10 @@ def _build_downstream_tasks(
             previous_judge.replace("S8.judge-", "S7.assemble-", 1)
             if previous_judge is not None else None
         )
-        additions.extend(event_tasks(parent_task_id, event_id, deps, previous_event, conditions_by_thread[thread_id]))
+        additions.extend(event_tasks(
+            parent_task_id, event_id, deps, previous_event, conditions_by_thread[thread_id],
+            candidate_count=candidate_count,
+        ))
         s7_ids_in_time_order.append(s7_id)
         previous_by_thread[thread_id] = f"S8.judge-{event_id}"
 

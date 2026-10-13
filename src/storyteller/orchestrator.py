@@ -3664,6 +3664,9 @@ def _source_outputs(
             fact_index = task["index"][0]
             person_id = fact_index.split("-", 1)[0]
             source_value = {**source_value, fact_index: source_value[person_id]}
+        if slot == "S3.assign" and task.get("type") == "S4.fact":
+            from .world_facts import fact_assignment_for_card
+            source_value = fact_assignment_for_card(source_value, dependency_outputs, task)
         if slot == "S3.assign" and task.get("type") == "S5.fact":
             from .character_facts import character_entries, character_card_view
             person_id = task["index"][0].split("-", 1)[0]
