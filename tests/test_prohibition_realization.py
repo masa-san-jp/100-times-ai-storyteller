@@ -35,3 +35,13 @@ def test_public_prohibition_probe_preserves_inputs_and_budget(tmp_path, task, na
     (tmp_path / 'input.json').write_text(json.dumps(inputs, ensure_ascii=False), encoding='utf-8')
     (tmp_path / 'card.md').write_text(card, encoding='utf-8')
     assert not (tmp_path / 'output.json').exists()
+
+
+def test_compare_ability_example_uses_only_actual_inputs_for_reason():
+    d = definition('S8.compare')
+    assert d['version'] == 13
+    steps = '\n'.join(d['card']['steps'])
+    assert '「開く能力を得た」だけは no' in steps
+    assert '「開いた」もあれば yes' in steps
+    assert '例を素材・理由に使わない' in steps
+    assert 'reason はA/Bの食い違う' in steps

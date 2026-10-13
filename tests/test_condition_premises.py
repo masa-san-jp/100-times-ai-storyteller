@@ -134,7 +134,7 @@ def event_replay_inputs(case_name):
 @pytest.mark.parametrize('case_name', EVENT_REPLAY_CASES)
 def test_joint_actor_replay_probe_preserves_pair_and_scope(tmp_path, case_name):
     d = definition('S8.compare')
-    assert d['version'] == 12
+    assert d['version'] == 13
     inputs = event_replay_inputs(case_name)
     original = deepcopy(inputs)
     fitted = prepare_task_inputs(d, inputs)
@@ -148,7 +148,7 @@ def test_joint_actor_replay_probe_preserves_pair_and_scope(tmp_path, case_name):
     steps = d['card']['steps']
     replay = next(i for i, step in enumerate(steps) if step.startswith('events では矛盾と再演'))
     factual = next(i for i, step in enumerate(steps) if step.startswith('入力にない同時性'))
-    final = next(i for i, step in enumerate(steps) if step.startswith('矛盾または進展'))
+    final = next(i for i, step in enumerate(steps) if step.startswith('矛盾・進展ない再演は answer='))
     assert factual < replay < final
     assert '主体差があっても再演で yes' in steps[replay]
     assert '同じ帳簿で同じ記録を発見しただけ' in steps[replay]
