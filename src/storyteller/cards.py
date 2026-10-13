@@ -11,6 +11,7 @@ import yaml
 
 from storyteller.selectors import resolve_inputs
 from storyteller.event_fields import selected_event_steps
+from storyteller.plot_quality import selected_condition_steps
 from storyteller.story_quality import split_card_inputs
 
 
@@ -75,6 +76,8 @@ def generate_task_card(
     ]
     try:
         steps = selected_event_steps(task_definition, rendered_slots)
+        if task_definition.get("id") == "S7.condition":
+            steps = selected_condition_steps(task_definition, rendered_slots)
     except ValueError as exc:
         raise TaskCardError(str(exc)) from exc
     if not isinstance(steps, Sequence) or isinstance(steps, (str, bytes)):
