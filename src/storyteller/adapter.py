@@ -263,6 +263,23 @@ def effective_output_tokens(model: ModelConfig, max_output_tokens: int | None = 
     return min(model.max_tokens, max_output_tokens)
 
 
+def _ollama_card_content(card: str) -> str:
+    """Move a recognized card's transport ticket without changing its contents."""
+    first, separator, body = card.partition("\n")
+    if not separator or re.fullmatch(r"# タスク [^\s]+", first) is None:
+        return card
+    if not body.startswith("\n## あなたの役割\n"):
+        return card
+    lines = body.split("\n")
+    headings = ("## あなたの役割", "## 入力", "## 手順", "## 出力形式", "## 守ること")
+    if any(lines.count(heading) != 1 for heading in headings):
+        return card
+    positions = [lines.index(heading) for heading in headings]
+    if positions != sorted(positions):
+        return card
+    return body + "\n" + first
+
+
 class OllamaAdapter:
     """Small urllib-only client for Ollama's non-streaming chat API."""
 
@@ -287,7 +304,7 @@ class OllamaAdapter:
             raise AdapterError(f"json_mode が不正です: {mode}")
         payload: dict[str, Any] = {
             "model": self.model.name,
-            "messages": [{"role": "user", "content": card}],
+            "messages": [{"role": "user", "content": _ollama_card_content(card)}],
             "stream": False,
             "options": {
                 "temperature": self.model.temperature,
