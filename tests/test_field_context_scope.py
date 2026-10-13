@@ -20,7 +20,7 @@ def _previous_definition():
 def test_context_does_not_require_repeating_whole_event_in_every_field(field):
     definition = _load_definition()
     previous = _previous_definition()
-    assert definition['version'] == 18 and previous['version'] == 17
+    assert definition['version'] == 19 and previous['version'] == 17
     assert definition['inputs'] == previous['inputs']
     assert definition['validate'] == previous['validate']
     assert definition['card']['input_order'] == previous['card']['input_order']
