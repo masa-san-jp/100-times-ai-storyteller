@@ -99,6 +99,7 @@ def generate_repair_card(
     original_output: Any,
     reason: str,
     inputs: Mapping[str, Any],
+    max_chars_trimmed: bool = False,
 ) -> str:
     """Render the repair card for one failed attempt."""
     if not isinstance(ticket, str) or not ticket:
@@ -114,12 +115,19 @@ def generate_repair_card(
     )
     original = _elide_middle(unicodedata.normalize("NFC", original), _MAX_ORIGINAL_CHARS)
     reason = unicodedata.normalize("NFC", str(reason))
+    transform_note = "字数上限で文末まで切り詰めた後の検証結果です。" if max_chars_trimmed else ""
+
+    def limited_reason(limit: int) -> str:
+        if transform_note:
+            prefix = transform_note + "\n"
+            return prefix + _elide_middle(reason, limit - len(prefix))
+        return reason[:limit - 1] + "…" if len(reason) > limit else reason
+
     repeated_scene = "no_repeated_scene" in reason
-    if len(reason) > 500:
-        reason = reason[:499] + "…"
+    rendered_reason = limited_reason(500)
     lines = [
         f"# タスク {ticket}", "", "## あなたの役割", REPAIR_ROLE, "", "## 入力",
-        "### 元の出力", original, "### 不合格の理由", reason, "### 満たすべき条件",
+        "### 元の出力", original, "### 不合格の理由", rendered_reason, "### 満たすべき条件",
         *(f"- {condition}" for condition in repair_conditions(definition, inputs)),
     ]
     for name in ("conditions", "decided_conditions"):
@@ -142,14 +150,15 @@ def generate_repair_card(
         return len(unicodedata.normalize("NFC", "\n".join(lines[input_start:])))
 
     if input_size() > budget:
-        lines[reason_index] = reason[:159] + "…" if len(reason) > 160 else reason
+        lines[reason_index] = limited_reason(160)
         minimum_original = min(len(original), len(_OMITTED) + 2)
         allowance = budget - input_size() + len(original)
         if allowance < minimum_original and previous_index is not None:
             lines[previous_index] = lines[previous_index][-100:]
             allowance = budget - input_size() + len(original)
         if allowance < minimum_original:
-            lines[reason_index] = lines[reason_index][:63] + "…" if len(lines[reason_index]) > 64 else lines[reason_index]
+            lines[reason_index] = (limited_reason(64) if transform_note else
+                                   lines[reason_index][:63] + "…" if len(lines[reason_index]) > 64 else lines[reason_index])
             allowance = budget - input_size() + len(original)
         if allowance < minimum_original:
             raise InputBudgetError("修正カードの入力が予算を超える")

@@ -1556,6 +1556,10 @@ class Orchestrator:
                     original_output=repair["output"],
                     reason=str(repair.get("reason", retry_reason or "")),
                     inputs=card_inputs,
+                    max_chars_trimmed=(
+                        isinstance(repair.get("warnings"), list)
+                        and "字数の上限で切り詰め" in repair["warnings"]
+                    ),
                 ),
                 card_inputs,
             )
