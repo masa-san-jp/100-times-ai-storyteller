@@ -115,7 +115,7 @@ def generate_repair_card(
     )
     original = _elide_middle(unicodedata.normalize("NFC", original), _MAX_ORIGINAL_CHARS)
     reason = unicodedata.normalize("NFC", str(reason))
-    transform_note = "字数上限で文末まで切り詰めた後の検証結果です。" if max_chars_trimmed else ""
+    transform_note = "上限超過のため、文末まで切り詰めた後の検証結果です。" if max_chars_trimmed else ""
 
     def limited_reason(limit: int) -> str:
         if transform_note:
