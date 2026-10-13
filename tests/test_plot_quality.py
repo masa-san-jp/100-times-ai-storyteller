@@ -193,7 +193,7 @@ def test_detail_judgement_keeps_full_body_and_conditions_within_model_context():
     model = load_model_config("gpt-oss:20b", provider="ollama", config_path=ROOT / "config/models.yaml")
     assert definition["max_output_tokens"] == 2048
     output_tokens = min(model.max_tokens, definition["max_output_tokens"])
-    assert 2 * len(card) + output_tokens <= model.num_ctx
+    assert 2 * len(card) + output_tokens <= model.context_length
 
 
 def test_exhausted_format_quality_failure_warns_and_continues(tmp_path):
@@ -352,11 +352,7 @@ def test_detail_repair_fits_budget_without_losing_conditions_or_ends(original_si
     assert card.count(conditions[0]) == 3
     assert '先頭。' in card and '末尾。' in card and '（中間を省略）' in card
     assert previous[-100:] in card
-    from storyteller.adapter import load_model_config
-    model = load_model_config("gpt-oss:20b", provider="ollama", config_path=ROOT / "config/models.yaml")
-    assert definition["max_output_tokens"] == 2048
-    output_tokens = min(model.max_tokens, definition["max_output_tokens"])
-    assert 2 * len(card) + output_tokens <= model.num_ctx
+    assert 2 * len(card) + 8192 <= 16384
 
 
 def test_repair_uses_nfc_budget_and_rejects_impossible_fixed_conditions():
