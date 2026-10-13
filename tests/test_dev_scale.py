@@ -74,6 +74,10 @@ def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path) -> N
             task_id, task, _task_input(data_dir, run_id, task_id), send_comparison_yes=False
         )
         inputs = _task_input(data_dir, run_id, task_id)
+        from storyteller.volume import dev_task_definition
+        _, bounds = dev_task_definition(harness.task_definitions[task["type"]], {"preset": "dev"}, ROOT)
+        if bounds is not None:
+            assert inputs["output_chars"] == bounds
         definition = specialize_fact_definition(harness.task_definitions[task["type"]], inputs)
         if definition["output"] != "text":
             output = json.dumps(output, ensure_ascii=False)
@@ -97,6 +101,17 @@ def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path) -> N
     # F* (formatting) tasks are created by `st format`, not by a story run.
     assert llm_types <= used_types, sorted(llm_types - used_types)
     assert len(tasks) < 240  # a few minutes with a real model (ADR-0009)
+    for event in ('e001', 'e002', 'e003'):
+        assert {name for name in tasks if name.startswith(f'S7.event-{event}-what-c')} == {
+            f'S7.event-{event}-what-c1', f'S7.event-{event}-what-c2',
+        }
+        choice = json.loads((harness.task_dir(run_id, f'S7.select-{event}') / 'output.json').read_text(encoding='utf-8'))
+        assert choice['candidate'] in {'c1', 'c2'}
+        picked = (harness.task_dir(run_id, f"S7.event-{event}-what-{choice['candidate']}") / 'output.md').read_text(encoding='utf-8')
+        assert choice['text'] == picked
+        assembled = json.loads((harness.task_dir(run_id, f'S7.assemble-{event}') / 'output.json').read_text(encoding='utf-8'))
+        assert assembled['what'] == picked
+
 
 
 def test_dev_prose_bounds_do_not_change_normal_definitions(tmp_path: Path) -> None:
@@ -108,12 +123,12 @@ def test_dev_prose_bounds_do_not_change_normal_definitions(tmp_path: Path) -> No
     snapshot = deepcopy(original)
     dev, bounds = dev_task_definition(original, {"preset": "dev"}, ROOT)
     normal, normal_bounds = dev_task_definition(original, {"preset": "short"}, ROOT)
-    assert bounds == [80, 160]
+    assert bounds == [40, 80]
     assert normal_bounds is None
     assert normal is original and original == snapshot
     checks = dev["validate"]["checks"]
-    assert next(c["min_chars"]["n"] for c in checks if "min_chars" in c) == 80
-    assert next(c["max_chars"]["n"] for c in checks if "max_chars" in c) == 160
+    assert next(c["min_chars"]["n"] for c in checks if "min_chars" in c) == 40
+    assert next(c["max_chars"]["n"] for c in checks if "max_chars" in c) == 80
     assert dev["inputs"]["output_chars"]["required"] is True
     # Identity and factual validation still apply to the smaller prose.
     assert [c for c in checks if "character_identity" in c] == [
@@ -220,3 +235,17 @@ def test_windows_script_launcher_uses_git_bash_instead_of_wsl(tmp_path, monkeypa
     assert _test_bash() == str(bash)
     bash.unlink()
     assert _test_bash() is None
+
+
+@pytest.mark.parametrize('task_type', ['S4.section', 'S4.item', 'S5.profile', 'S5.motive', 'S7.detail'])
+def test_dev_short_bounds_match_card_and_validation(tmp_path, task_type):
+    from storyteller.volume import dev_task_definition
+    from storyteller.validation import validate_output
+    harness = create_story_orchestrator(tmp_path / 'data')
+    definition, bounds = dev_task_definition(harness.task_definitions[task_type], {'preset': 'dev'}, ROOT)
+    assert bounds == [40, 80]
+    assert any('40〜80字' in step for step in definition['card']['steps'])
+    checks = [check for check in definition['validate']['checks'] if 'min_chars' in check or 'max_chars' in check]
+    length_only = {**definition, 'validate': {'checks': checks}}
+    for length, accepted in ((39, False), (40, True), (69, True), (80, True), (81, False)):
+        assert validate_output(length_only, 'あ' * (length - 1) + '。').passed is accepted

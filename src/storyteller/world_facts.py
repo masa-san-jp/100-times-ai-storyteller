@@ -68,6 +68,28 @@ def referred_entries(entry: Mapping[str, Any], entries: Sequence[Mapping[str, An
             and (other.get("item_id") is None or other.get("item_id") == entry.get("item_id"))]
 
 
+def selected_key_entries(entries: Sequence[Mapping[str, Any]], keys: Sequence[str],
+                         repository_root: Path) -> list[Mapping[str, Any]]:
+    """Select configured facts and their item-local recursive reference closure."""
+    catalog = load_table("world_facts", repository_root=repository_root)
+    known = {row["key"] for row in (*catalog["facts"], *catalog["item_facts"])}
+    available = {row["key"] for row in entries}
+    invalid = set(keys) - known
+    unavailable = set(keys) - available
+    if invalid or unavailable:
+        raise ValueError(f"確認用の世界の事実キーが不正です: {sorted(invalid | unavailable)}")
+    selected = [row for row in entries if row["key"] in keys]
+    ids = {row["id"] for row in selected}
+    cursor = 0
+    while cursor < len(selected):
+        for other in referred_entries(selected[cursor], entries):
+            if other["id"] not in ids:
+                ids.add(other["id"])
+                selected.append(other)
+        cursor += 1
+    return [row for row in entries if row["id"] in ids]
+
+
 def description_entries(world_task: Mapping[str, Any], entries: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
     return _description_entries(world_task, entries, all_viewpoints=False)
 

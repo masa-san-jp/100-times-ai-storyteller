@@ -41,13 +41,15 @@ def event_source_for_card(
 
 
 def event_tasks(
-    parent: str, event_id: str, first_deps: Sequence[str], previous_event: str | None, conditions: Sequence[str] = ()
+    parent: str, event_id: str, first_deps: Sequence[str], previous_event: str | None, conditions: Sequence[str] = (), *, candidate_count: int | None = None
 ) -> list[TaskSpec]:
     """Keep every earlier field available, but only the previous event's result."""
     additions = []
     field_ids: list[str] = []
     previous_result = (previous_event,) if previous_event else ()
     count, _ = candidate_settings()
+    if candidate_count is not None:
+        count = candidate_count
     for field in EVENT_FIELDS:
         if field == "what" and count > 1:
             # ``what`` is generated ``count`` times with the same card; the
