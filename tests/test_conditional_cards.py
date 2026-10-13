@@ -137,5 +137,5 @@ def test_cards_keep_genuine_checks_and_only_add_scope_clarifications():
     assert event['max_input_chars'] == 2800 and event['candidates'] == 3
     assert {'max_chars': {'n': 120}} in event['validate']['checks']
     assert 'すべて発動・解決する命令ではない' in '\n'.join(event['card']['steps'])
-    assert '場所は場所、時は時、理由は原因' in '\n'.join(event['card']['steps'])
+    assert '指定項目の回答範囲だけを書く' in '\n'.join(event['card']['steps'])
     assert '現在の段階' in '\n'.join(event['card']['steps'])

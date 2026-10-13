@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from storyteller.story_s7 import EVENT_FIELD_INSTRUCTIONS
 from storyteller.cards import generate_task_card
 from storyteller.selectors import resolve_inputs
 from storyteller.validation import load_and_validate_yaml, validate_output
@@ -94,6 +95,7 @@ def test_s7_card_contains_only_local_slot_context() -> None:
     }
     inputs = {
         "event_field": "何が起きたか",
+        "event_field_instruction": EVENT_FIELD_INSTRUCTIONS["what"],
         "stage_definition": current["stage"]["definition"],
         "stage_guidance": current["stage"]["guidance"],
         "required_events": current["required_events"],
@@ -123,6 +125,7 @@ def test_s7_card_includes_climax_only_for_a_climax_stage() -> None:
     current = _slot()
     inputs = {
         "event_field": "何が起きたか",
+        "event_field_instruction": EVENT_FIELD_INSTRUCTIONS["what"],
         "stage_definition": current["stage"]["definition"],
         "stage_guidance": current["stage"]["guidance"],
         "required_events": current["required_events"],
@@ -164,7 +167,7 @@ def test_s7_input_selectors_use_s6_slot_and_previous_assembled_result() -> None:
     }
     resolved = resolve_inputs(
         definition,
-        {"S6.expand": {"slots": [slot], "event_field": "何が起きたか"}},
+        {"S6.expand": {"slots": [slot], "event_field": "何が起きたか", "event_field_instruction": EVENT_FIELD_INSTRUCTIONS["what"]}},
         index="e001",
     )
     assert "climax" not in resolved

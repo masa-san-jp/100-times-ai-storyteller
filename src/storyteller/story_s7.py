@@ -23,13 +23,31 @@ EVENT_LABELS = dict(zip(EVENT_FIELDS, (
 )))
 
 
+# Only the requested field's scope is exposed to the executor.
+EVENT_FIELD_INSTRUCTIONS = {
+    "what": "現在の段階の働きを満たす行動だけを書く。割り当て人物の名前を冒頭に置き、は・がで主語にする。共同主語は割り当て人物名をと・、でつなぐ。ほかの人物への言及はできるが主語を置き換えない。",
+    "where": "この出来事が起きる場所・位置だけを書く。完了した行動と結果全体を再述しない。",
+    "when": "この出来事の時点・時間的な関係だけを書く。完了した行動と結果全体を再述しない。",
+    "why": "先に決まった行動を引き起こす原因だけを書く。人物の動機をそのまま写さず、完了した行動と結果全体を再述しない。",
+    "intent": "行動前に人物が目指すことだけを書く。達成済みの変化にせず、完了した行動と結果全体を再述しない。",
+    "result": "先に決まった行動の後に確定する変化だけを書く。割り当て人物の名前を冒頭に置き、は・がで主語にする。共同主語は割り当て人物名をと・、でつなぐ。ほかの人物への言及はできるが主語を置き換えない。",
+    "emotion": "この出来事を受けた人物の感情状態だけを書く。完了した行動と結果全体を再述しない。",
+    "foreshadowing": "入力の物・言葉・状態に基づく未解消の手がかりだけを書く。入力にない将来の出来事を断定せず、完了した行動と結果全体を再述しない。",
+}
+
+
 def event_source_for_card(
     task: Mapping[str, Any], source: str, value: Any,
     dependency_outputs: Mapping[str, Any] | None = None,
 ) -> Any:
     """Bind the element index and strip internal task indexes from card inputs."""
     if source == "S6.expand":
-        return {**value, "event_field": EVENT_LABELS[task["index"][1]]}
+        field = task["index"][1]
+        return {
+            **value,
+            "event_field": EVENT_LABELS[field],
+            "event_field_instruction": EVENT_FIELD_INSTRUCTIONS[field],
+        }
     if source == "S7.event":
         decided = {}
         select_output = (dependency_outputs or {}).get(select_task_id(task["index"][0]))
