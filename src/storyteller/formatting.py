@@ -243,7 +243,16 @@ def make_handlers(
         plan = context.inputs["plan"]
         part = next(item for item in plan["parts"] if item["id"] == part_id)
         write = f2_id(part_id, name, plan["continuation"])
-        body = context.dependency_outputs[write]
+        body = context.dependency_outputs.get(write)
+        if body is None:
+            _require_skipped(context.run_dir, write)
+            # Exhausting submission attempts skips F2 before F4 ever sees a
+            # body. There is nothing to invalidate; F3 supplies （未定）.
+            reason = "本文が省略されたため検証できません"
+            return CodeTaskResult(
+                output={"part": part_id, "passed": False, "failures": [reason]},
+                manifest_updates={"warnings": [f"{verify_id(part_id, name)}: {reason}"]},
+            )
         failures = check_body(body, part, plan["code_checks"], root)
         warnings: list[str] = []
         for number, question in enumerate(plan["questions"], start=1):
@@ -260,17 +269,25 @@ def make_handlers(
             manifest_updates={"warnings": warnings} if warnings else {},
         )
 
-    def assemble(context: CodeTaskContext) -> dict[str, Any]:
+    def assemble(context: CodeTaskContext) -> CodeTaskResult:
         """F3: pour the unit texts into the template and write the file."""
 
         name = context.task["index"][0]
         selection, plan = context.inputs["selection"], context.inputs["plan"]
         story = read_story(context.run_dir, root)
         bodies: dict[str, list[str]] = {unit["id"]: [] for unit in plan["units"]}
+        warnings: list[str] = []
         for part in plan["parts"]:
-            text = context.dependency_outputs.get(f2_id(part["id"], name, plan["continuation"]))
+            write = f2_id(part["id"], name, plan["continuation"])
+            text = context.dependency_outputs.get(write)
             if not isinstance(text, str):
-                raise ValueError(f"本文がありません: {part['id']}")
+                _require_skipped(context.run_dir, write)
+                # task-model §6.7: 無効化・試行の上限に達して省略された単位は
+                # （未定）として示し、run は止めない（format-pipeline.md「F4 検証」）。
+                # Marp（スライド）形式では裸の文字列では見出し要件を満たせず
+                # F3 の check_deck が失敗するため、構文を満たす代替スライドにする。
+                text = _placeholder_body(plan)
+                warnings.append(f"{write}: 省略されたため本文を（未定）とした")
             bodies[part["unit"]].append(text.strip())
         units = [
             {**unit, "body": "\n\n".join(bodies[unit["id"]])} for unit in plan["units"]
@@ -283,7 +300,11 @@ def make_handlers(
         suffix = Path(selection["profile"]["template"]).suffix or ".txt"
         relative = f"formats/{name}/{name}{suffix}"
         atomic_write_text(context.run_dir / relative, text, encoding="utf-8")
-        return {"path": relative, "chars": len("".join(text.split()))}
+        output = {"path": relative, "chars": len("".join(text.split()))}
+        return CodeTaskResult(
+            output=output,
+            manifest_updates={"warnings": warnings} if warnings else {},
+        )
 
     return {
         "format_f0_select": select,
@@ -291,6 +312,29 @@ def make_handlers(
         "format_f3_assemble": assemble,
         "format_f4_verify": verify,
     }
+
+
+_UNDECIDED = "（未定）"
+
+
+def _require_skipped(run_dir: Path, task_id: str) -> None:
+    from .manifest import load_manifest
+
+    manifest = load_manifest(run_dir / "manifest.json")
+    if manifest["tasks"][task_id]["state"] != "skipped":
+        raise ValueError(f"省略されていないタスクの出力がありません: {task_id}")
+
+
+def _placeholder_body(plan: Mapping[str, Any]) -> str:
+    """A substitute for a skipped F2 body that still satisfies code checks.
+
+    Marp decks (``marp_syntax`` in ``code_checks``) require every slide to
+    start with a heading line (format-pipeline.md §4.2); a bare （未定）
+    would make F3's ``check_deck`` fail.  Other formats keep the plain text.
+    """
+    if format_slides.CHECK_NAME in plan["code_checks"]:
+        return f"# {_UNDECIDED}\n\n{_UNDECIDED}\n\n<!--\n{_UNDECIDED}\n-->"
+    return _UNDECIDED
 
 
 def build_plan(

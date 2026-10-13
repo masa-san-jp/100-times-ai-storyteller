@@ -4,6 +4,7 @@ import json
 import random
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -211,6 +212,8 @@ def _harness(tmp_path, *, age=30, with_place=True):
     if with_place:
         harness._complete_task(run_id, "S4.fact-place.location_name", {"name": "カナ", "reading": "カナ"})
     harness._add_tasks(run_id, "S3.assign", initial_character_specs("S3.assign", "c1", assignment))
+    if age is None:
+        return harness, run_id, assignment
     claim = harness.claim_task(run_id, "S5.fact-c1-age", executor_id="test")
     assert harness.submit(claim["ticket"], str(age)).accepted
     harness.advance(run_id)
@@ -248,12 +251,13 @@ def test_year_bounds_precomputed_after_age_and_sheet_is_assembled(tmp_path, age)
                 assert not (harness.task_dir(run_id, task_id) / "claim.json").exists()
 
 
-def _finish(harness, run_id):
+def _finish(harness, run_id, *, skipped=()):
     while True:
         manifest = harness.advance(run_id)
         ready = [(task_id, task) for task_id, task in manifest["tasks"].items() if task["kind"] == "llm" and task["state"] == "ready"]
         if not ready:
-            assert all(task["state"] == "done" for task in manifest["tasks"].values()), manifest
+            assert all(task["state"] == ("skipped" if task_id in skipped else "done")
+                       for task_id, task in manifest["tasks"].items()), manifest
             return
         task_id, task = ready[0]
         claim = harness.claim_task(run_id, task_id, executor_id="test")
@@ -289,6 +293,56 @@ def test_no_location_falls_back_to_one_registered_name_then_choice(tmp_path):
         assert any(entry["name"] == member["name"] and entry["kind"] == "人物" for entry in glossary)
     card = json.loads((harness.task_dir(run_id, "S5.fact-c1-residence") / "input.json").read_text(encoding="utf-8"))
     assert card["shape"] == "choice" and card["choices"][0]["name"]
+
+
+def _advance_until_ready(harness, run_id, target):
+    """Submit good answers for every ready task other than ``target``."""
+    while True:
+        manifest = harness.advance(run_id)
+        task = manifest["tasks"][target]
+        if task["kind"] != "llm" or task["state"] == "ready":
+            return
+        ready = [task_id for task_id, t in manifest["tasks"].items()
+                 if t["kind"] == "llm" and t["state"] == "ready" and task_id != target]
+        if not ready:
+            return
+        task_id = ready[0]
+        claim = harness.claim_task(run_id, task_id, executor_id="test")
+        inputs = json.loads((harness.task_dir(run_id, task_id) / "input.json").read_text(encoding="utf-8"))
+        if inputs["shape"] == "name":
+            reading = "".join(inputs["name_sound"]["sounds"][:2])
+            value = json.dumps({"name": reading, "reading": reading}, ensure_ascii=False)
+        elif inputs["shape"] == "choice":
+            value = inputs["choices"][-1]["id"]
+        elif inputs["shape"] in {"integer", "number"}:
+            value = str(inputs.get("bounds", {}).get("max", 170))
+        else:
+            value = "母" if inputs["label"] == "続柄" else "水路を点検する"
+        assert harness.submit(claim["ticket"], value).accepted
+
+
+def test_residence_is_undecided_when_birthplace_is_skipped(tmp_path):
+    # レビュー指摘2: 世界に地名がないとき、居住地の唯一の選択肢は出身地が
+    # 登録する予定の ID になる。出身地（S5.fact-c1-birthplace）が上限に
+    # 達して省略されると、その ID は用語集に登録されないので、居住地を
+    # その未登録 ID で確定させてはならない（task-model §6.7、ADR-0008）。
+    harness, run_id, _ = _harness(tmp_path, with_place=False)
+    task_id = "S5.fact-c1-birthplace"
+    _advance_until_ready(harness, run_id, task_id)
+    for _ in range(5):
+        claim = harness.claim_task(run_id, task_id, executor_id="test")
+        assert not harness.submit(claim["ticket"], '{"name": "x", "reading": "x"}').accepted
+    assert harness.load_run(run_id)["tasks"][task_id]["state"] == "skipped"
+    _finish(harness, run_id, skipped=(task_id, "S5.fact-c1-residence"))
+    assert harness.load_run(run_id)["tasks"]["S5.fact-c1-residence"]["state"] == "skipped"
+    assert harness.load_run(run_id)["status"] == "completed"
+    outputs = _accepted_outputs(harness, run_id)
+    sheet = assemble_character_sheet(outputs, "c1")
+    assert sheet.get("birthplace") is None
+    assert sheet.get("residence") is None
+    # 未登録 ID が残っていれば用語集に無く、以前は KeyError になっていた。
+    markdown = render_character_sheet(sheet, build_glossary(outputs))
+    assert "| 出身地 | （未定） |" in markdown and "| 居住地 | （未定） |" in markdown
 
 
 def test_single_option_choices_are_recorded_by_code_without_a_claim(tmp_path, monkeypatch):
@@ -511,3 +565,87 @@ def test_complete_sheet_fits_description_inputs_without_truncating_facts(item):
     assert all(key not in prepared["character"] for key in ("name_sound", "role_definition", "plot_context"))
     used = input_char_count(definition, prepared)
     assert used <= definition["max_input_chars"]
+
+
+def test_character_sheet_omits_skipped_facts_without_error(tmp_path):
+    # task-model §6.7: a skipped S5.fact leaves the sheet incomplete, not broken.
+    harness, run_id, _ = _harness(tmp_path)
+    _finish(harness, run_id)
+    outputs = _accepted_outputs(harness, run_id)
+    plan = outputs["S5.fact_plan-c1"]["facts"]
+    assert any(entry["key"] == "family.1.name" for entry in plan), "この件数のシードは家族1件目を前提とする"
+    for key in ("age", "affiliation", "timeline.1.event", "family.1.name", "skills.1"):
+        for entry in plan:
+            if entry["key"] == key:
+                outputs.pop(f"S5.fact-{entry['id']}", None)
+    sheet = assemble_character_sheet(outputs, "c1")
+    assert sheet.get("age") is None and sheet["birth_year"] is None
+    # task-model §6.7: 片方の欄だけ省略された行は消さず、欠けた欄を
+    # （未定）として残す（行ごと除外すると、合格した続柄・年が消える）。
+    assert all({"year", "event"} <= row.keys() for row in sheet["timeline"])
+    assert any(row["event"] == "（未定）" for row in sheet["timeline"])
+    assert any(member["name"] == "（未定）" for member in sheet["family"])
+    markdown = render_character_sheet(sheet, build_glossary(outputs))
+    assert "| 年齢（歳） | （未定） |" in markdown
+    assert "| 所属 | （未定） |" in markdown
+    assert "（未定）" in markdown
+
+
+def test_fact_plan_without_age_fact_still_plans_the_rest(tmp_path):
+    from storyteller.character_facts import story_s5_fact_plan
+    harness, run_id, assignment = _harness(tmp_path)
+    outputs = _accepted_outputs(harness, run_id)
+    outputs.pop("S5.fact-c1-age")
+    context = SimpleNamespace(task={"index": ["c1"], "deps": []}, task_id="S5.fact_plan-c1", outputs=outputs)
+    result = story_s5_fact_plan(context)
+    assert result.output["birth_year"] is None and result.add_tasks
+
+
+def test_generated_character_fact_repairs_escalates_and_skips(tmp_path):
+    from storyteller.orchestrator import ClaimError
+    from storyteller.manifest import write_manifest
+    from storyteller.repair import REPAIR_ROLE
+    harness, run_id, _ = _harness(tmp_path)
+    task_id = "S5.fact-c1-build"
+    claim = harness.claim_task(run_id, "S5.fact-c1-height_cm", executor_id="test")
+    assert harness.submit(claim["ticket"], "170").accepted
+    harness.task_definitions["S5.fact"]["max_attempts"] = 2
+    manifest = harness.load_run(run_id)
+    manifest["escalation"] = ["small", "large"]
+    write_manifest(harness.run_dir(run_id) / "manifest.json", manifest)
+    for executor in ("small", "large"):
+        claim = harness.claim_task(run_id, task_id, executor_id=executor)
+        assert not harness.submit(claim["ticket"], "あ" * 41).accepted
+        claim = harness.claim_task(run_id, task_id, executor_id=executor)
+        assert REPAIR_ROLE in claim["card"] and "40字以内" in claim["card"]
+        assert not harness.submit(claim["ticket"], "あ" * 41).accepted
+        if executor == "small":
+            task = harness.load_run(run_id)["tasks"][task_id]
+            assert task["executor"] == "large" and task["tries"] == 0
+            with pytest.raises(ClaimError):
+                harness.claim_task(run_id, task_id, executor_id="small")
+    manifest = harness.load_run(run_id)
+    assert manifest["tasks"][task_id]["state"] == "skipped"
+    assert manifest["status"] == "active"
+    assert (harness.task_dir(run_id, task_id) / "failure.md").exists()
+    # Remaining generated facts still assemble into a usable sheet.
+    _finish(harness, run_id, skipped=(task_id,))
+    assert harness.load_run(run_id)["status"] == "completed"
+    outputs = _accepted_outputs(harness, run_id)
+    sheet = assemble_character_sheet(outputs, "c1")
+    assert "（未定）" in render_character_sheet(sheet, build_glossary(outputs))
+
+
+def test_skipped_age_finishes_generated_character_fact_run(tmp_path):
+    harness, run_id, _ = _harness(tmp_path, age=None)
+    task_id = "S5.fact-c1-age"
+    for _ in range(5):
+        claim = harness.claim_task(run_id, task_id, executor_id="test")
+        assert not harness.submit(claim["ticket"], "成人").accepted
+    assert harness.load_run(run_id)["tasks"][task_id]["state"] == "skipped"
+    _finish(harness, run_id, skipped=(task_id,))
+    assert harness.load_run(run_id)["status"] == "completed"
+    outputs = _accepted_outputs(harness, run_id)
+    sheet = assemble_character_sheet(outputs, "c1")
+    assert sheet["birth_year"] is None
+    assert "（未定）" in render_character_sheet(sheet, build_glossary(outputs))

@@ -42,5 +42,7 @@ card:
     - 本文は完結した文で終える。
 max_input_chars: 9000
 continuation: true
-on_exhausted: fail
+# 試行・無効化の上限に達した単位は省略し、F3 でその箇所を（未定）として示す
+# （task-model §6.7、format-pipeline.md「F4 検証」）。run は止めない。
+on_exhausted: skip
 max_invalidations: 2

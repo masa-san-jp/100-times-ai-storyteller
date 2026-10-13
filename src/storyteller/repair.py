@@ -61,9 +61,9 @@ def repair_conditions(
             arguments = {}
         where = f"（{arguments['field']}）" if "field" in arguments else ""
         if name == "max_chars":
-            lines.append(f"{arguments.get('n')}字以内にする{where}。")
+            lines.append(f"{arguments.get('n')}字以内にする{where}。超えていれば、要点を残して短くする。")
         elif name == "min_chars":
-            lines.append(f"{arguments.get('n')}字以上にする{where}。")
+            lines.append(f"{arguments.get('n')}字以上にする{where}。足りなければ、元の内容を具体的に描写して書き足す。")
         elif name == "ends_complete":
             lines.append(f"文末を「。」などで完結させる{where}。")
     element = definition.get("element")
@@ -124,7 +124,7 @@ def generate_repair_card(
         )
     lines.extend([
         "", "## 守ること",
-        "- 元の出力にない内容を付け加えない。",
+        "- 元の出力にない事実・出来事・人物・固有名詞を付け加えない。",
         "- 出力形式以外の文章を書かない。",
         "- 日本語で書く（ID・列挙値を除く）。",
     ])
