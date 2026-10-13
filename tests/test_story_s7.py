@@ -143,7 +143,7 @@ def test_s7_card_includes_climax_only_for_a_climax_stage() -> None:
     climax_card = generate_task_card(definition, "climax", inputs=climax_inputs)
     assert "選択の結果を引き受ける。" in climax_card
     assert "### 筋のクライマックス" in climax_card
-    assert "クライマックスの条件が入力にある場合" in climax_card
+    assert "クライマックス条件は入力がある場合のみ" in climax_card
     assert "最後のスロット" not in climax_card
 
 
