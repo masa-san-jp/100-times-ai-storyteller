@@ -36,6 +36,18 @@ facts:
   element: text
   section_id: place
   viewpoint: 人物の行動を可能にする境界、規則、資源、危険
+- key: place.facility_status
+  label: 主要地点の設備の稼働状態
+  element: text
+  section_id: place
+  viewpoint: 地形・気候・光・音・匂いなど、人物が感じる環境
+  refers:
+  - place.location_name
+- key: place.terrain_kind
+  label: 地形の種類
+  element: text
+  section_id: place
+  viewpoint: 地形の種類・分布・標高
 - key: place.highest_elevation
   label: 最高地点の標高
   element: number
@@ -77,6 +89,13 @@ facts:
   element: name
   section_id: place
   viewpoint: 自然資源（鉱物、森林、淡水）
+- key: place.resource_kind
+  label: 主な資源の種類
+  element: text
+  section_id: place
+  viewpoint: 自然資源（鉱物、森林、淡水）
+  refers:
+  - place.resource_name
 - key: place.annual_output
   label: 主な資源の年間産出量
   element: number

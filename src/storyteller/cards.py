@@ -169,6 +169,9 @@ def _fit_inputs(
     if not isinstance(slots, Mapping):
         raise TaskCardError("task definition inputs must be a mapping")
     current = dict(values)
+    for name in ("conditions", "decided_conditions"):
+        if name in current and name in slots:
+            slots = {**slots, name: {**slots[name], "required": True}}
     missing_required = [
         name for name, slot in slots.items() if slot.get("required", False) and name not in current
     ]

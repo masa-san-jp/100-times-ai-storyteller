@@ -1536,6 +1536,14 @@ class Orchestrator:
             retry_reason = None
         repair = latest_repair_source(self.task_dir(run_id, task_id), task)
         if repair is not None:
+            if task["type"] in {"F2.write", "F2.write_once"}:
+                plan = context.dependency_outputs[f"F1.split-{task['index'][-1]}"]
+                part = next(item for item in plan["parts"] if item["id"] == task["index"][0])
+                definition = deepcopy(definition)
+                definition["validate"] = {"checks": [
+                    {check: {"n": part[check]}} if check in {"min_chars", "max_chars"} else check
+                    for check in plan["code_checks"] if check in {"min_chars", "max_chars", "ends_complete"}
+                ]}
             return (
                 generate_repair_card(
                     definition,
@@ -2006,6 +2014,18 @@ class Orchestrator:
                         fixed = fixed_range_value(context.definition, limits)
                     elif context.definition.get("element") == "choice":
                         fixed = fixed_choice_value(context.definition, context.inputs)
+                    if fixed is not None and task["type"] == "S5.fact":
+                        from .glossary import glossary_id
+                        skipped_names = {glossary_id(dependency, 0) for dependency, record in manifest["tasks"].items()
+                                         if record["type"] == "S5.fact" and record["state"] == "skipped"}
+                        if context.definition.get("element") == "choice" and fixed in skipped_names:
+                            reason = "選択肢の参照元が省略されたため未定"
+                            _set_task_state(manifest, task_id, "skipped", self._now(), reason=reason)
+                            task["error"] = reason
+                            manifest["warnings"].append(f"{task_id}: {reason}")
+                            _refresh_blocked_tasks(manifest, self._now())
+                            changed = completed = True
+                            continue
                     if fixed is not None:
                         atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
                         _write_submitted_output(self.task_dir(run_id, task_id), context.definition, fixed)
@@ -2111,7 +2131,7 @@ class Orchestrator:
                     name: slot for name, slot in definition["inputs"].items()
                     if name in {"shape", "bounds"}
                 }}
-            dependencies = _read_dependency_outputs(self.run_dir(run_id), prospective, task)
+            dependencies = _read_dependency_outputs(self.run_dir(run_id), prospective, task, strict=False)
             dependencies.update({key: value for key, value in (pending_outputs or {}).items()
                                  if key in spec.deps})
             sources = _source_outputs(prospective, task, range_definition, dependencies)
@@ -2655,6 +2675,17 @@ def _prepare_card_inputs(
     continuation actually becomes necessary.
     """
     budget = int(definition.get("max_input_chars", 3000))
+    choices = inputs.get("choices")
+    if (definition.get("id") == "S5.fact" and inputs.get("shape") == "choice"
+        and isinstance(choices, list)
+        and all(isinstance(choice, Mapping) and isinstance(choice.get("id"), str)
+                and isinstance(choice.get("name"), str) for choice in choices)):
+        # Use the existing [id] text rendering instead of repeating JSON keys
+        # for every registered organization. Keep names for choice parsing:
+        # every offered ID and name must survive fitting and validation.
+        inputs = {**inputs, "choices": [
+            {**choice, "text": choice["name"]} for choice in choices
+        ]}
     world_rows = inputs.get("world_facts")
     if (definition.get("id") == "S5.fact" and isinstance(world_rows, list)
         and definition.get("inputs", {}).get("world_facts", {}).get("truncate") == "tail"
@@ -2840,17 +2871,44 @@ def _apply_invalidation(
     current_count = int(target["invalidations"])
     if current_count >= max_invalidations:
         target["error"] = reason
-        _force_task_state(manifest, task_id, "failed", at, reason=reason)
+        # F2 bodies and S4 descriptions follow their specified exhaustion policy.
+        on_exhausted = (definition.get("on_exhausted", "skip")
+                        if target["type"] in {"F2.write", "F2.write_once", "S4.section", "S4.item"}
+                        else "fail")
+        next_state = "failed" if on_exhausted == "fail" else "skipped"
+        _force_task_state(manifest, task_id, next_state, at, reason=reason)
+        if next_state == "skipped":
+            manifest["warnings"].append(
+                f"{task_id}: 無効化の上限に達したため省略: {reason}"
+            )
+            _refresh_blocked_tasks(manifest, at)
         _update_run_status(manifest)
         _touch_manifest(manifest, at)
         write_manifest(run_dir / "manifest.json", manifest)
         return
 
     next_count = current_count + 1
+    # F4 validates the completed F2 body, outside submit(). Preserve that
+    # body before invalidation removes it so length failures can be repaired.
+    if target["type"] in {"F2.write", "F2.write_once"} and all(
+        error.startswith(("min_chars:", "max_chars:", "ends_complete:"))
+        for error in reason.split("；")
+    ):
+        directory = run_dir / "tasks" / task_id
+        body = read_task_output(directory, target["type"])
+        atomic_write_json(directory / "attempts" / f"{_next_attempt_number(directory / 'attempts')}.json", {
+            "output": body, "reason": reason, "errors": reason.split("；"),
+            "attempt": int(target["attempt"]) + 1, "tries": int(target["tries"]),
+            "at": at, "executor_id": next((event["executor_id"] for event in reversed(target["history"])
+                                             if event.get("executor_id")), "コード／未実行"),
+            "repairable": True,
+        })
     target["error"] = reason
     target["cache_key"] = None
     target["attempt"] = int(target["attempt"]) + 1
     target["invalidations"] = next_count
+    if target["type"] in {"F2.write", "F2.write_once"}:
+        target["continuation_step"] = 0
     _force_task_state(manifest, task_id, "ready", at, reason=reason)
 
     descendants = _dependent_closure(manifest, task_id)
@@ -2879,6 +2937,8 @@ def _apply_invalidation(
     write_manifest(run_dir / "manifest.json", manifest)
     for cleanup_id in cleanup_outputs:
         _remove_task_outputs(run_dir, cleanup_id)
+        if target["type"] in {"F2.write", "F2.write_once"}:
+            _remove_partial_output(run_dir / "tasks" / cleanup_id)
     for revoked_id in revoked_claims:
         _release_claim(
             run_dir,
@@ -3485,6 +3545,16 @@ def _source_outputs(
         slot = slot_definition.get("from")
         if not isinstance(slot, str) or slot == "input":
             continue
+        if slot == "S7.condition":
+            expected = [dependency for dependency in dependencies
+                        if manifest["tasks"][dependency]["type"] == slot]
+            if expected:
+                result[slot] = {
+                    _dependency_index_key(dependency, manifest["tasks"][dependency]):
+                    dependency_outputs.get(dependency, "（未定）")
+                    for dependency in expected
+                }
+            continue
         matching = [
             dependency
             for dependency in dependencies
@@ -3573,6 +3643,18 @@ def _source_outputs(
             source_value = fact_source_context(
                 dependency_outputs.get("S3.assign", {}), dependency_outputs, task,
             )
+        if task.get("type") == "S8.detail" and slot == "S7.assemble":
+            source_value = {key: {field: value[field] for field in ("what", "result", "conditions") if field in value}
+                for key, value in source_value.items()}
+        if task.get("type") == "S8.detail" and slot == "S7.detail":
+            event_id, beat_id = task["index"]
+            current_id = f"S7.detail-{event_id}-{beat_id}"
+            previous_id = f"S7.detail-{event_id}-b{int(beat_id[1:]) - 1}"
+            source_value = {"body": dependency_outputs.get(current_id, "（未定）"),
+                "previous": dependency_outputs.get(previous_id, "")[-600:]}
+        if task.get("type") == "S7.condition" and slot == "S6.expand":
+            from .plot_quality import CONDITION_LABELS
+            source_value = {**source_value, "condition_kind": CONDITION_LABELS[task["index"][1]]}
         if task.get("type") == "S7.event":
             from .story_s7 import event_source_for_card
             source_value = event_source_for_card(
@@ -3684,7 +3766,18 @@ def _read_dependency_outputs(
     run_dir: Path,
     manifest: Mapping[str, Any],
     task: Mapping[str, Any],
+    *,
+    strict: bool = True,
 ) -> dict[str, Any]:
+    """Read ``done`` dependencies' outputs from disk.
+
+    ``strict`` detects the real anomaly of a ``done`` task whose output file
+    is missing (as opposed to a ``skipped`` task, which legitimately has
+    none): it must not be read as "skipped" and quietly become （未定）.
+    ``_preflight_ranges`` passes ``strict=False`` because it marks tasks
+    ``done`` prospectively, before their output is written, and supplies
+    their value separately via ``pending_outputs``.
+    """
     outputs: dict[str, Any] = {}
     for task_id in task["deps"]:
         dependency = manifest["tasks"][task_id]
@@ -3695,6 +3788,8 @@ def _read_dependency_outputs(
         try:
             if output_json.is_file() or output_md.is_file():
                 outputs[task_id] = read_task_output(run_dir / "tasks" / task_id, dependency["type"])
+            elif strict:
+                raise CodeTaskError(f"完了したタスクの出力ファイルがありません: {task_id}")
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise CodeTaskError(f"タスク出力を読み込めません: {task_id}") from error
     return outputs

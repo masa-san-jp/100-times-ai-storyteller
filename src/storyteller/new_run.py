@@ -11,14 +11,14 @@ from .scale import derive_scale
 from .seed import generated_seed
 from .story_s2 import story_s2_merge, story_s2_plan
 from .story_s3 import story_s3_assign
-from .story_s4 import story_s4_diversity
+from .story_s4 import story_s4_diversity, story_s4_consistency_judge
 from .character_facts import story_s5_fact_plan
 from .formatting import load_format_task_definitions, make_handlers as make_format_handlers
 from .story_s5 import story_s5_relationship_context
 from .story_s6 import story_s6_expand
 from .story_s7 import story_s7_assemble
 from .story_s7_candidates import story_s7_select
-from .story_s8 import story_s8_judge, story_s8_plan
+from .story_s8 import story_s8_judge, story_s8_plan, story_s8_detail_judge
 from .story_s9 import story_s9_assemble
 from .tables import load_table
 from .validation import load_and_validate_yaml
@@ -158,6 +158,7 @@ def create_story_orchestrator(
             "story_s2_merge": story_s2_merge,
             "story_s3_assign": story_s3_assign,
             "story_s4_diversity": story_s4_diversity,
+            "story_s4_consistency_judge": story_s4_consistency_judge,
             "story_s5_fact_plan": story_s5_fact_plan,
             "story_s5_relationship_context": story_s5_relationship_context,
             "story_s6_expand": story_s6_expand,
@@ -165,6 +166,7 @@ def create_story_orchestrator(
             "story_s7_select": story_s7_select,
             "story_s8_judge": story_s8_judge,
             "story_s8_plan": story_s8_plan,
+            "story_s8_detail_judge": story_s8_detail_judge,
             "story_s9_assemble": story_s9_assemble,
         },
         harness_root=repository_root,

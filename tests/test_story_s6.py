@@ -194,7 +194,8 @@ def test_s6_adds_chronological_s7_s8_s9_dependencies() -> None:
             None,
         )
         if same_thread_previous is None:
-            assert len(s7.deps) == 1
+            assert len(s7.deps) == 4
+            assert all(dep.startswith("S7.condition-") for dep in s7.deps[1:])
         else:
             assert f"S8.judge-{same_thread_previous}" in s7.deps
             assert f"S7.assemble-{same_thread_previous}" in s7.deps

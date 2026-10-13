@@ -1,4 +1,4 @@
-"""Check opening diversity across all facets of one world section."""
+"""Check world description diversity and consistency with fixed facts."""
 
 from __future__ import annotations
 
@@ -62,3 +62,25 @@ def story_s4_diversity(context: CodeTaskContext) -> CodeTaskResult:
         invalidations=invalidations,
         manifest_updates={"warnings": warnings} if warnings else {},
     )
+
+
+def story_s4_consistency_judge(context: CodeTaskContext) -> CodeTaskResult:
+    """Retry contradictions or undecided checks; bounds are in the engine."""
+    body_id = next(task_id for task_id in context.task["deps"]
+                   if task_id.startswith(("S4.section-", "S4.item-")))
+    manifest = load_manifest(context.run_dir / "manifest.json")
+    if manifest["tasks"][body_id]["state"] == "skipped":
+        return CodeTaskResult(output={"passed": False, "undecided": True})
+    errors = []
+    for check_id in context.task["deps"]:
+        if not check_id.startswith("S4.consistency-"):
+            continue
+        judgement = context.dependency_outputs.get(check_id)
+        if judgement is None:
+            errors.append("事実との整合の判定が未定")
+        elif judgement["answer"] == "yes":
+            errors.append(judgement["reason"])
+    if errors:
+        return CodeTaskResult(output={"passed": False},
+                              invalidations=[(body_id, "事実との矛盾：" + "；".join(errors))])
+    return CodeTaskResult(output={"passed": True})

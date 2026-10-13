@@ -349,7 +349,7 @@ def test_f4_code_check_failure_invalidates_f2_with_the_reason(tmp_path: Path, du
     written = [task for task, _, _ in log if task == "F2.write-u01p1-dummy"]
     assert len(written) == 2
     retry_card = [card for task, card, _ in log if task == "F2.write-u01p1-dummy"][1]
-    assert "## 前回の不合格理由" in retry_card and "min_chars" in retry_card
+    assert "### 不合格の理由" in retry_card and "min_chars" in retry_card
     # Later tasks were reset and ran again after the rewrite.
     assert len([task for task, _, _ in log if task == "F2.write-u02p1-dummy"]) == 1
 
@@ -380,7 +380,9 @@ def test_f4_yes_answer_invalidates_f2(tmp_path: Path, dummy_format: Path) -> Non
     assert all("### 本文" in card and "### 対象の出来事" in card for card in judge_cards)
 
 
-def test_f2_fails_after_max_invalidations(tmp_path: Path, dummy_format: Path) -> None:
+def test_f2_is_skipped_after_max_invalidations_and_run_continues(tmp_path: Path, dummy_format: Path) -> None:
+    # task-model §6.7 / format-pipeline.md「F4 検証」: exceeding max_invalidations
+    # follows F2's on_exhausted (skip by default), so the run does not stall.
     data_dir, run_id, orchestrator = _start(tmp_path, dummy_format)
     good = _good_responder(orchestrator, run_id)
 
@@ -392,9 +394,13 @@ def test_f2_fails_after_max_invalidations(tmp_path: Path, dummy_format: Path) ->
     _drive(orchestrator, run_id, respond)
     manifest = orchestrator.load_run(run_id)
     f2 = manifest["tasks"]["F2.write-u01p2-dummy"]
-    assert f2["state"] == "failed" and f2["invalidations"] == 2
-    assert manifest["status"] == "stalled"
-    assert manifest["tasks"]["F3.assemble-dummy"]["state"] == "blocked"
+    assert f2["state"] == "skipped" and f2["invalidations"] == 2
+    assert manifest["status"] == "completed"
+    assert any("F2.write-u01p2-dummy" in warning and "省略" in warning for warning in manifest["warnings"])
+    assemble = manifest["tasks"]["F3.assemble-dummy"]
+    assert assemble["state"] == "done"
+    text = (orchestrator.run_dir(run_id) / "formats" / "dummy" / "dummy.md").read_text(encoding="utf-8")
+    assert "（未定）" in text
 
 
 def test_two_formats_run_independently_in_one_run(tmp_path: Path, dummy_format: Path) -> None:
@@ -541,3 +547,81 @@ def test_unfinished_story_stalled_and_empty_units_are_rejected(tmp_path: Path, d
     monkeypatch.setitem(format_units.UNIT_MAPPERS, "scene", lambda s, p, r: [Unit("u01", "x", ())])
     with pytest.raises(ValueError, match="出来事のない"):
         formatting.build_plan(story, PROFILE, ROOT)
+
+
+@pytest.mark.parametrize("continuation", [True, False])
+@pytest.mark.parametrize("bad", ["短い。", "あ" * 150 + "。"])
+def test_f2_length_failure_is_repaired_or_skipped(tmp_path, dummy_format, continuation, bad):
+    from storyteller.repair import REPAIR_ROLE
+    profile = {**PROFILE, "continuation": continuation}
+    (dummy_format / "dummy" / "profile.yaml").write_text(
+        yaml.safe_dump(profile, allow_unicode=True), encoding="utf-8")
+    _, run_id, harness = _start(tmp_path, dummy_format)
+    good = _good_responder(harness, run_id)
+    seen = set()
+    repaired = []
+
+    def respond(task_id, card):
+        if task_id.startswith("F2.") and "-u01p1-" in task_id:
+            if task_id not in seen:
+                seen.add(task_id)
+                return bad
+            assert REPAIR_ROLE in card
+            assert "書き足す" in card and "短くする" in card
+            repaired.append(task_id)
+        return good(task_id, card)
+
+    _drive(harness, run_id, respond)
+    assert repaired and harness.load_run(run_id)["status"] == "completed"
+
+    # Exhausting attempts also completes both continuation variants.
+    _, run_id, harness = _start(tmp_path / "exhaust", dummy_format)
+    good = _good_responder(harness, run_id)
+    _drive(harness, run_id, lambda task_id, card: bad if task_id.startswith("F2.") else good(task_id, card))
+    manifest = harness.load_run(run_id)
+    assert manifest["status"] == "completed"
+    skipped = [key for key, task in manifest["tasks"].items() if task["state"] == "skipped"]
+    assert skipped and all(key.startswith("F2.") for key in skipped)
+    assert all((harness.task_dir(run_id, key) / "failure.md").exists() for key in skipped)
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+def test_f2_repairs_real_1029_character_shortfall(tmp_path, dummy_format, truncated):
+    profile = {**PROFILE, "chars_per_event": [1500, 3000], "max_chars_per_task": 6000}
+    (dummy_format / "dummy" / "profile.yaml").write_text(
+        yaml.safe_dump(profile, allow_unicode=True), encoding="utf-8")
+    _, run_id, harness = _start(tmp_path, dummy_format, events=1)
+    claim = _claim_task(harness, run_id)
+    task_id, ticket, _ = claim
+    assert task_id.startswith("F2.write-")
+    if truncated:
+        assert harness.submit(ticket, "い" * 500, truncated=True).accepted
+        _, ticket, _ = _claim_task(harness, run_id)
+    result = harness.submit(ticket, "あ" * (528 if truncated else 1028) + "。")
+    assert result.accepted
+    # F4 code validation invalidates the accepted body before the next claim.
+    claim = _claim_task(harness, run_id)
+    if claim[0].startswith("F4.judge"):
+        harness.submit(claim[1], '{"answer":"no","reason":"問題なし。"}')
+        claim = _claim_task(harness, run_id)
+    assert "min_chars: 文字数 1029 が 1500以上ではありません" in claim[2]
+    assert "1500字以上" in claim[2] and "書き足す" in claim[2]
+    assert harness.submit(claim[1], "あ" * 1499 + "。").accepted
+    _drive(harness, run_id, _good_responder(harness, run_id))
+    assert harness.load_run(run_id)["status"] == "completed"
+
+
+@pytest.mark.parametrize("continuation", [True, False])
+def test_f2_submission_exhaustion_completes_format(tmp_path, dummy_format, continuation):
+    profile = {**PROFILE, "continuation": continuation}
+    (dummy_format / "dummy" / "profile.yaml").write_text(
+        yaml.safe_dump(profile, allow_unicode=True), encoding="utf-8")
+    _, run_id, harness = _start(tmp_path, dummy_format)
+    good = _good_responder(harness, run_id)
+    _drive(harness, run_id, lambda task_id, card: {} if task_id.startswith("F2.") else good(task_id, card))
+    manifest = harness.load_run(run_id)
+    assert manifest["status"] == "completed"
+    assert all(task["state"] == "skipped" and task["tries"] == 5
+               for task_id, task in manifest["tasks"].items() if task_id.startswith("F2."))
+    body = (harness.run_dir(run_id) / "formats/dummy/dummy.md").read_text(encoding="utf-8")
+    assert "（未定）" in body

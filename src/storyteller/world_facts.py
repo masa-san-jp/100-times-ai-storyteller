@@ -11,6 +11,8 @@ import unicodedata
 from .elements import parse_element_value
 from .tables import load_table
 
+UNDECIDED = "（未定）"
+
 
 def assign_world_fact_tasks(
     sections: Sequence[Mapping[str, Any]],
@@ -67,11 +69,22 @@ def referred_entries(entry: Mapping[str, Any], entries: Sequence[Mapping[str, An
 
 
 def description_entries(world_task: Mapping[str, Any], entries: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return _description_entries(world_task, entries, all_viewpoints=False)
+
+
+def consistency_entries(world_task: Mapping[str, Any], entries: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return _description_entries(world_task, entries, all_viewpoints=True)
+
+
+def _description_entries(world_task: Mapping[str, Any], entries: Sequence[Mapping[str, Any]], *, all_viewpoints: bool) -> list[Mapping[str, Any]]:
     own = [entry for entry in entries if entry["section_id"] == world_task["section_id"]
            and (entry.get("item_id") == world_task["id"] if world_task["kind"] == "list"
-                else entry["viewpoint"] == world_task["viewpoint"])]
+                else all_viewpoints or entry["viewpoint"] == world_task["viewpoint"])]
     ids = {entry["id"] for entry in own}
-    for entry in list(own):
+    cursor = 0
+    while cursor < len(own):
+        entry = own[cursor]
+        cursor += 1
         for other in referred_entries(entry, entries):
             if other["id"] not in ids:
                 own.append(other)
@@ -122,12 +135,10 @@ def supplement_fact_outputs(run_dir: Path, manifest: Mapping[str, Any],
             continue
         seen.add(task_id)
         record = manifest["tasks"][task_id]
-        if record["type"] in {"S5.fact", "S5.fact_plan"} and record["state"] == "done":
-            pending.extend(record["deps"])
-            continue
-        if record["type"] == "S4.item_name":
-            continue
-        if record["type"] != "S4.fact" or record["state"] != "done":
+        # 途中の祖先が skippedでも探索を止めない。ここで
+        # continue すると、省略された事実より前に合格した事実まで後続の
+        # カードから消える（task-model §6.7、ADR-0008）。
+        if record["type"] not in {"S4.fact", "S5.fact", "S5.fact_plan"}:
             continue
         pending.extend(record["deps"])
     entries = result.get("S3.assign", {}).get("world_fact_tasks", [])
@@ -270,6 +281,12 @@ def fact_source_context(assignment: Mapping[str, Any], outputs: Mapping[str, Any
                     or other["section_id"] in prerequisites]
         return {"previous": fact_lines(assignment, outputs, previous, include_items=True),
                 "referred": fact_lines(assignment, outputs, referred_entries(entry, entries), include_items=True)}
+    if task["type"] == "S4.consistency":
+        world_task = next(entry for entry in assignment["world_tasks"] if entry["id"] == index[0])
+        offset = (int(index[1][1:]) - 1) * 6
+        selected = consistency_entries(world_task, entries)[offset:offset + 6]
+        lines = fact_lines(assignment, outputs, selected, include_items=True)
+        return {"facts": lines if lines else "（未定）"}
     if task["type"] in {"S4.section", "S4.item"}:
         world_task = next(entry for entry in assignment["world_tasks"] if entry["id"] == index[0])
         return {"own": fact_lines(assignment, outputs, description_entries(world_task, entries))}
@@ -280,7 +297,10 @@ def fact_source_context(assignment: Mapping[str, Any], outputs: Mapping[str, Any
     return {}
 
 
-def render_world_facts_markdown(assignment: Mapping[str, Any], outputs: Mapping[str, Any]) -> str:
+def render_world_facts_markdown(
+    assignment: Mapping[str, Any], outputs: Mapping[str, Any],
+    *, skipped: frozenset[str] = frozenset(),
+) -> str:
     """Assemble a single calendar, measurement dates and a sorted timeline."""
     def cell(value: Any) -> str:
         return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
@@ -300,13 +320,15 @@ def render_world_facts_markdown(assignment: Mapping[str, Any], outputs: Mapping[
             if entry["section_id"] != section["id"]:
                 continue
             task_id = f"S4.fact-{entry['id']}"
-            if task_id not in outputs:
-                raise ValueError(f"世界の事実がありません: {entry['id']}")
-            value = fact_value(entry, outputs[task_id])
+            # task-model §6.7: 上限に達して省略された事実は行を消さず、
+            # 値を（未定）として残す。
+            if task_id not in outputs and task_id not in skipped:
+                raise ValueError(f"省略されていないタスクの出力がありません: {task_id}")
+            value = fact_value(entry, outputs[task_id]) if task_id in outputs else UNDECIDED
             item = outputs.get(f"S4.item_name-{entry.get('item_id')}", {}).get("name", "—")
             lines.append("| " + " | ".join(cell(v) for v in (item, entry["viewpoint"], entry["label"],
                          value, entry.get("unit", "年" if entry["element"] == "year" else "—"), year, calendar)) + " |")
-            if entry["element"] == "year":
+            if entry["element"] == "year" and task_id in outputs:
                 timeline.append((value, item, entry["label"]))
         lines.append("")
     lines.extend(["## 年表", "", "| 暦 | 年 | 項目 | 出来事・見出し |", "|---|---|---|---|"])

@@ -14,6 +14,8 @@ from .glossary import glossary_id
 if TYPE_CHECKING:
     from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 
+UNDECIDED = "（未定）"
+
 # These sections supply locations, institutions, calendars and dated history.
 CHARACTER_WORLD_SECTIONS = (
     "place", "customs", "organizations", "social_groups", "social_structure",
@@ -51,8 +53,10 @@ def render_character_sheet(output: Mapping[str, Any], glossary: Sequence[Mapping
               "residence": "居住地", "occupation": "職業", "affiliation": "所属"}
     lines = ["### 事実のシート", "", "| 項目 | 事実 |", "|---|---|"]
     for field, label in labels.items():
-        value = output[field]
-        if field in {"birthplace", "residence", "affiliation"}:
+        value = output.get(field)
+        if field not in output or (value is None and field != "affiliation"):
+            value = UNDECIDED  # 省略された事実
+        elif field in {"birthplace", "residence", "affiliation"}:
             value = "なし" if value is None else names[value]
         lines.append(f"| {label} | {cell(value)} |")
     lines.extend(["", "#### 家族構成", "", "| 続柄 | 名前 |", "|---|---|"])
@@ -60,8 +64,10 @@ def render_character_sheet(output: Mapping[str, Any], glossary: Sequence[Mapping
     if not output["family"]:
         lines.append("| — | なし |")
     lines.extend(["", "#### 年表", "", "| 暦 | 年 | 出来事 |", "|---|---|---|"])
-    lines.extend(f"| {cell(output['calendar'])} | {row['year']} | {cell(row['event'])} |"
-                 for row in sorted(output["timeline"], key=lambda row: row["year"]))
+    lines.extend(
+        f"| {cell(output['calendar'])} | {row['year'] if row['year'] is not None else UNDECIDED} | {cell(row['event'])} |"
+        for row in sorted(output["timeline"], key=lambda row: (row["year"] is None, row["year"]))
+    )
     lines.extend(["", "#### 技能", ""])
     lines.extend(f"- {cell(skill)}" for skill in output["skills"])
     return "\n".join(lines) + "\n"
@@ -143,9 +149,18 @@ def story_s5_fact_plan(context: CodeTaskContext) -> CodeTaskResult:
 
     assignment = context.outputs["S3.assign"]
     person_id = context.task["index"][0]
-    age = parse_element_value(context.outputs[f"S5.fact-{person_id}-age"], "integer")
     current_year = assignment["calendar"]["current_year"]
-    birth_year = current_year - age
+    age_output = context.outputs.get(f"S5.fact-{person_id}-age")
+    if age_output is not None:
+        age = parse_element_value(age_output, "integer")
+        birth_year = current_year - age
+        earliest_year = birth_year
+    else:
+        # 年齢の事実が省略された場合、生年は不明とし、年表の下限は年齢の上限から求める。
+        age_entry = next((entry for entry in character_entries(context.outputs, person_id)
+                          if entry["key"] == "age"), {})
+        birth_year = None
+        earliest_year = current_year - int((age_entry.get("range") or {}).get("max", current_year))
     places, organizations = _world_options(context.outputs)
     entries = deepcopy(character_entries(context.outputs, person_id))
     specs = []
@@ -166,7 +181,7 @@ def story_s5_fact_plan(context: CodeTaskContext) -> CodeTaskResult:
             entry.pop("name_sound", None)
             entry["choices"] = [*organizations, {"id": "none", "name": "なし"}]
         elif key.startswith("timeline.") and key.endswith(".year"):
-            entry["range"] = {"min": birth_year, "max": current_year}
+            entry["range"] = {"min": earliest_year, "max": current_year}
         task_id = f"S5.fact-{entry['id']}"
         specs.append(TaskSpec(task_id, "S5.fact", deps=(context.task_id, "S3.assign",
             f"S5.name-{person_id}", *(("S5.name-c1",) if person_id != "c1" else ()),
@@ -244,11 +259,14 @@ def supplement_character_outputs(
             continue
         seen.add(task_id)
         record = manifest["tasks"].get(task_id, {})
-        if record.get("state") != "done" or record.get("type") not in {"S5.fact", "S5.fact_plan"}:
+        if record.get("type") not in {"S5.fact", "S5.fact_plan"}:
             continue
-        if task_id not in result:
+        # 途中の祖先が skippedでも、その先の祖先の探索は
+        # 止めない。ここで continue すると、省略された事実より前に合格した
+        # 事実まで後続から消える（task-model §6.7、ADR-0008）。
+        if record.get("state") == "done" and record.get("type") in {"S5.fact", "S5.fact_plan"} and task_id not in result:
             result[task_id] = read_task_output(run_dir / "tasks" / task_id, record["type"])
-        pending.extend(record["deps"])
+        pending.extend(record.get("deps", ()))
     # Descriptions have compact edges to the facts, not the calendar or each
     # world registration. Recover their names so the required sheet includes
     # the definitions of every location, affiliation and family reference.
@@ -272,10 +290,15 @@ def assemble_character_sheet(outputs: Mapping[str, Any], person_id: str) -> dict
     families, timeline = {}, {}
     for entry in entries:
         task_id = f"S5.fact-{entry['id']}"
-        if task_id not in outputs:
-            raise ValueError(f"人物の事実がありません: {entry['id']}")
-        value = character_fact_value(entry, outputs[task_id])
         key = entry["key"]
+        if key.startswith("family.") or key.startswith("timeline."):
+            group, number, _ = key.split(".")
+            (families if group == "family" else timeline).setdefault(int(number), {})
+        if task_id not in outputs:
+            if key.startswith("skills."):
+                sheet["skills"].append(UNDECIDED)
+            continue
+        value = character_fact_value(entry, outputs[task_id])
         if key.startswith("family.") or key.startswith("timeline."):
             group, number, field = key.split(".")
             target = families if group == "family" else timeline
@@ -286,7 +309,19 @@ def assemble_character_sheet(outputs: Mapping[str, Any], person_id: str) -> dict
             if key in {"birthplace", "residence"} and entry["element"] == "name":
                 value = glossary_id(task_id, 0)
             sheet[key] = None if key == "affiliation" and value == "none" else value
-    sheet["birth_year"] = outputs["S3.assign"]["calendar"]["current_year"] - sheet["age"]
-    sheet["family"] = [families[number] for number in sorted(families)]
-    sheet["timeline"] = sorted(timeline.values(), key=lambda row: row["year"])
+    age = sheet.get("age")
+    sheet["birth_year"] = None if age is None else outputs["S3.assign"]["calendar"]["current_year"] - age
+    # task-model §6.7: 片方の欄だけ省略された場合、合格済みの欄を消さずに
+    # 残し、欠けた欄は（未定）として示す。家族や年表の行を丸ごと除外する
+    # と、合格済みの事実まで消え、全員が省略されると「なし」と誤って示す。
+    sheet["family"] = [
+        {"relationship": families[number].get("relationship", UNDECIDED),
+         "name": families[number].get("name", UNDECIDED)}
+        for number in sorted(families)
+    ]
+    sheet["timeline"] = sorted(
+        ({"year": timeline[number].get("year"), "event": timeline[number].get("event", UNDECIDED)}
+         for number in timeline),
+        key=lambda row: (row["year"] is None, row["year"]),
+    )
     return sheet
