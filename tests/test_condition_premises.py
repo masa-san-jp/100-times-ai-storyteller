@@ -159,7 +159,7 @@ def test_joint_actor_replay_probe_preserves_pair_and_scope(tmp_path, case_name):
 
 def test_detail_nonmention_example_precedes_final_answer():
     d = definition('S8.detail')
-    assert d['version'] == 4
+    assert d['version'] == 5
     steps = d['card']['steps']
     example = next(i for i, step in enumerate(steps) if step.startswith('例：'))
     final = next(i for i, step in enumerate(steps) if step.startswith('違反なら answer'))
