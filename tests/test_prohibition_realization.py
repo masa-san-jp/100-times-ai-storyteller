@@ -9,6 +9,7 @@ PROHIBITION_CASES = {
 'can': {'condition':'封書を破いてはならない。','body':'封書を破けるようになった。','expected':'no'},
 'want': {'condition':'封書を破いてはならない。','body':'封書を破きたいと思った。','expected':'no'},
 'if': {'condition':'封書を破いてはならない。','body':'封書を破けば文字が現れると説明した。','expected':'no'},
+'explicit-permission': {'condition':'封書を破いてはならない。','body':'規則が変わり、封書を破いてよいことになった。','expected':'yes'},
 'actual': {'condition':'封書を破いてはならない。','body':'封書を破いた。','expected':'yes'},
 'possible-and-actual': {'condition':'封書を破いてはならない。','body':'封書を破けるようになり、その封書を破いた。','expected':'yes'},
 'necessary': {'condition':'押さなければ灯らない。','body':'押さずに灯った。','expected':'yes'},
@@ -29,8 +30,7 @@ def test_public_prohibition_probe_preserves_inputs_and_budget(tmp_path, task, na
     old = deepcopy(d)
     old['card'] = deepcopy(BASELINE_CARDS[task])
     assert len(card) <= len(generate_task_card(old, 'a' * 32, fitted, retry_reason='理' * 500))
-    for text in ('能力・可能性・意思・条件引用だけを実施としない', '実施の併記は検査',
-                 '帰結の非言及でも違反は yes', case['condition'], case['body']):
+    for text in ('実施の併記は検査', '帰結の非言及でも違反は yes', case['condition'], case['body']):
         assert text in card
     (tmp_path / 'input.json').write_text(json.dumps(inputs, ensure_ascii=False), encoding='utf-8')
     (tmp_path / 'card.md').write_text(card, encoding='utf-8')
@@ -39,9 +39,12 @@ def test_public_prohibition_probe_preserves_inputs_and_budget(tmp_path, task, na
 
 def test_compare_ability_example_uses_only_actual_inputs_for_reason():
     d = definition('S8.compare')
-    assert d['version'] == 13
+    assert d['version'] == 14
     steps = '\n'.join(d['card']['steps'])
-    assert '「開く能力を得た」だけは no' in steps
-    assert '「開いた」もあれば yes' in steps
+    assert '能力獲得だけは no' in steps
+    assert '禁止は能力の不存在を意味しない' in steps
+    assert '能力・可能性は実施・許可・禁止解除でない' in steps
+    assert '明示許可・禁止解除は条件反転で yes' in steps
+    assert '開いた／許可への変更は yes' in steps
     assert '例を素材・理由に使わない' in steps
     assert 'reason はA/Bの食い違う' in steps

@@ -134,7 +134,7 @@ def event_replay_inputs(case_name):
 @pytest.mark.parametrize('case_name', EVENT_REPLAY_CASES)
 def test_joint_actor_replay_probe_preserves_pair_and_scope(tmp_path, case_name):
     d = definition('S8.compare')
-    assert d['version'] == 13
+    assert d['version'] == 14
     inputs = event_replay_inputs(case_name)
     original = deepcopy(inputs)
     fitted = prepare_task_inputs(d, inputs)
