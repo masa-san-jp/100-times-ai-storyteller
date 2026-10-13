@@ -155,3 +155,32 @@ def test_joint_actor_replay_probe_preserves_pair_and_scope(tmp_path, case_name):
     (tmp_path / 'input.json').write_text(json.dumps(inputs, ensure_ascii=False), encoding='utf-8')
     (tmp_path / 'card.md').write_text(card, encoding='utf-8')
     assert not (tmp_path / 'output.json').exists()
+
+
+def test_detail_nonmention_example_precedes_final_answer():
+    d = definition('S8.detail')
+    assert d['version'] == 4
+    steps = d['card']['steps']
+    example = next(i for i, step in enumerate(steps) if step.startswith('例：'))
+    final = next(i for i, step in enumerate(steps) if step.startswith('違反なら answer'))
+    assert example < final
+    assert '「灯った」だけ' in steps[example] and '「押した」だけ' in steps[example]
+    assert '押さなかった・灯らなかったと補わない' in steps[example]
+    assert '他の違反・再演も検査' in steps[example]
+
+
+def test_detail_example_card_does_not_increase_version_three_size():
+    d = definition('S8.detail')
+    # Freeze the public v3 instructions, not model outputs or private data.
+    old = deepcopy(d)
+    old['version'] = 3
+    old['card']['role'] = 'この場面の本文だけを検査する。'
+    old['card']['steps'] = [
+        '確定した出来事・条件の追加・反転・置換を検査する。前提・行動・帰結・前後関係を照合し、同じ前後関係を逆転と判定しない。未定の条件は判定しない。',
+        '条件は実施済みの場面ではなく、適合だけでは再演にならない。直前の場面の行動・結果の進展ない再演を検査する。',
+        '非言及は否定ではなく、それだけを矛盾にしない。前提→帰結から逆や唯一の必要条件を導かない。明示された禁止・必要条件・前後関係の追加・反転・置換は yes とする。',
+        '構造の説明・内部 ID も検査する。',
+        '違反なら answer は yes、なければ no。reason は入力で食い違う前提・行動・帰結・順序か、進展ない再演の行動・結果を1文で具体的に示す。入力にない事情を補わない。',
+    ]
+    inputs = probe_inputs('S8.detail', PROBE_CASES['missing-premise'])
+    assert len(generate_task_card(d, 'a' * 32, inputs)) <= len(generate_task_card(old, 'a' * 32, inputs))
