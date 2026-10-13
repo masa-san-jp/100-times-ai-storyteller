@@ -1,5 +1,5 @@
 id: S5.relationship
-version: 12
+version: 14
 kind: llm
 element: text
 inputs:
@@ -63,6 +63,7 @@ card:
     - 300〜600字を目安に書く。
 validate:
   checks:
+    - character_identity
     - no_new_proper_nouns:
         mode: warn
     - no_copy_from_inputs

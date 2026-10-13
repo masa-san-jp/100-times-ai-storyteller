@@ -1,5 +1,5 @@
 id: S5.motive
-version: 9
+version: 11
 kind: llm
 element: text
 inputs:
@@ -82,6 +82,7 @@ card:
     - 入力にない過去や関係を付け加えない。
 validate:
   checks:
+    - character_identity
     - no_new_proper_nouns:
         mode: warn
     - no_copy_from_inputs

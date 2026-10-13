@@ -323,6 +323,7 @@
           "type": "string",
           "enum": [
             "no_copy_from_inputs",
+            "character_identity",
             "no_story_metadata",
             "no_repeated_scene",
             "max_chars",
@@ -342,6 +343,10 @@
           "additionalProperties": false,
           "properties": {
             "no_copy_from_inputs": {"type": "object", "additionalProperties": false},
+            "character_identity": {
+              "type": "object", "additionalProperties": false,
+              "properties": {"require_subject": {"type": "boolean"}}
+            },
             "max_chars": {"$ref": "#/$defs/max-char-check"},
             "min_chars": {"$ref": "#/$defs/char-check"},
             "count": {"$ref": "#/$defs/count-check"},

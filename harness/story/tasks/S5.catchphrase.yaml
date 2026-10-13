@@ -1,5 +1,5 @@
 id: S5.catchphrase
-version: 9
+version: 11
 kind: llm
 element: text
 inputs:
@@ -62,6 +62,7 @@ card:
     - 人物の口調、役割、動機が伝わる台詞にし、入力にない設定を付け加えず、文末まで完結させる。
 validate:
   checks:
+    - character_identity
     - no_new_proper_nouns:
         mode: warn
     - no_copy_from_inputs

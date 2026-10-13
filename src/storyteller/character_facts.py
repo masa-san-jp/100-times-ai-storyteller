@@ -210,7 +210,11 @@ def character_source_context(
     entries = character_entries(outputs, person_id)
     if task["type"] != "S5.fact":
         from .glossary import build_glossary
-        return {person_id: sheet_for_card(assemble_character_sheet(outputs, person_id), build_glossary(outputs))}
+        sheet = sheet_for_card(assemble_character_sheet(outputs, person_id), build_glossary(outputs))
+        name_output = outputs.get(f"S5.name-{person_id}")
+        if isinstance(name_output, Mapping) and isinstance(name_output.get("name"), str):
+            sheet = {**sheet, "name": name_output["name"]}
+        return {person_id: sheet}
     current = deepcopy(next(entry for entry in entries if entry["id"] == task["index"][0]))
     # Fill display names from accepted dependencies, retaining the planned IDs.
     from .glossary import build_glossary
@@ -267,7 +271,8 @@ def supplement_character_outputs(
     # world registration. Recover their names so the required sheet includes
     # the definitions of every location, affiliation and family reference.
     assignment = result.get("S3.assign", {})
-    name_ids = {"S4.calendar_name"}
+    person_id = task["index"][0].split("-", 1)[0]
+    name_ids = {"S4.calendar_name", f"S5.name-{person_id}"}
     name_ids.update(f"S4.fact-{entry['id']}" for entry in assignment.get("world_fact_tasks", [])
                     if entry["element"] == "name" and entry["section_id"] in CHARACTER_WORLD_SECTIONS)
     name_ids.update(f"S4.item_name-{entry['id']}" for entry in assignment.get("world_tasks", [])

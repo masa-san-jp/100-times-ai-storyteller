@@ -254,7 +254,7 @@ def _fake_output(
         field = task_type.removeprefix("S5.")
         person_id = inputs["character"]["id"]
         short_values = {
-            "intro": f"{person_id}の短い紹介。",
+            "intro": f"{inputs['facts']['name']}は{person_id}の人物である。",
             "motive": f"{person_id}が行動する動機。",
             "catchphrase": f"私は{person_id}として進む。",
         }
@@ -275,7 +275,10 @@ def _fake_output(
         }
         minimum, maximum = volume_ranges[field]
         target_length = (minimum + maximum) // 2
-        return _filler_text(task_id, field, target_length)
+        subject_fields = {"profile", "appearance", "personality", "values",
+                          "inner_conflict", "backstory"}
+        opening = f"{inputs['facts']['name']}は" if field in subject_fields else ""
+        return opening + _filler_text(task_id, field, target_length - len(opening))
 
     if task_type == "S7.condition":
         return {"trigger": "仕組みを動かすと道が現れる。", "prohibition": "灯を消すことは禁じられ、消すと道を失う。", "resolution": "開いた道を進むと問題が解決する。"}[task["index"][1]]
@@ -386,7 +389,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             terms = [*inputs["glossary"], *inputs["facts"]["glossary"]]
             assert terms
             assert all("registered_task" not in entry for entry in terms)
-            output = "ゼラフィナを訪ねる人物。"
+            output = inputs["facts"]["name"] + "はゼラフィナを訪ねる人物。"
             noun_warning_task = task_id
         if task["type"] == "S5.profile" and "meta" not in quality_rejections:
             rejected = harness.submit(claimed["ticket"], "名前の響き" + output)
@@ -405,7 +408,8 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             if task["type"] in {"S4.section", "S4.item"}:
                 output = output[:80] + _filler_text(task_id, "世界の本文", 1120)
             elif task["type"] == "S5.profile":
-                output = _filler_text(task_id, "profile", 1500)
+                subject = inputs["facts"]["name"] + "は"
+                output = subject + _filler_text(task_id, "profile", 1500 - len(subject))
             elif task["type"] == "S5.voice":
                 output = _filler_text(task_id, "voice", 800)
             elif task["type"] == "S7.event":
@@ -452,7 +456,14 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
             elif task["type"] not in extended_types and task_id not in trimmed_tasks:
                 assert isinstance(output, str)
                 minimum = next(check["min_chars"]["n"] for check in definition["validate"]["checks"] if "min_chars" in check)
-                prefix = _filler_text(task_id, "書き足す前の説明", minimum // 2) + "\n\n"
+                subject = (inputs["facts"]["name"] + "は" if any(
+                    isinstance(check, dict)
+                    and check.get("character_identity", {}).get("require_subject")
+                    for check in definition["validate"]["checks"]
+                ) else "")
+                prefix = subject + _filler_text(
+                    task_id, "書き足す前の説明", minimum // 2 - len(subject)
+                ) + "\n\n"
                 # Blank lines do not contribute to min_chars; retain exactly
                 # the original text length even for minimum-length scenes.
                 continuation_outputs[task_id] = prefix + output[len(prefix.rstrip()):]

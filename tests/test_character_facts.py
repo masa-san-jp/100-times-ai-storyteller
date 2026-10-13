@@ -567,6 +567,97 @@ def test_complete_sheet_fits_description_inputs_without_truncating_facts(item):
     assert used <= definition["max_input_chars"]
 
 
+def test_description_card_sheet_keeps_only_target_person_identity(tmp_path):
+    harness, run_id, _ = _harness(tmp_path, age=71)
+    _finish(harness, run_id)
+    outputs = _accepted_outputs(harness, run_id)
+    outputs["S3.assign"]["cast"].append(_character("adversary", "c2", "別人"))
+    outputs["S5.name-c2"] = {"name": "獏賀暮", "reading": "バクガボ"}
+    outputs["S5.fact-c2-age"] = "340"
+    outputs["S5.fact-c2-timeline.0.year"] = "542"
+    source = character_source_context(outputs, {"type": "S5.profile", "index": ["c1"]})
+    assert set(source) == {"c1"}
+    sheet = source["c1"]
+    assert sheet["name"] == "リオ"
+    assert sheet["age"] == 71 and sheet["birth_year"] == 229
+    assert "獏賀暮" not in str(sheet)
+    person = outputs["S3.assign"]["cast"][0]
+    card = generate_task_card(_definition("S5.profile"), "ticket", _inputs(
+        facts=sheet, role_definition=person["role_definition"],
+        plot_requirements=person["plot_context"]))
+    assert "獏賀暮" not in card
+    assert "birth_year: 229" in card and "age: 71" in card and "name: リオ" in card
+
+
+def test_description_recovers_subject_name_without_a_direct_name_dependency(tmp_path):
+    harness, run_id, _ = _harness(tmp_path, age=71)
+    _finish(harness, run_id)
+    outputs = _accepted_outputs(harness, run_id)
+    facts = tuple(task_id for task_id in outputs if task_id.startswith("S5.fact-c1-"))
+    harness._add_tasks(run_id, "S3.assign", [TaskSpec(
+        "S5.profile-c1", "S5.profile", deps=("S3.assign", "S5.name-c1", *facts), index=("c1",))])
+    harness._complete_task(run_id, "S5.profile-c1", {"profile": "リオは水路を点検する。"})
+    harness._add_tasks(run_id, "S5.profile-c1", [TaskSpec(
+        "S5.intro-c1", "S5.intro", deps=("S3.assign", "S5.profile-c1", *facts), index=("c1",))])
+    assert "S5.name-c1" not in harness.load_run(run_id)["tasks"]["S5.intro-c1"]["deps"]
+    context = harness._build_context(harness.load_run(run_id), run_id, "S5.intro-c1")
+    inputs = context.inputs
+    assert inputs["facts"]["name"] == "リオ"
+    assert inputs["facts"]["age"] == 71
+    card = generate_task_card(_definition("S5.intro"), "ticket", inputs)
+    assert "リオ" in card
+
+
+def test_description_does_not_invent_a_subject_when_accepted_name_is_unavailable(tmp_path):
+    harness, run_id, _ = _harness(tmp_path, age=71)
+    _finish(harness, run_id)
+    outputs = _accepted_outputs(harness, run_id)
+    outputs.pop("S5.name-c1")
+    source = character_source_context(outputs, {"type": "S5.intro", "index": ["c1"]})
+    assert "name" not in source["c1"]
+    assert source["c1"]["age"] == 71
+    definition = {"element": "text", "output": "text", "validate": {"checks": [
+        {"character_identity": {"require_subject": True}}]}}
+    assert validate_output(definition, "人物の名前は未定。", {"facts": source["c1"]}).passed
+
+
+def test_old_profile_cache_with_wrong_signed_birth_year_is_not_reused(tmp_path):
+    from storyteller.cache import save_cache
+
+    harness, run_id, assignment = _harness(tmp_path, age=1000)
+    _finish(harness, run_id)
+    facts = [f"S5.fact-{entry['id']}" for entry in assignment["character_fact_tasks"]]
+    task_id = "S5.profile-c1"
+    harness._add_tasks(run_id, "S3.assign", [
+        TaskSpec(task_id, "S5.profile", deps=("S3.assign", "S5.name-c1", *facts), index=("c1",))
+    ])
+    manifest = harness.load_run(run_id)
+    context = harness._build_context(manifest, run_id, task_id)
+    definition = harness.task_definitions["S5.profile"]
+    inputs = prepare_task_inputs(definition, context.inputs)
+    current_key = harness._cache_key_for_task(manifest, task_id, inputs)
+    definition["version"] -= 1
+    try:
+        old_key = harness._cache_key_for_task(manifest, task_id, inputs)
+    finally:
+        definition["version"] += 1
+    wrong_text = "リオはカナ暦-699年に生まれた。" + "水路を点検する。" * 110
+    save_cache(tmp_path, old_key, wrong_text)
+    # Force a fresh lookup rather than the ready-task cache-miss shortcut.
+    manifest["tasks"][task_id]["cache_key"] = None
+    harness._persist_manifest(harness.run_dir(run_id), manifest)
+
+    claim = harness.claim_task(run_id, task_id, executor_id="test")
+    task = harness.load_run(run_id)["tasks"][task_id]
+    assert current_key != old_key
+    assert task["cache_key"] == current_key
+    assert task["state"] == "claimed"
+    assert not (harness.task_dir(run_id, task_id) / "output.txt").exists()
+    result = harness.submit(claim["ticket"], wrong_text)
+    assert not result.accepted
+    assert any("birth_year" in error for error in result.errors)
+
+
 def test_character_sheet_omits_skipped_facts_without_error(tmp_path):
     # task-model §6.7: a skipped S5.fact leaves the sheet incomplete, not broken.
     harness, run_id, _ = _harness(tmp_path)

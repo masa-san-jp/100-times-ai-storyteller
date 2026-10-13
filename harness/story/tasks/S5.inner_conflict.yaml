@@ -1,5 +1,5 @@
 id: S5.inner_conflict
-version: 10
+version: 12
 kind: llm
 element: text
 inputs:
@@ -51,6 +51,7 @@ extend_to_min: true
 card:
   role: 割り当てられた属性とプロフィールから、人物が抱える内面の自己矛盾や葛藤を書く。
   steps:
+    - 本文の冒頭を事実のシートの対象人物の名前を主語にした「対象名は」または「対象名が」で始める。
     - 事実のシートに従い、年齢・生年・身長・出身地・居住地・所属・家族・年表・技能と矛盾させない。用語集 ID は対応する名前で表記し、事実にない数値や固有名詞を加えない。
     - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
     - 願望と役割・課題、または禁忌や抑圧されている自己像が入力されていれば、それらの間で相容れない点を具体的に書く。
@@ -58,6 +59,8 @@ card:
     - 500〜1000字を目安にし、入力にない出来事や関係を付け加えない。
 validate:
   checks:
+    - character_identity:
+        require_subject: true
     - no_new_proper_nouns:
         mode: warn
     - no_copy_from_inputs
