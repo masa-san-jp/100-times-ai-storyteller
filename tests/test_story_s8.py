@@ -146,7 +146,7 @@ def test_s8_compare_inputs_are_only_the_two_event_descriptions() -> None:
     assert "Aの結果" in card
     assert "Bの結果" in card
     assert "事実として両立しないことだけを指す" in card
-    assert "人物の心情・関係・状況の変化や展開は矛盾に含めない" in card
+    assert "心情・関係・状況の変化や展開は矛盾でない" in card
     assert "比較計画" not in card
     input_section = card.split("## 手順", 1)[0]
     assert "e002" not in input_section

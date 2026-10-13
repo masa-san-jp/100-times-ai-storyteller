@@ -106,3 +106,45 @@ def test_public_missing_premise_and_genuine_violation_probe_cards_are_prepared(t
         (directory / 'input.json').write_text(json.dumps(inputs, ensure_ascii=False), encoding='utf-8')
         (directory / 'card.md').write_text(card, encoding='utf-8')
         assert not (directory / 'output.json').exists()
+
+
+# Public synthetic event pairs for a real executor probe. These expectations do
+# not simulate an LLM decision and no judgement is submitted by this test.
+EVENT_REPLAY_CASES = {
+    'joint-to-first': {'who': ['c1'], 'when': '朝', 'where': '書庫',
+                       'what': 'カナは帳簿を開いた。', 'result': 'カナは記録を見つけた。', 'expected': 'yes'},
+    'joint-to-second': {'who': ['c2'], 'when': '朝', 'where': '書庫',
+                        'what': 'ミナは帳簿を開いた。', 'result': 'ミナは記録を見つけた。', 'expected': 'yes'},
+    'independent-person': {'who': ['c3'], 'when': '翌朝', 'where': '別の書庫',
+                           'what': 'リナは別の帳簿を開いた。', 'result': 'リナは別件の記録を見つけた。', 'expected': 'no'},
+    'new-result': {'who': ['c1'], 'when': '朝', 'where': '書庫',
+                   'what': 'カナは帳簿を開いた。', 'result': 'カナは記録から出口の位置を突き止めた。', 'expected': 'no'},
+}
+
+
+def event_replay_inputs(case_name):
+    case = EVENT_REPLAY_CASES[case_name]
+    return {'comparison_kind': 'events',
+              'event_a': {'comparison_kind': 'events', 'id': 'e001', 'event': {
+                  'who': ['c1', 'c2'], 'when': '朝', 'where': '書庫',
+                  'what': 'カナとミナは帳簿を開いた。', 'result': 'カナとミナは記録を見つけた。'}},
+              'event_b': {'id': 'e002', 'event': {k: v for k, v in case.items() if k != 'expected'}}}
+
+
+@pytest.mark.parametrize('case_name', EVENT_REPLAY_CASES)
+def test_joint_actor_replay_probe_preserves_pair_and_scope(tmp_path, case_name):
+    d = definition('S8.compare')
+    assert d['version'] == 10
+    inputs = event_replay_inputs(case_name)
+    original = deepcopy(inputs)
+    fitted = prepare_task_inputs(d, inputs)
+    assert inputs == fitted == original
+    card = generate_task_card(d, 'joint-replay-probe', fitted)
+    for event in (inputs['event_a']['event'], inputs['event_b']['event']):
+        assert event['what'] in card and event['result'] in card
+    for instruction in ('矛盾と再演を別に判定', '共同主体から一部主体への変更',
+                        '主体差だけから独立性を補わない', '結果が進展する場合は再演としない'):
+        assert instruction in card
+    (tmp_path / 'input.json').write_text(json.dumps(inputs, ensure_ascii=False), encoding='utf-8')
+    (tmp_path / 'card.md').write_text(card, encoding='utf-8')
+    assert not (tmp_path / 'output.json').exists()
