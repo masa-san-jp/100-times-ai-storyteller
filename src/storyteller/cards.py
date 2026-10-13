@@ -62,6 +62,8 @@ def generate_task_card(
     card = task_definition.get("card")
     if output not in {"json", "text"} or not isinstance(card, Mapping):
         raise TaskCardError("task definition is missing card output details")
+    if "input_order" in card and _char_len(input_body) > task_definition.get("max_input_chars", 3000):
+        raise InputBudgetError("入力が予算を超える")
 
     lines = [
         f"# タスク {ticket}",

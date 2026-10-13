@@ -109,3 +109,50 @@ def test_v17_display_order_changes_cache_key_without_changing_fitted_values(tmp_
     assert fitted == prepare_task_inputs(old['S7.event'], inputs=context.inputs)
     old_harness = Orchestrator(tmp_path, old)
     assert old_harness._cache_key_for_task(manifest, task, fitted) != harness._cache_key_for_task(manifest, task, fitted)
+
+
+@pytest.mark.parametrize('budget_delta, accepted', [(-1, False), (0, True), (1, True)])
+def test_display_heading_increase_is_checked_without_refitting_values(budget_delta, accepted):
+    from storyteller.cards import InputBudgetError, _char_len, _render_input_body
+
+    definition = {
+        'id': 'S.test', 'version': 1, 'kind': 'llm', 'element': 'text', 'output': 'text',
+        'max_input_chars': 100,
+        'inputs': {key: {'label': key, 'required': True, 'truncate': truncate}
+                   for key, truncate in [('body', 'head'), ('glossary', 'none'), ('stage_guidance', 'none')]},
+        'card': {'role': 'r', 'steps': ['s'], 'input_order': ['body', 'stage_guidance', 'glossary']},
+    }
+    inputs = {'body': 'あ' * 80, 'glossary': {'name': '用語', 'text': '定義'}, 'stage_guidance': '指針'}
+    fitted = prepare_task_inputs(definition, inputs=inputs)
+    assert input_char_count(definition, fitted) == 100
+    display_size = _char_len(_render_input_body(definition, fitted))
+    assert display_size == 110
+    original = deepcopy(fitted)
+    definition['max_input_chars'] = display_size + budget_delta
+    assert prepare_task_inputs(definition, inputs=fitted) == original
+    if accepted:
+        card = generate_task_card(definition, 'ticket', inputs=fitted)
+        assert _render_input_body(definition, fitted) in card
+    else:
+        with pytest.raises(InputBudgetError, match='入力が予算を超える'):
+            generate_task_card(definition, 'ticket', inputs=fitted)
+    assert fitted == original
+
+
+def test_original_fit_can_succeed_while_actual_display_is_rejected():
+    from storyteller.cards import InputBudgetError
+
+    definition = {
+        'id': 'S.test', 'version': 1, 'kind': 'llm', 'element': 'text', 'output': 'text',
+        'max_input_chars': 100,
+        'inputs': {key: {'label': key, 'required': True, 'truncate': truncate}
+                   for key, truncate in [('body', 'head'), ('glossary', 'none'), ('stage_guidance', 'none')]},
+        'card': {'role': 'r', 'steps': ['s'], 'input_order': ['body', 'stage_guidance', 'glossary']},
+    }
+    inputs = {'body': 'あ' * 80, 'glossary': {'name': '用語', 'text': '定義'}, 'stage_guidance': '指針'}
+    original = deepcopy(inputs)
+    before = prepare_task_inputs(definition, inputs=inputs)
+    with pytest.raises(InputBudgetError, match='入力が予算を超える'):
+        generate_task_card(definition, 'ticket', inputs=inputs)
+    assert prepare_task_inputs(definition, inputs=inputs) == before
+    assert inputs == original
