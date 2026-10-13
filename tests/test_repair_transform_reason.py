@@ -9,7 +9,7 @@ from storyteller.orchestrator import Orchestrator
 from storyteller.repair import generate_repair_card
 from tests.test_never_stop import llm, MATERIAL
 
-NOTE = '字数上限で文末まで切り詰めた後の検証結果です。'
+NOTE = '上限超過のため、文末まで切り詰めた後の検証結果です。'
 RAW = 'ウヒルは2857年に生まれ、身長170cmの0歳の妖怪。父オエテと共にルウに住み、影の字で音速記録機を操り、12月31日までに地下図書館の失われた記録を解読したいと願う。'
 ERROR = 'min_chars: 文字数 28 が 40以上ではありません'
 
