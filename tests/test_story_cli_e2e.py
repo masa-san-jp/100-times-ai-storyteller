@@ -206,6 +206,15 @@ def _scene_filler_text(task_id: str, length: int) -> str:
     return "".join(pieces)
 
 
+def _continuation_prefix(task_id: str, task_type: str, minimum: int, subject: str = "") -> str:
+    length = minimum // 2 - len(subject)
+    if task_type == "S7.detail":
+        body = _scene_filler_text(task_id + "-continuation-prefix", length)
+    else:
+        body = _filler_text(task_id, "書き足す前の説明", length)
+    return subject + body + "\n\n"
+
+
 def _fake_output(
     task_id: str,
     task: dict[str, Any],
@@ -489,9 +498,7 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
                     and check.get("character_identity", {}).get("require_subject")
                     for check in definition["validate"]["checks"]
                 ) else "")
-                prefix = subject + _filler_text(
-                    task_id, "書き足す前の説明", minimum // 2 - len(subject)
-                ) + "\n\n"
+                prefix = _continuation_prefix(task_id, task["type"], minimum, subject)
                 # Blank lines do not contribute to min_chars; retain exactly
                 # the original text length even for minimum-length scenes.
                 continuation_outputs[task_id] = prefix + output[len(prefix.rstrip()):]
