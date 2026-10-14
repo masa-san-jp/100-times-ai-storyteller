@@ -10,10 +10,11 @@ that leave the schema and the accepted documents unchanged:
   skips validation only when the file's bytes hash to that value, so any
   other content (a hand edit, a manifest from another writer) is still fully
   validated.
-* After a document is known to be valid in this process, ``write_manifest``
-  validates only the top-level fields and the tasks that differ from that
-  document.  Any failure falls back to a full validation, so error messages
-  are the ones a full validation reports.
+* A known-valid snapshot is bound to its schema hash. ``write_manifest``
+  validates changes only when the manifest/container shapes are independent.
+  For task objects whose only constraints are their keys and properties,
+  entire changed field values use the original subschemas. Other shapes or
+  any error fall back to full validation, retaining its public error messages.
 """
 
 from __future__ import annotations
@@ -36,9 +37,9 @@ MANIFEST_SCHEMA_PATH = (
 VALIDATED_STAMP_NAME = "manifest.validated"
 
 _KNOWN_VALID_LIMIT = 16
-# manifest path -> text of the last document known to satisfy the schema.
-_known_valid: dict[str, str] = {}
-_fast_validators: dict[tuple[str, int, int], tuple[str, Any, Any]] = {}
+# manifest path -> (schema hash, text of the last known-valid document).
+_known_valid: dict[str, tuple[str, str]] = {}
+_fast_validators: dict[tuple[str, int, int], tuple[str, Any, Any, Any, bool]] = {}
 
 
 def validate_manifest(
@@ -54,8 +55,8 @@ def _is_default_schema(schema_path: str | Path) -> bool:
     return Path(schema_path) == MANIFEST_SCHEMA_PATH
 
 
-def _schema_validators() -> tuple[str, Any, Any] | None:
-    """Return ``(schema sha256, top-level validator, task validator)``."""
+def _schema_validators() -> tuple[str, Any, Any, Any, bool] | None:
+    """Return schema identity, full validators and independent task fields."""
     try:
         stat = MANIFEST_SCHEMA_PATH.stat()
         key = (str(MANIFEST_SCHEMA_PATH), stat.st_mtime_ns, stat.st_size)
@@ -64,15 +65,39 @@ def _schema_validators() -> tuple[str, Any, Any] | None:
             return cached
         raw = MANIFEST_SCHEMA_PATH.read_bytes()
         schema = json.loads(raw.decode("utf-8"))
-        task_schema = {
-            "$schema": schema["$schema"],
-            "$defs": schema["$defs"],
-            "$ref": "#/$defs/task",
-        }
+        task = schema["$defs"]["task"]
+        properties = schema.get("properties")
+        required = schema.get("required")
+        independent = (
+            set(schema) <= {"$schema", "$id", "title", "$defs", "type",
+                            "additionalProperties", "required", "properties"}
+            and schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+            and schema.get("type") == "object"
+            and schema.get("additionalProperties") is False
+            and isinstance(properties, dict) and isinstance(required, list)
+            and all(isinstance(name, str) and name in properties for name in required)
+            and properties.get("tasks") == {
+                "type": "object", "additionalProperties": {"$ref": "#/$defs/task"},
+            }
+        )
+        fields = None
+        if (isinstance(task, dict)
+            and set(task) == {"type", "additionalProperties", "required", "properties"}
+            and task["type"] == "object" and task["additionalProperties"] is False
+            and isinstance(task["required"], list)
+            and isinstance(task["properties"], dict)
+            and all(isinstance(name, str) and name in task["properties"]
+                    for name in task["required"])):
+            # These object constraints depend only on the keys/type, while
+            # each property is fully validated by its original subschema.
+            # Any conditional, combinator, reference or unknown object-level
+            # keyword defeats this proof and retains full task validation.
+            fields = task["properties"]
+        top_validator = Draft202012Validator(schema)
         entry = (
-            hashlib.sha256(raw).hexdigest(),
-            Draft202012Validator(schema),
-            Draft202012Validator(task_schema),
+            hashlib.sha256(raw).hexdigest(), top_validator,
+            top_validator.evolve(schema={"$ref": "#/$defs/task"}),
+            fields, independent,
         )
     except (OSError, ValueError, KeyError):
         return None
@@ -91,10 +116,10 @@ def _stamp_text(data: bytes, schema_sha256: str) -> str:
     )
 
 
-def _remember(path: Path, text: str) -> None:
+def _remember(path: Path, text: str, schema_sha256: str) -> None:
     key = str(path)
     _known_valid.pop(key, None)
-    _known_valid[key] = text
+    _known_valid[key] = (schema_sha256, text)
     while len(_known_valid) > _KNOWN_VALID_LIMIT:
         _known_valid.pop(next(iter(_known_valid)))
 
@@ -121,41 +146,70 @@ def load_manifest(
         except (OSError, UnicodeError):
             stamp = None
         if stamp == _stamp_text(data, validators[0]):
-            _remember(manifest_path, text)
+            _remember(manifest_path, text, validators[0])
             return manifest
 
     validate_manifest(manifest, schema_path=schema_path)
     if validators is not None:
-        _remember(manifest_path, text)
+        _remember(manifest_path, text, validators[0])
     return manifest
 
 
-def _validate_changes(manifest: Mapping[str, Any], known_text: str) -> bool:
+def _same_json_value(left: Any, right: Any) -> bool:
+    """Compare JSON values without Python's bool/int/float equivalence."""
+    if left is right:
+        return True
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(
+            _same_json_value(value, right[key]) for key, value in left.items()
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _same_json_value(a, b) for a, b in zip(left, right)
+        )
+    return left == right
+
+
+def _validate_changes(
+    manifest: Mapping[str, Any], known_text: str,
+    validators: tuple[str, Any, Any, Any, bool],
+) -> bool:
     """Validate only what differs from a known-valid document.
 
     Returns ``False`` when the shortcut does not apply or finds an error; the
-    caller then runs the full validation.  Tasks are compared with ``==``, so
-    a field changing between ``1`` and ``True`` is the one change it cannot
-    see; the code that edits manifests never does that.
+    caller then runs the full validation. JSON types are compared explicitly
+    so equal Python values such as ``1`` and ``True`` cannot hide changes.
     """
-    validators = _schema_validators()
     tasks = manifest.get("tasks") if isinstance(manifest, Mapping) else None
-    if validators is None or not isinstance(tasks, dict):
+    if not validators[4] or not isinstance(tasks, dict):
         return False
     try:
         known = json.loads(known_text)
         known_tasks = known["tasks"]
     except (ValueError, KeyError, TypeError):
         return False
-    _, top_validator, task_validator = validators
+    _, top_validator, task_validator, fields, _ = validators
     top = {key: value for key, value in manifest.items() if key != "tasks"}
     known_top = {key: value for key, value in known.items() if key != "tasks"}
-    if top != known_top:
+    if not _same_json_value(top, known_top):
         top["tasks"] = {}
         if not top_validator.is_valid(top):
             return False
     for task_id, task in tasks.items():
-        if known_tasks.get(task_id) != task and not task_validator.is_valid(task):
+        old = known_tasks.get(task_id)
+        if (fields is not None and isinstance(task, dict) and isinstance(old, dict)
+            and task.keys() == old.keys()):
+            # The old object already satisfied type, required and forbidden
+            # extra-key constraints, and its keys are unchanged. Validate the
+            # entire value of every changed field (including nested data),
+            # using descend so references retain the original root/resource.
+            for name, value in task.items():
+                if not _same_json_value(value, old[name]):
+                    if next(task_validator.descend(value, fields[name]), None) is not None:
+                        return False
+        elif not _same_json_value(task, old) and not task_validator.is_valid(task):
             return False
     return True
 
@@ -169,12 +223,13 @@ def write_manifest(
     """Validate a manifest and write it as UTF-8 JSON with an atomic replace."""
     manifest_path = Path(path)
     fast = _is_default_schema(schema_path)
-    known_text = _known_valid.get(str(manifest_path)) if fast else None
-    if known_text is None or not _validate_changes(manifest, known_text):
+    validators = _schema_validators() if fast else None
+    known = _known_valid.get(str(manifest_path)) if validators is not None else None
+    if (known is None or known[0] != validators[0]
+        or not _validate_changes(manifest, known[1], validators)):
         validate_manifest(manifest, schema_path=schema_path)
 
     text = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
-    validators = _schema_validators() if fast else None
     if validators is not None:
         # The stamp is written first: it only says "these bytes are valid",
         # which stays true whatever happens to the manifest after that.
@@ -187,4 +242,4 @@ def write_manifest(
             pass
     atomic_write_text(manifest_path, text)
     if validators is not None:
-        _remember(manifest_path, text)
+        _remember(manifest_path, text, validators[0])
