@@ -153,7 +153,7 @@ class _TaskReadCache:
         except OSError:
             return _MISSING
         return (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size,
-                stat.st_ino, stat.st_mode)
+                stat.st_dev, stat.st_ino, stat.st_mode)
 
     def _read(
         self, paths: tuple[str, ...], reader: Callable[[], Any],

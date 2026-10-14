@@ -192,3 +192,54 @@ def test_unreadable_signature_never_allows_an_old_successful_json_read(
     for task in TASK_IDS[1:]:
         assert manifest["tasks"][task]["state"] == "failed"
         assert manifest["tasks"][task]["error"] == "タスク出力を読み込めません: D1.make"
+
+
+def test_same_inode_on_a_different_device_never_reuses_old_dependency_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    orchestrator, run = setup_run(tmp_path)
+    path = orchestrator.task_dir(run, "D1.make") / "output.json"
+    original_stat, original_resolve = module.os.stat, orchestrator._resolve_task_inputs
+    original_output = module.read_task_output
+    original_signature = None
+    changed_device = False
+    reads = []
+
+    def stat(name, *args, **kwargs):
+        nonlocal original_signature
+        actual = original_stat(name, *args, **kwargs)
+        if Path(name) != path:
+            return actual
+        if original_signature is None:
+            original_signature = actual
+        old = original_signature
+        # A symlink can switch devices to a distinct file whose inode and all
+        # other metadata coincide. Only st_dev distinguishes these two views.
+        return SimpleNamespace(st_dev=old.st_dev + int(changed_device),
+                               st_ino=old.st_ino, st_mtime_ns=old.st_mtime_ns,
+                               st_ctime_ns=old.st_ctime_ns, st_size=old.st_size,
+                               st_mode=old.st_mode)
+
+    def resolve(manifest, run_id, task_id, **kwargs):
+        nonlocal changed_device
+        result = original_resolve(manifest, run_id, task_id, **kwargs)
+        if kwargs.get("reads") is not None and task_id == TASK_IDS[0] and not changed_device:
+            changed_device = True
+            atomic_write_json(path, {"data": ["swap"]})
+        return result
+
+    def read_output(directory, task_type):
+        if directory.name == "D1.make":
+            reads.append(directory)
+        return original_output(directory, task_type)
+
+    monkeypatch.setattr(module.os, "stat", stat)
+    monkeypatch.setattr(orchestrator, "_resolve_task_inputs", resolve)
+    monkeypatch.setattr(module, "read_task_output", read_output)
+    manifest = orchestrator.advance(run)
+    assert manifest["tasks"][TASK_IDS[0]]["cache_key"] == key_for(TASK_IDS[0])
+    for task in TASK_IDS[1:]:
+        assert manifest["tasks"][task]["cache_key"] == key_for(task, given=["swap"])
+    assert len(reads) == 2
