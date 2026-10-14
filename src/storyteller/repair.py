@@ -58,7 +58,7 @@ def latest_repair_source(task_dir: Path, task: Mapping[str, Any]) -> dict[str, A
 
 
 def repair_conditions(
-    definition: Mapping[str, Any], inputs: Mapping[str, Any], *, shorten_original: bool = False
+    definition: Mapping[str, Any], inputs: Mapping[str, Any], *, shorten_original: bool = False, reason: str = ""
 ) -> list[str]:
     """Describe what the rewritten output must satisfy, from the task definition."""
     lines: list[str] = []
@@ -80,6 +80,13 @@ def repair_conditions(
                 lines.append(f"{arguments.get('n')}字以上にする{where}。足りなければ、元の内容を具体的に描写して書き足す。")
         elif name == "no_story_metadata":
             lines.append("構造の説明と内部 ID を本文から除く。")
+        elif (name == "no_repeated_event_field" and definition.get("id") == "S7.event"
+              and inputs.get("event_field") != "何が起きたか" and any(
+                  error.lstrip().startswith("no_repeated_event_field:") for error in reason.split("；")
+              )):
+            from .event_fields import selected_event_steps
+            lines.extend(step for step in selected_event_steps(definition, inputs)
+                         if step.startswith("作り方の指示："))
         elif name == "no_repeated_scene":
             lines.append("直前の場面の行動・結果を再演せず、担当部分だけを書く。")
         elif name == "ends_complete":
@@ -134,7 +141,7 @@ def generate_repair_card(
     lines = [
         f"# タスク {ticket}", "", "## あなたの役割", REPAIR_ROLE, "", "## 入力",
         "### 元の出力", original, "### 不合格の理由", rendered_reason, "### 満たすべき条件",
-        *(f"- {condition}" for condition in repair_conditions(definition, inputs, shorten_original=shorten_original)),
+        *(f"- {condition}" for condition in repair_conditions(definition, inputs, shorten_original=shorten_original, reason=reason)),
     ]
     for name in ("conditions", "decided_conditions"):
         if name in inputs:

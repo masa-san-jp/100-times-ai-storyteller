@@ -47,7 +47,7 @@ def test_every_event_field_card_explicitly_prohibits_the_action(field):
     assert inputs == before
     rule = next(step for step in definition['card']['steps'] if step.startswith('発動・禁止'))
     assert len(rule) <= len(PREVIOUS_RULES['S7.event'])
-    assert definition['version'] == 20
+    assert definition['version'] == 21
 
 
 def test_detail_prohibition_and_maximum_retry_budget():

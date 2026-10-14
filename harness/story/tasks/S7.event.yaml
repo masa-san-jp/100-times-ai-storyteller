@@ -1,5 +1,5 @@
 id: S7.event
-version: 20
+version: 21
 kind: llm
 element: text
 inputs:
@@ -124,6 +124,7 @@ validate:
   checks:
   - no_story_metadata
   - event_subject
+  - no_repeated_event_field
   - no_copy_from_inputs
   - avoid_listed:
       table: tables/meta_terms.yaml

@@ -22,9 +22,10 @@ def previous_definition():
 @pytest.mark.parametrize('field', EVENT_FIELDS)
 def test_only_action_and_result_change_without_increasing_card_length(field):
     new, old = _load_definition(), previous_definition()
-    assert new['version'] == 20 and old['version'] == 19
+    assert new['version'] == 21 and old['version'] == 19
     expected = deepcopy(old)
-    expected['version'] = 20
+    expected['version'] = 21
+    expected['validate']['checks'].insert(2, 'no_repeated_event_field')
     for index, step in enumerate(new['card']['steps']):
         if step.partition('：')[0] in ('what', 'result'):
             expected['card']['steps'][index] = step

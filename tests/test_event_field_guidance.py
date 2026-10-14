@@ -34,7 +34,7 @@ def test_only_selected_field_scope_is_card_instruction(field):
             assert scopes[other] not in card
     assert '灯りを消したときだけ水門が開く。' in card
     assert '閉じた水門の前まで到着した。' in card
-    assert definition['version'] == 20
+    assert definition['version'] == 21
     assert 'event_subject' in definition['validate']['checks']
 
 

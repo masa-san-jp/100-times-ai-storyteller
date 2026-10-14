@@ -20,9 +20,11 @@ def _previous_definition():
 def test_context_does_not_require_repeating_whole_event_in_every_field(field):
     definition = _load_definition()
     previous = _previous_definition()
-    assert definition['version'] == 20 and previous['version'] == 17
+    assert definition['version'] == 21 and previous['version'] == 17
     assert definition['inputs'] == previous['inputs']
-    assert definition['validate'] == previous['validate']
+    expected_checks = deepcopy(previous['validate'])
+    expected_checks['checks'].insert(2, 'no_repeated_event_field')
+    assert definition['validate'] == expected_checks
     assert definition['card']['input_order'] == previous['card']['input_order']
     assert definition['card']['material_rule'] == previous['card']['material_rule']
     for key in ('output', 'candidates', 'select_candidate', 'max_input_chars', 'max_invalidations', 'continuation'):

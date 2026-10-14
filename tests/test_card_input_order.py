@@ -77,7 +77,7 @@ def test_s7_displays_spec_order_without_changing_slot_definition_or_values():
     assert positions == sorted(positions)
     assert '#### 関係する用語集' not in card
     assert inputs == original
-    assert definition['version'] == 20
+    assert definition['version'] == 21
 
 
 @pytest.mark.parametrize('order', [None, 'items', [1], ['items', 'items']])
