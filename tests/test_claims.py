@@ -803,7 +803,24 @@ def test_eight_executors_do_not_time_out_on_the_manifest_lock(
     for process in processes:
         process.join(timeout=60)
     errors = [result["traceback"] for result in results if "error" in result]
-    diagnostics = json.dumps(results, ensure_ascii=False, indent=2)
+    remaining_lock = None
+    if errors:
+        path = orchestrator.run_dir(run_id) / "manifest.lock"
+        try:
+            stat = path.stat()
+            remaining_lock = {
+                "contents": path.read_text(encoding="utf-8"),
+                "mtime": stat.st_mtime,
+                "age_seconds": time.time() - stat.st_mtime,
+            }
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeError) as error:
+            remaining_lock = {"inspection_error": repr(error)}
+    diagnostics = json.dumps(
+        {"workers": results, "remaining_lock_after_join": remaining_lock},
+        ensure_ascii=False, indent=2,
+    )
     assert not errors, "\n\n".join(errors) + "\nWorker timings:\n" + diagnostics
     assert [result["done"] for result in results] == [5] * 8, diagnostics
     assert all(process.exitcode == 0 for process in processes)
