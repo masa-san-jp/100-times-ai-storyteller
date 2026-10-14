@@ -163,6 +163,10 @@
         "character_fact_counts"
       ],
       "properties": {
+        "expansion_axes": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
         "axes": {
           "$ref": "#/$defs/preset/properties/axes"
         },

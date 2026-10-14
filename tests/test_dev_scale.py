@@ -100,6 +100,24 @@ def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path) -> N
     used_types = {task["type"] for task in tasks.values()}
     # F* (formatting) tasks are created by `st format`, not by a story run.
     assert llm_types <= used_types, sorted(llm_types - used_types)
+    s2_plan = json.loads((harness.task_dir(run_id, "S2.plan") / "output.json").read_text(encoding="utf-8"))
+    assert {entry["axis"]["key"] for entry in s2_plan["plans"].values()} == {"want"}
+    pools = json.loads((harness.task_dir(run_id, "S2.merge") / "output.json").read_text(encoding="utf-8"))["pools"]
+    assert pools["want"] and all(not pool for axis, pool in pools.items() if axis != "want")
+    assignment = json.loads((harness.task_dir(run_id, "S3.assign") / "output.json").read_text(encoding="utf-8"))
+    def element_ids(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "id" and isinstance(item, str):
+                    yield item
+                else:
+                    yield from element_ids(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from element_ids(item)
+    assert any(identifier.startswith("ability:t") for identifier in element_ids(assignment))
+    assert not any(":i" in identifier and not identifier.startswith("want:") for identifier in element_ids(assignment))
+
     assert len(tasks) < 240  # a few minutes with a real model (ADR-0009)
     for event in ('e001', 'e002', 'e003'):
         assert {name for name in tasks if name.startswith(f'S7.event-{event}-what-c')} == {

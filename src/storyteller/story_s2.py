@@ -36,10 +36,18 @@ def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
     if not isinstance(pool_need, Mapping):
         raise ValueError("manifest の pool_need が不正です")
 
+    scale = manifest.get("scale", {})
+    selected_axes = None
+    if scale.get("preset") == "dev" and "expansion_axes" in scale.get("derived", {}):
+        from .scale import expansion_axes
+        selected_axes = expansion_axes(scale["derived"]["expansion_axes"], tuple(axis["key"] for axis in axes))
+
     plans: dict[str, dict[str, Any]] = {}
     expand_tasks: list[TaskSpec] = []
     for axis in axes:
         axis_key = axis["key"]
+        if selected_axes is not None and axis_key not in selected_axes:
+            continue
         required = pool_need.get(axis_key)
         if isinstance(required, bool) or not isinstance(required, int) or required < 0:
             raise ValueError(f"pool_need の値が不正です: {axis_key}")

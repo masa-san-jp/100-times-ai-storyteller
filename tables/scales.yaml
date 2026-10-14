@@ -172,6 +172,7 @@ candidate_multiplier: 3
 # 開発用の規模 dev（ADR-0009、scale.md「開発用の規模 dev」）。ユーザー向けのプリセットではない。
 # 出来事数は、最小の構造テンプレート three-beat の段階数（3）に合わせる。
 dev:
+  expansion_axes: [want]
   axes:
     time: hours
     space: spot
