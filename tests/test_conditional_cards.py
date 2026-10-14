@@ -138,4 +138,7 @@ def test_cards_keep_genuine_checks_and_only_add_scope_clarifications():
     assert {'max_chars': {'n': 120}} in event['validate']['checks']
     assert 'すべて発動・解決する命令ではない' in '\n'.join(event['card']['steps'])
     assert '指定項目の回答範囲だけを書く' in '\n'.join(event['card']['steps'])
-    assert '現在の段階' in '\n'.join(event['card']['steps'])
+    what_steps = [step for step in event['card']['steps'] if step.startswith('what：')]
+    assert len(what_steps) == 1
+    assert '当段階の具体的行動を書く。' in what_steps[0]
+    assert '段階の達成宣言だけにしない。' in what_steps[0]
