@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -215,6 +217,96 @@ def test_lock_timeout_and_release(tmp_path: Path) -> None:
             with acquire_lock(lock_path, timeout=0.02, retry_interval=0.005):
                 pass
     assert not lock_path.exists()
+
+
+def test_windows_lock_open_retries_access_denied_without_bypassing_o_excl(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock_path = tmp_path / "manifest.lock"
+    original_open = os.open
+    attempts = 0
+    sleeps = []
+
+    def pending_delete(path, flags, mode):
+        nonlocal attempts
+        assert Path(path) == lock_path
+        assert flags & os.O_EXCL and flags & os.O_CREAT
+        attempts += 1
+        if attempts <= 2:
+            raise PermissionError(errno.EACCES, "pending deletion", str(path))
+        return original_open(path, flags, mode)
+
+    monkeypatch.setattr("storyteller.storage.sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr("storyteller.storage.os.open", pending_delete)
+    monkeypatch.setattr("storyteller.storage.time.sleep", sleeps.append)
+    with acquire_lock(lock_path):
+        assert attempts == 3
+        assert json.loads(lock_path.read_text(encoding="utf-8"))["pid"] == os.getpid()
+    assert sleeps == [0.1, 0.1]
+    assert not lock_path.exists()
+
+
+@pytest.mark.parametrize("platform,number", [
+    ("linux", errno.EACCES), ("darwin", errno.EACCES), ("win32", errno.EPERM),
+])
+def test_lock_open_does_not_retry_other_permission_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, number: int,
+) -> None:
+    error = PermissionError(number, "permanent denial")
+    sleeps = []
+
+    def deny(*args):
+        raise error
+
+    monkeypatch.setattr("storyteller.storage.sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr("storyteller.storage.os.open", deny)
+    monkeypatch.setattr("storyteller.storage.time.sleep", sleeps.append)
+    with pytest.raises(PermissionError) as caught:
+        with acquire_lock(tmp_path / "manifest.lock"):
+            pytest.fail("lock was not acquired")
+    assert caught.value is error
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("existing_lock", [False, True])
+def test_windows_lock_open_denial_is_bounded_and_does_not_remove_an_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing_lock: bool,
+) -> None:
+    lock_path = tmp_path / "manifest.lock"
+    if existing_lock:
+        lock_path.write_text("another owner's lock", encoding="utf-8")
+    original_open = os.open
+    error = PermissionError(errno.EACCES, "access denied", str(lock_path))
+    attempts = 0
+    sleeps = []
+    clock = SimpleNamespace(now=0.0)
+
+    def deny(path, flags, mode):
+        nonlocal attempts
+        attempts += 1
+        if existing_lock and attempts > 1:
+            return original_open(path, flags, mode)
+        raise error
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock.now += seconds
+
+    monkeypatch.setattr("storyteller.storage.sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr("storyteller.storage.os.open", deny)
+    monkeypatch.setattr("storyteller.storage.time", SimpleNamespace(
+        monotonic=lambda: clock.now, sleep=sleep, time=time.time,
+    ))
+    expected = LockTimeoutError if existing_lock else PermissionError
+    with pytest.raises(expected) as caught:
+        with acquire_lock(lock_path, timeout=0.2):
+            pytest.fail("lock was not acquired")
+    assert attempts == 3 and sleeps == [0.1, 0.1]
+    if existing_lock:
+        assert lock_path.read_text(encoding="utf-8") == "another owner's lock"
+    else:
+        assert caught.value is error
+        assert not lock_path.exists()
 
 
 def test_stale_lock_is_removed_and_reclaimed(tmp_path: Path) -> None:

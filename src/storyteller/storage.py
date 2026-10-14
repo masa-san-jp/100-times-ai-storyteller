@@ -7,6 +7,7 @@ need in one place.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import secrets
@@ -349,6 +350,18 @@ def acquire_lock(
             if time.monotonic() >= deadline:
                 raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
             remaining = max(0.0, deadline - time.monotonic())
+            time.sleep(min(retry_interval, remaining))
+            continue
+        except PermissionError as error:
+            # On Windows a lock whose deletion is still pending can make
+            # O_EXCL open report EACCES rather than EEXIST. Retry only this
+            # acquisition operation, without removing or opening the lock in
+            # another mode. A persistent denial remains a PermissionError.
+            if sys.platform != "win32" or error.errno != errno.EACCES:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
             time.sleep(min(retry_interval, remaining))
             continue
         except OSError:
