@@ -5,6 +5,7 @@ import json
 import os
 import time
 import traceback
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -87,6 +88,105 @@ def test_claim_writes_manifest_claim_file_and_card(tmp_path: Path) -> None:
     assert claim_file["claimed_at"] == "2026-09-27T03:15:00Z"
     assert (task_dir / "card.md").read_text(encoding="utf-8") == result["card"]
     assert orchestrator.validate_claim(result["ticket"])["task_id"] == "D1.echo"
+
+
+@pytest.mark.parametrize("change", ["none", "expire", "revoke", "reclaim", "other-owner"])
+def test_claim_prepares_without_lock_and_rechecks_owner_before_card_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str,
+) -> None:
+    from storyteller.storage import atomic_write_json, manifest_lock
+
+    clock = MutableClock()
+    definition = llm_definition("D1.echo", lease_minutes=0.05)
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": definition}, clock=clock)
+    run_id = orchestrator.create_run(seed=1)
+    directory = orchestrator.task_dir(run_id, "D1.echo")
+    (directory / "card.md").write_text("previous card", encoding="utf-8")
+    atomic_write_json(directory / "input.json", {"previous": True})
+    expected = [(directory / name).read_bytes() for name in ("card.md", "input.json")]
+    original = orchestrator_module.prepare_atomic_write_bytes
+    preparations = 0
+    replacement = None
+
+    @contextmanager
+    def interleave(path, data):
+        nonlocal preparations, expected, replacement
+        with original(path, data) as publish:
+            assert not (orchestrator.run_dir(run_id) / "manifest.lock").exists()
+            manifest = orchestrator.load_run(run_id)
+            task = manifest["tasks"]["D1.echo"]
+            payload = json.loads((directory / "claim.json").read_text(encoding="utf-8"))
+            assert task["state"] == "claimed" and task["claim"]["ticket"] == payload["ticket"]
+            preparations += 1
+            if preparations == 2:
+                if change == "none":
+                    assert orchestrator.claim_next(run_id, executor_id="other") is None
+                elif change == "expire":
+                    clock.value += timedelta(seconds=31)
+                elif change in {"revoke", "reclaim"}:
+                    orchestrator.revoke_claim(run_id, "D1.echo", reason="取消")
+                    if change == "reclaim":
+                        replacement = orchestrator.claim_task(run_id, "D1.echo", executor_id="replacement")
+                        expected = [(directory / name).read_bytes() for name in ("card.md", "input.json")]
+                else:
+                    with manifest_lock(orchestrator.run_dir(run_id)):
+                        payload["executor_id"] = "replacement"
+                        task["claim"]["executor_id"] = "replacement"
+                        atomic_write_json(directory / "claim.json", payload)
+                        write_manifest(orchestrator.run_dir(run_id) / "manifest.json", manifest)
+
+            def publish_while_locked():
+                assert (orchestrator.run_dir(run_id) / "manifest.lock").exists()
+                publish()
+
+            yield publish_while_locked
+
+    monkeypatch.setattr(orchestrator_module, "prepare_atomic_write_bytes", interleave)
+    if change == "none":
+        result = orchestrator.claim_task(run_id, "D1.echo", executor_id="first")
+        assert (directory / "card.md").read_text(encoding="utf-8") == result["card"]
+        assert json.loads((directory / "input.json").read_text(encoding="utf-8")) == {}
+    else:
+        with pytest.raises(InvalidClaimError):
+            orchestrator.claim_task(run_id, "D1.echo", executor_id="first")
+        assert [(directory / name).read_bytes() for name in ("card.md", "input.json")] == expected
+        task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
+        if change in {"reclaim", "other-owner"}:
+            assert task["state"] == "claimed" and task["claim"]["executor_id"] == "replacement"
+            if replacement is not None:
+                assert task["claim"]["ticket"] == replacement["ticket"]
+        else:
+            assert task["state"] == "ready" and task["claim"] is None
+            assert not (directory / "claim.json").exists()
+            if change == "expire":
+                assert (directory / "claim.expired.1.json").exists()
+    assert list(tmp_path.rglob(".*.tmp")) == []
+
+
+def test_claim_preparation_failure_rolls_back_reservation_and_removes_temps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition("D1.echo")})
+    run_id = orchestrator.create_run(seed=1)
+    directory = orchestrator.task_dir(run_id, "D1.echo")
+    original = orchestrator_module.prepare_atomic_write_bytes
+
+    @contextmanager
+    def fail_input(path, data):
+        with original(path, data) as publish:
+            if Path(path).name == "input.json":
+                raise OSError("injected input preparation failure")
+            yield publish
+
+    monkeypatch.setattr(orchestrator_module, "prepare_atomic_write_bytes", fail_input)
+    with pytest.raises(OSError, match="injected input preparation failure"):
+        orchestrator.claim_task(run_id, "D1.echo", executor_id="first")
+    task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
+    assert task["state"] == "ready" and task["claim"] is None
+    assert not any((directory / name).exists() for name in ("card.md", "input.json", "claim.json"))
+    assert list(tmp_path.rglob(".*.tmp")) == []
+    monkeypatch.setattr(orchestrator_module, "prepare_atomic_write_bytes", original)
+    assert orchestrator.claim_task(run_id, "D1.echo", executor_id="second") is not None
 
 
 def test_default_executor_id_replaces_invalid_hostname_characters(
@@ -550,6 +650,42 @@ def _claim_in_process(data_dir: str, run_id: str, queue, start_event) -> None:
         queue.put({"error": repr(error)})
 
 
+def _crash_after_reserving_claim(data_dir: str, run_id: str) -> None:
+    orchestrator = Orchestrator(
+        data_dir, {"D1.echo": llm_definition("D1.echo", lease_minutes=0.05)},
+        clock=MutableClock(),
+    )
+    orchestrator._finish_claim = lambda *args: os._exit(0)
+    orchestrator.claim_next(run_id, executor_id="crashed")
+    os._exit(7)  # A claim was expected to reach the publication boundary.
+
+
+def test_crash_after_claim_reservation_is_recovered_through_lease_expiry(tmp_path: Path) -> None:
+    clock = MutableClock()
+    definition = llm_definition("D1.echo", lease_minutes=0.05)
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": definition}, clock=clock)
+    run_id = orchestrator.create_run(seed=1)
+    process = multiprocessing.get_context("spawn").Process(
+        target=_crash_after_reserving_claim, args=(str(tmp_path), run_id),
+    )
+    process.start()
+    process.join(timeout=30)
+    assert process.exitcode == 0
+    directory = orchestrator.task_dir(run_id, "D1.echo")
+    old = json.loads((directory / "claim.json").read_text(encoding="utf-8"))
+    task = orchestrator.load_run(run_id)["tasks"]["D1.echo"]
+    assert task["state"] == "claimed" and task["claim"]["ticket"] == old["ticket"]
+    assert not (directory / "card.md").exists() and not (directory / "input.json").exists()
+    clock.value += timedelta(seconds=31)
+    restarted = Orchestrator(tmp_path, {"D1.echo": definition}, clock=clock)
+    replacement = restarted.claim_next(run_id, executor_id="replacement")
+    assert replacement is not None and replacement["ticket"] != old["ticket"]
+    assert json.loads((directory / "claim.expired.1.json").read_text(encoding="utf-8")) == old
+    assert (directory / "card.md").read_text(encoding="utf-8") == replacement["card"]
+    assert json.loads((directory / "input.json").read_text(encoding="utf-8")) == {}
+    assert restarted.validate_claim(replacement["ticket"])["claim"]["executor_id"] == "replacement"
+
+
 def test_two_processes_cannot_claim_the_same_task(tmp_path: Path) -> None:
     definition = llm_definition("D1.echo")
     orchestrator = Orchestrator(tmp_path, {"D1.echo": definition})
@@ -602,7 +738,7 @@ def _claim_and_submit_loop(
         queue.put({"error": repr(error), "traceback": traceback.format_exc()})
 
 
-@pytest.mark.parametrize("fsync_delay", [0, 0.075], ids=["normal-disk", "slow-disk"])
+@pytest.mark.parametrize("fsync_delay", [0, 0.15], ids=["normal-disk", "slow-disk"])
 def test_eight_executors_do_not_time_out_on_the_manifest_lock(
     tmp_path: Path, fsync_delay: float,
 ) -> None:

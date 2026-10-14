@@ -131,6 +131,13 @@ class SubmissionResult:
 
 
 @dataclass(frozen=True)
+class _PendingClaim:
+    result: dict[str, str]
+    inputs: dict[str, Any]
+    claim: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class TaskSpec:
     """A task node to add to a run's DAG.
 
@@ -639,11 +646,11 @@ class Orchestrator:
                         _update_run_status(manifest)
                         _touch_manifest(manifest, now)
                         self._persist_manifest(run_dir, manifest)
-                        if result is not None:
-                            return result
                         # A card error or O_EXCL race consumed this candidate.
                         # Re-enter the same run before moving to the next one.
-                        retry_same_run = True
+                        retry_same_run = result is None
+                    if result is not None:
+                        return self._finish_claim(candidate_run_id, task_id, result)
                 except LockTimeoutError:
                     raise
                 except (OSError, ValueError, ClaimError) as error:
@@ -716,7 +723,7 @@ class Orchestrator:
             _update_run_status(manifest)
             _touch_manifest(manifest, now)
             self._persist_manifest(run_dir, manifest)
-            return result
+        return self._finish_claim(run_id, task_id, result)
 
     _claim_task = claim_task
 
@@ -1482,7 +1489,7 @@ class Orchestrator:
         executor_id: str,
         isolation: str,
         now: str,
-    ) -> dict[str, str] | None:
+    ) -> _PendingClaim | None:
         task = _get_task(manifest, task_id)
         if task["kind"] != "llm" or task["state"] != "ready":
             return None
@@ -1537,27 +1544,84 @@ class Orchestrator:
             reason="実行者がclaim",
             executor_id=executor_id,
         )
-        try:
-            atomic_write_text(self.task_dir(run_id, task_id) / "card.md", card)
-            atomic_write_json(
-                self.task_dir(run_id, task_id) / "input.json", card_inputs
-            )
-        except BaseException:
-            _release_claim(self.run_dir(run_id), task_id, task)
-            _set_task_state(
-                manifest,
-                task_id,
-                "ready",
-                now,
-                reason="タスクカードの保存に失敗",
-                executor_id=executor_id,
-            )
-            raise
-        return {
+        return _PendingClaim({
             "ticket": ticket,
             "card": card,
             "lease_expires_at": lease_expires_at,
-        }
+        }, card_inputs, manifest_claim)
+
+    def _finish_claim(
+        self, run_id: str, task_id: str, pending: _PendingClaim,
+    ) -> dict[str, str]:
+        """Durably prepare the reserved claim's card without holding the lock.
+
+        The O_EXCL claim and manifest already agree, so other executors cannot
+        take this task while its two private files are being fsynced. Publish
+        only while the same live claim still owns the task. A crash before
+        publication leaves a normal claim that lease expiry can recover.
+        """
+        run_dir = self.run_dir(run_id)
+        directory = self.task_dir(run_id, task_id)
+        try:
+            with ExitStack() as staged:
+                publish_card = staged.enter_context(prepare_atomic_write_bytes(
+                    directory / "card.md",
+                    pending.result["card"].replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"),
+                ))
+                publish_inputs = staged.enter_context(prepare_atomic_write_bytes(
+                    directory / "input.json",
+                    (json.dumps(pending.inputs, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+                ))
+                with manifest_lock(run_dir):
+                    manifest = load_manifest(run_dir / "manifest.json")
+                    if self._halt_if_harness_changed(manifest):
+                        _touch_manifest(manifest, self._now())
+                        self._persist_manifest(run_dir, manifest)
+                    if manifest["status"] == "halted":
+                        raise HaltedRunError(f"run は停止中です: {run_id}")
+                    claim = _require_claim_locked(
+                        manifest, run_dir, task_id, pending.result["ticket"], self._now(),
+                    )
+                    if claim != pending.claim:
+                        raise InvalidClaimError("カードの準備中に claim が変更されました")
+                    publish_card()
+                    publish_inputs()
+            return pending.result
+        except BaseException as error:
+            try:
+                self._rollback_pending_claim(run_id, task_id, pending)
+            except Exception as rollback_error:
+                raise error from rollback_error
+            raise
+
+    def _rollback_pending_claim(
+        self, run_id: str, task_id: str, pending: _PendingClaim,
+    ) -> None:
+        """Undo a failed publication only if the original claim still owns it."""
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            task = _get_task(manifest, task_id)
+            if task["state"] != "claimed" or task.get("claim") != pending.claim:
+                return
+            try:
+                payload = _read_claim_file(self.task_dir(run_id, task_id) / "claim.json")
+            except InvalidClaimError:
+                return
+            if payload["task_id"] != task_id or _manifest_claim(payload) != pending.claim:
+                return
+            now = self._now()
+            _release_claim(
+                run_dir, task_id, task,
+                archive_prefix="claim.expired" if _claim_expired(payload, now) else None,
+            )
+            _set_task_state(
+                manifest, task_id, "ready", now, reason="タスクカードの保存に失敗",
+                executor_id=pending.claim["executor_id"],
+            )
+            _update_run_status(manifest)
+            _touch_manifest(manifest, now)
+            self._persist_manifest(run_dir, manifest)
 
     def _build_task_card(
         self,
