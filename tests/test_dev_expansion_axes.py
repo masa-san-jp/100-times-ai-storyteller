@@ -113,3 +113,22 @@ def test_saved_legacy_dev_run_reopens_with_all_axes(tmp_path):
     output = json.loads((resumed.task_dir(run, 'S2.plan') / 'output.json').read_text(encoding='utf-8'))
     assert {entry['axis']['key'] for entry in output['plans'].values()} == set(manifest['scale']['derived']['pool_need'])
     assert 'expansion_axes' not in resumed.load_run(run)['scale']['derived']
+
+
+@pytest.mark.parametrize('invalid', ['invalid', None, True, -1])
+def test_unselected_axis_pool_need_is_still_validated(monkeypatch, invalid):
+    scale = derive_scale('dev', seed=7).value
+    if invalid is None:
+        scale['derived']['pool_need'].pop('ability')
+    else:
+        scale['derived']['pool_need']['ability'] = invalid
+    with pytest.raises(ValueError, match='pool_need.*ability'):
+        plan(monkeypatch, scale)
+
+
+def test_valid_unselected_axis_needs_create_no_tasks(monkeypatch):
+    scale = derive_scale('dev', seed=7).value
+    scale['derived']['pool_need']['ability'] = 100
+    result = plan(monkeypatch, scale)
+    assert {entry['axis']['key'] for entry in result.output['plans'].values()} == {'want'}
+    assert not any('ability' in task.task_id for task in result.add_tasks)

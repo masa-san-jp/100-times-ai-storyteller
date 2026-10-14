@@ -46,11 +46,11 @@ def story_s2_plan(context: CodeTaskContext) -> CodeTaskResult:
     expand_tasks: list[TaskSpec] = []
     for axis in axes:
         axis_key = axis["key"]
-        if selected_axes is not None and axis_key not in selected_axes:
-            continue
         required = pool_need.get(axis_key)
         if isinstance(required, bool) or not isinstance(required, int) or required < 0:
             raise ValueError(f"pool_need の値が不正です: {axis_key}")
+        if selected_axes is not None and axis_key not in selected_axes:
+            continue
         is_dev = manifest.get("scale", {}).get("preset") == "dev"
         task_count = math.ceil(required / 5) + (0 if is_dev else 1)
         for ordinal in range(task_count):
