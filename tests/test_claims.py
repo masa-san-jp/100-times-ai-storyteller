@@ -4,6 +4,7 @@ import multiprocessing
 import json
 import os
 import time
+import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -598,7 +599,7 @@ def _claim_and_submit_loop(
             done += 1
         queue.put(done)
     except BaseException as error:  # pragma: no cover - surfaced by the parent
-        queue.put(repr(error))
+        queue.put({"error": repr(error), "traceback": traceback.format_exc()})
 
 
 @pytest.mark.parametrize("fsync_delay", [0, 0.075], ids=["normal-disk", "slow-disk"])
@@ -627,6 +628,8 @@ def test_eight_executors_do_not_time_out_on_the_manifest_lock(
     results = [queue.get(timeout=300) for _ in processes]
     for process in processes:
         process.join(timeout=60)
+    errors = [result["traceback"] for result in results if isinstance(result, dict)]
+    assert not errors, "\n\n".join(errors)
     assert results == [5] * 8
     assert all(process.exitcode == 0 for process in processes)
     manifest = orchestrator.load_run(run_id)
