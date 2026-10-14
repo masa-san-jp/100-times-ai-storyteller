@@ -174,6 +174,11 @@ def generate_repair_card(
     lines.extend(["", "## 手順", f"1. {REPAIR_STEP}",
                   "作り方の指示は本文に書かず、指定された処理を行うためだけに使う。", "",
                   "## 出力形式"])
+    if "max_output_tokens" in definition:
+        maximum = definition["max_output_tokens"]
+        if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1:
+            raise TaskCardError("max_output_tokens must be a positive integer")
+        lines.append(f"生成上限：{maximum}トークン（モデル設定の上限が小さい場合はその値）。")
     if output == "json":
         example = card.get("output_example")
         if not isinstance(example, str) or not example:
