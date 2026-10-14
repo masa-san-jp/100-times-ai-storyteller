@@ -3,6 +3,7 @@ from __future__ import annotations
 import multiprocessing
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -574,8 +575,17 @@ def test_two_processes_cannot_claim_the_same_task(tmp_path: Path) -> None:
     assert manifest["tasks"]["D1.echo"]["state"] == "claimed"
 
 
-def _claim_and_submit_loop(data_dir: str, run_id: str, count: int, queue, start_event) -> None:
+def _claim_and_submit_loop(
+    data_dir: str, run_id: str, count: int, queue, start_event,
+    fsync_delay: float = 0,
+) -> None:
     orchestrator = Orchestrator(data_dir, {"D1.echo": llm_definition("D1.echo")})
+    original_fsync = os.fsync
+    if fsync_delay:
+        def slow_fsync(descriptor: int) -> None:
+            time.sleep(fsync_delay)
+            original_fsync(descriptor)
+        os.fsync = slow_fsync
     start_event.wait(30)
     done = 0
     try:
@@ -591,7 +601,10 @@ def _claim_and_submit_loop(data_dir: str, run_id: str, count: int, queue, start_
         queue.put(repr(error))
 
 
-def test_eight_executors_do_not_time_out_on_the_manifest_lock(tmp_path: Path) -> None:
+@pytest.mark.parametrize("fsync_delay", [0, 0.075], ids=["normal-disk", "slow-disk"])
+def test_eight_executors_do_not_time_out_on_the_manifest_lock(
+    tmp_path: Path, fsync_delay: float,
+) -> None:
     tasks = [
         TaskSpec(f"D1.echo-{index:03d}", "D1.echo", index=(f"{index:03d}",))
         for index in range(240)
@@ -604,7 +617,7 @@ def test_eight_executors_do_not_time_out_on_the_manifest_lock(tmp_path: Path) ->
     processes = [
         context.Process(
             target=_claim_and_submit_loop,
-            args=(str(tmp_path), run_id, 5, queue, start_event),
+            args=(str(tmp_path), run_id, 5, queue, start_event, fsync_delay),
         )
         for _ in range(8)
     ]
@@ -615,6 +628,7 @@ def test_eight_executors_do_not_time_out_on_the_manifest_lock(tmp_path: Path) ->
     for process in processes:
         process.join(timeout=60)
     assert results == [5] * 8
+    assert all(process.exitcode == 0 for process in processes)
     manifest = orchestrator.load_run(run_id)
     states = [task["state"] for task in manifest["tasks"].values()]
     assert states.count("done") == 40

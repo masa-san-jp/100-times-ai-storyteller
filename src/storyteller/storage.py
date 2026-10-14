@@ -13,7 +13,7 @@ import secrets
 import socket
 import sys
 import time
-from collections.abc import Mapping, Iterator
+from collections.abc import Callable, Mapping, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -200,32 +200,53 @@ def _open_temp_file(path: Path) -> tuple[int, Path]:
     raise OSError(f"could not create a temporary file beside {path}")
 
 
-def atomic_write_bytes(path: os.PathLike[str] | str, data: bytes) -> None:
-    """Write bytes through a same-directory, fsynced temporary file."""
+@contextmanager
+def prepare_atomic_write_bytes(
+    path: os.PathLike[str] | str, data: bytes,
+) -> Iterator[Callable[[], None]]:
+    """Fsync a private temporary file, yielding its atomic publication step.
+
+    Preparing does not change the destination. The caller can therefore do
+    the slow durable write before taking a lock, then publish only after its
+    locked checks succeed. An unpublished file is removed on every exit.
+    """
     destination = _as_path(path)
     descriptor, temporary_path = _open_temp_file(destination)
+    published = False
     try:
         with os.fdopen(descriptor, "wb", closefd=True) as stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        replace_deadline = time.monotonic() + 1.0
-        while True:
+
+        def publish() -> None:
+            nonlocal published
+            replace_deadline = time.monotonic() + 1.0
+            while True:
+                try:
+                    os.replace(temporary_path, destination)
+                except PermissionError:
+                    remaining = replace_deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise
+                    time.sleep(min(0.05, remaining))
+                else:
+                    published = True
+                    return
+
+        yield publish
+    finally:
+        if not published:
             try:
-                os.replace(temporary_path, destination)
-            except PermissionError:
-                remaining = replace_deadline - time.monotonic()
-                if remaining <= 0:
-                    raise
-                time.sleep(min(0.05, remaining))
-            else:
-                break
-    except BaseException:
-        try:
-            temporary_path.unlink()
-        except FileNotFoundError:
-            pass
-        raise
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def atomic_write_bytes(path: os.PathLike[str] | str, data: bytes) -> None:
+    """Write bytes through a same-directory, fsynced temporary file."""
+    with prepare_atomic_write_bytes(path, data) as publish:
+        publish()
 
 
 def atomic_write_text(

@@ -15,6 +15,7 @@ from storyteller.storage import (
     atomic_write_text,
     batch_lock_path,
     manifest_lock_path,
+    prepare_atomic_write_bytes,
     resolve_data_dir,
     sync_folder_marker,
     tables_lock_path,
@@ -178,6 +179,32 @@ def test_atomic_json_write_is_utf8_json_with_lf(tmp_path: Path) -> None:
         "items": [1, 2],
     }
     assert b"\r" not in destination.read_bytes()
+
+
+def test_prepared_write_fsyncs_before_publish_and_discards_unpublished_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "state.txt"
+    destination.write_bytes(b"old")
+    original_fsync = os.fsync
+    synced = []
+
+    def check_fsync(descriptor: int) -> None:
+        assert destination.read_bytes() == b"old"
+        original_fsync(descriptor)
+        synced.append(descriptor)
+
+    monkeypatch.setattr("storyteller.storage.os.fsync", check_fsync)
+    with prepare_atomic_write_bytes(destination, b"discard"):
+        assert len(synced) == 1
+        assert destination.read_bytes() == b"old"
+    assert list(tmp_path.glob(".*.tmp")) == []
+    with prepare_atomic_write_bytes(destination, b"new") as publish:
+        assert len(synced) == 2
+        assert destination.read_bytes() == b"old"
+        publish()
+        assert destination.read_bytes() == b"new"
+    assert list(tmp_path.glob(".*.tmp")) == []
 
 
 def test_lock_timeout_and_release(tmp_path: Path) -> None:

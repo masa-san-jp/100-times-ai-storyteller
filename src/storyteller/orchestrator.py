@@ -14,6 +14,7 @@ import socket
 import sys
 import unicodedata
 from copy import deepcopy
+from contextlib import ExitStack
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -27,7 +28,7 @@ from .cards import (
     input_char_count,
     prepare_task_inputs,
 )
-from .cache import cache_key, lookup_cache, save_cache
+from .cache import cache_key, cache_path, lookup_cache
 from .task_outputs import read_task_output
 from .failure_reports import write_failure_reports
 from .repair import generate_repair_card, latest_repair_source
@@ -42,6 +43,7 @@ from .storage import (
     atomic_write_json,
     atomic_write_text,
     manifest_lock,
+    prepare_atomic_write_bytes,
 )
 from .report_layout import find_report_dir, report_manifest_paths
 from .validation import (
@@ -1006,6 +1008,54 @@ class Orchestrator:
         discard_partial: bool = False,
         fatal: bool = False,
     ) -> SubmissionResult:
+        # A successful submission needs two durable files before its manifest
+        # transition. Fsync their private temporary files outside the manifest
+        # lock; only publish them after rechecking the ticket and lease below.
+        # This also leaves a real opportunity for polling executors to acquire
+        # the lock between this executor's claim and its commit on slow disks.
+        with ExitStack() as staged:
+            prepared = None
+            if validation.passed:
+                manifest = self.load_run(run_id)
+                task = _get_task(manifest, task_id)
+                definition = self.task_definitions[task["type"]]
+                stored_value = _postprocess_accepted_output(task, validation.value)
+                key = self._cache_key_for_task(manifest, task_id, card_inputs)
+                json_text = json.dumps(stored_value, ensure_ascii=False, indent=2) + "\n"
+                publish_cache = staged.enter_context(prepare_atomic_write_bytes(
+                    cache_path(self.data_dir, key), json_text.encode("utf-8"),
+                ))
+                if definition.get("output") == "json":
+                    output_name, output_text = "output.json", json_text
+                elif definition.get("output") == "text":
+                    if not isinstance(stored_value, str):
+                        raise OrchestrationError("text タスクの検証結果が文字列ではありません")
+                    output_name, output_text = "output.md", stored_value
+                else:
+                    raise OrchestrationError("task definition output must be json or text")
+                publish_output = staged.enter_context(prepare_atomic_write_bytes(
+                    self.task_dir(run_id, task_id) / output_name,
+                    output_text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"),
+                ))
+                prepared = (key, stored_value, output_name, publish_cache, publish_output)
+            return self._commit_prepared_submission(
+                ticket, run_id, task_id, raw_output, validation, card_inputs,
+                discard_partial=discard_partial, fatal=fatal, prepared=prepared,
+            )
+
+    def _commit_prepared_submission(
+        self,
+        ticket: str,
+        run_id: str,
+        task_id: str,
+        raw_output: Any,
+        validation: Any,
+        card_inputs: Mapping[str, Any],
+        *,
+        discard_partial: bool,
+        fatal: bool,
+        prepared: tuple[str, Any, str, Callable[[], None], Callable[[], None]] | None,
+    ) -> SubmissionResult:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
@@ -1035,18 +1085,15 @@ class Orchestrator:
                 f"{task_id}: {warning}" for warning in warnings
             )
             if validation.passed:
-                stored_value = _postprocess_accepted_output(task, validation.value)
-                key = self._cache_key_for_task(
-                    manifest,
-                    task_id,
-                    card_inputs,
-                )
-                save_cache(self.data_dir, key, stored_value)
-                _write_submitted_output(
-                    self.task_dir(run_id, task_id),
-                    definition,
-                    stored_value,
-                )
+                assert prepared is not None
+                key, stored_value, output_name, publish_cache, publish_output = prepared
+                publish_cache()
+                publish_output()
+                other_name = "output.md" if output_name == "output.json" else "output.json"
+                try:
+                    (self.task_dir(run_id, task_id) / other_name).unlink()
+                except FileNotFoundError:
+                    pass
                 if task["type"] == "S2.counter":
                     from .table_append import append_counter_element
                     _, append_warning = append_counter_element(
