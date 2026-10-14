@@ -1018,7 +1018,10 @@ class Orchestrator:
             if validation.passed:
                 manifest = self.load_run(run_id)
                 task = _get_task(manifest, task_id)
-                definition = self.task_definitions[task["type"]]
+                from .world_facts import specialize_fact_definition
+                definition = specialize_fact_definition(
+                    self.task_definitions[task["type"]], card_inputs,
+                )
                 stored_value = _postprocess_accepted_output(task, validation.value)
                 key = self._cache_key_for_task(manifest, task_id, card_inputs)
                 json_text = json.dumps(stored_value, ensure_ascii=False, indent=2) + "\n"
