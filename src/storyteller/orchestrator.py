@@ -1455,10 +1455,8 @@ class Orchestrator:
         claim_path = self.task_dir(run_id, task_id) / "claim.json"
 
         try:
-            card = self._build_task_card(manifest, run_id, task_id, ticket)
-            context = self._build_context(manifest, run_id, task_id)
-            card_inputs = _prepare_card_inputs(
-                context.definition, context.inputs
+            card, card_inputs = self._build_task_card_and_inputs(
+                manifest, run_id, task_id, ticket
             )
         except Exception as error:
             # Input rendering failure is a task failure according to the
@@ -1532,7 +1530,12 @@ class Orchestrator:
         definition = self.task_definitions[task["type"]]
         context = self._build_context(manifest, run_id, task_id)
         definition = context.definition
-        card_inputs = _prepare_card_inputs(definition, context.inputs)
+        card_inputs = _prepare_card_inputs(
+            definition, context.inputs,
+            continuation_tail_chars=_required_continuation_tail(
+                definition, task, self.task_dir(run_id, task_id)
+            ),
+        )
         retry_reason = task.get("error")
         if not isinstance(retry_reason, str):
             retry_reason = None
@@ -1553,6 +1556,10 @@ class Orchestrator:
                     original_output=repair["output"],
                     reason=str(repair.get("reason", retry_reason or "")),
                     inputs=card_inputs,
+                    max_chars_trimmed=(
+                        isinstance(repair.get("warnings"), list)
+                        and "字数の上限で切り詰め" in repair["warnings"]
+                    ),
                 ),
                 card_inputs,
             )
@@ -1566,9 +1573,9 @@ class Orchestrator:
                 definition,
                 card_inputs,
             )
-            if remaining < 1000:
-                raise TaskCardError("継続の予算が足りない")
             normalized_partial = unicodedata.normalize("NFC", partial)
+            if remaining < min(1000, len(normalized_partial)):
+                raise TaskCardError("継続の予算が足りない")
             continuation_tail = normalized_partial[-min(remaining, 6000) :]
             last_ready = next(
                 (event for event in reversed(task["history"]) if event.get("to") == "ready"), {}
@@ -1943,6 +1950,8 @@ class Orchestrator:
                     name: UNDECIDED if name in undecided else inputs[name]
                     for name in definition["inputs"] if name in undecided or name in inputs
                 }
+            if task["type"] == "S7.select" and "candidates" in undecided:
+                inputs["candidates"] = {}
         except (KeyError, SelectorError, TypeError) as error:
             raise TaskCardError(f"入力の生成に失敗しました: {error}") from error
         from .world_facts import specialize_fact_definition
@@ -2008,6 +2017,9 @@ class Orchestrator:
                     card_inputs = _prepare_card_inputs(
                         context.definition,
                         context.inputs,
+                        continuation_tail_chars=_required_continuation_tail(
+                            context.definition, task, self.task_dir(run_id, task_id)
+                        ),
                     )
                     fixed = None
                     if context.definition.get("range"):
@@ -2058,6 +2070,14 @@ class Orchestrator:
                 if not hit:
                     changed = True
                     continue
+                if task["type"] == "S7.event" and card_inputs.get("event_field") in {
+                    "何が起きたか", "結果", "出来事の結果"
+                }:
+                    from .event_subject import subject_errors
+                    if not isinstance(output, str) or subject_errors(output, card_inputs):
+                        # A cache rejection consumes no inference attempt.
+                        changed = True
+                        continue
                 output = _postprocess_accepted_output(task, output)
                 atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
                 _write_submitted_output(
@@ -2672,13 +2692,15 @@ def _load_card_inputs(task_dir: Path) -> dict[str, Any]:
 
 def _prepare_card_inputs(
     definition: Mapping[str, Any], inputs: Mapping[str, Any],
+    *, continuation_tail_chars: int | None = None,
 ) -> dict[str, Any]:
     """Leave room for the required continuation tail when inputs can shrink.
 
     Use the normal slot order and truncation rules. If required input cannot
     fit with a reserved tail, retain the normal budget: a complete first
     submission is still possible, and §8 handles an insufficient tail if a
-    continuation actually becomes necessary.
+    continuation actually becomes necessary. An active continuation instead
+    reserves its actual required tail and must fail if that tail cannot fit.
     """
     budget = int(definition.get("max_input_chars", 3000))
     choices = inputs.get("choices")
@@ -2711,6 +2733,18 @@ def _prepare_card_inputs(
             {"id": person_id, **value}
             for person_id, value in inputs[collection_slot].items()
         ]
+    if continuation_tail_chars is not None:
+        if budget < continuation_tail_chars:
+            raise TaskCardError("継続の予算が足りない")
+        try:
+            fitted = prepare_task_inputs(
+                dict(definition, max_input_chars=max(1, budget - continuation_tail_chars)), inputs=inputs
+            )
+            if input_char_count(definition, fitted) + continuation_tail_chars > budget:
+                raise InputBudgetError("継続の予算が足りない")
+            return fitted
+        except InputBudgetError as error:
+            raise TaskCardError("継続の予算が足りない") from error
     if definition.get("output") == "text" and definition.get("extend_to_min") and budget > 1000:
         reserved = dict(definition, max_input_chars=budget - 1000)
         try:
@@ -2718,6 +2752,17 @@ def _prepare_card_inputs(
         except InputBudgetError:
             pass
     return prepare_task_inputs(definition, inputs=inputs)
+
+
+def _required_continuation_tail(
+    definition: Mapping[str, Any], task: Mapping[str, Any], directory: Path,
+) -> int | None:
+    if int(task["continuation_step"]) > 0 and (
+        _continuation_enabled(definition) or definition.get("extend_to_min", False)
+    ):
+        partial = unicodedata.normalize("NFC", _read_partial_output(directory))
+        return min(1000, len(partial))
+    return None
 
 
 def _minimum_text_chars(definition: Mapping[str, Any]) -> int:
@@ -3623,6 +3668,9 @@ def _source_outputs(
             fact_index = task["index"][0]
             person_id = fact_index.split("-", 1)[0]
             source_value = {**source_value, fact_index: source_value[person_id]}
+        if slot == "S3.assign" and task.get("type") == "S4.fact":
+            from .world_facts import fact_assignment_for_card
+            source_value = fact_assignment_for_card(source_value, dependency_outputs, task)
         if slot == "S3.assign" and task.get("type") == "S5.fact":
             from .character_facts import character_entries, character_card_view
             person_id = task["index"][0].split("-", 1)[0]

@@ -101,7 +101,7 @@ _PROPER_NOUN_PATTERNS = (
         r"(?:王国|帝国|教団|国|町|村|市|島|山|川|会|社|家|様|氏)"
     ),
 )
-_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete", "no_story_metadata", "no_repeated_scene"})
+_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete", "no_story_metadata", "no_repeated_scene", "no_repeated_event_field", "no_repeated_sentence"})
 _COMPLETE_ENDINGS = frozenset("。．.！!？?」』）)】…")
 _DEFAULT_HARNESS_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA_CACHE: dict[
@@ -209,6 +209,7 @@ def validate_output(
                 value = clean_value(value, unit).replace(",", "")
     value = _apply_ends_complete_fixes(value, checks, warnings)
     value = _apply_max_chars_fixes(value, checks, warnings)
+    failed_checks: set[str] = set()
     for check in checks:
         try:
             name, arguments = _normalise_check(check)
@@ -226,8 +227,12 @@ def validate_output(
             raise
         errors.extend(check_errors)
         warnings.extend(check_warnings)
-        if check_errors and name not in _REPAIRABLE_CHECKS:
-            unrepairable = True
+        if check_errors:
+            failed_checks.add(name)
+    nonrepairable_checks = failed_checks - _REPAIRABLE_CHECKS
+    if "no_repeated_event_field" in failed_checks:
+        nonrepairable_checks.discard("no_copy_from_inputs")
+    unrepairable = unrepairable or bool(nonrepairable_checks)
 
     return ValidationResult(
         value, tuple(errors), tuple(warnings), repairable=bool(errors) and not unrepairable
@@ -334,9 +339,44 @@ def _run_check(
     common_words_path: str | Path | None,
     registered_names: Sequence[str] = (),
 ) -> tuple[list[str], list[str]]:
+    if name == "event_subject":
+        if not isinstance(output, str):
+            raise ValidationConfigurationError("event_subject requires text output")
+        from .event_subject import subject_errors
+        return subject_errors(output, inputs), []
     if name == "no_story_metadata":
         from .plot_quality import prose_errors
         return [error for text in body_texts(output) for error in prose_errors(text)], []
+    if name == "no_repeated_event_field":
+        if output_kind != "text" or not isinstance(output, str):
+            raise ValidationConfigurationError("no_repeated_event_field requires text output")
+        if arguments:
+            raise ValidationConfigurationError("no_repeated_event_field takes no arguments")
+        from .event_fields import EVENT_LABELS
+        field = inputs.get("event_field")
+        decided = inputs.get("decided_fields")
+        what = decided.get(EVENT_LABELS["what"]) if isinstance(decided, Mapping) else None
+        if field in [label for key, label in EVENT_LABELS.items() if key != "what"] and isinstance(what, str):
+            normalise = lambda value: "".join(unicodedata.normalize("NFKC", value).split())
+            previous = normalise(what)
+            from .character_facts import UNDECIDED
+            if previous and previous != normalise(UNDECIDED) and normalise(output) == previous:
+                return ["no_repeated_event_field: 何が起きたかを全文再述せず、指定項目だけを書いてください"], []
+        return [], []
+    if name == "no_repeated_sentence":
+        if output_kind != "text" or not isinstance(output, str):
+            raise ValidationConfigurationError("no_repeated_sentence requires text output")
+        if arguments:
+            raise ValidationConfigurationError("no_repeated_sentence takes no arguments")
+        seen: set[str] = set()
+        for sentence in re.split(r"[。！？.!?\r\n]+", output):
+            normalised = "".join(unicodedata.normalize("NFKC", sentence).split()).rstrip("。！？.!?")
+            if len(normalised) < 20:
+                continue
+            if normalised in seen:
+                return ["no_repeated_sentence: 同じ20文字以上の文を本文内で繰り返さないでください"], []
+            seen.add(normalised)
+        return [], []
     if name == "no_repeated_scene":
         from .plot_quality import similarity
         previous = inputs.get("previous_scene")

@@ -438,7 +438,7 @@ def dev_task_definition(
         else:
             checks.append({name: {"n": bounds[offset]}})
     result["card"]["steps"] = [
-        re.sub(r"[0-9]+[〜～][0-9]+字", f"{bounds[0]}〜{bounds[1]}字", step)
+        re.sub(r"(?:[0-9]+[〜～][0-9]+字|[0-9]+字(?:以内|以上))", f"{bounds[0]}〜{bounds[1]}字", step)
         for step in result["card"]["steps"]
     ]
     return result, list(bounds)

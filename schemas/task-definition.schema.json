@@ -93,6 +93,10 @@
       "minimum": 1,
       "default": 3000
     },
+    "max_output_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
     "candidates": {
       "type": "integer",
       "minimum": 1,
@@ -150,6 +154,7 @@
             {"required": ["card"]},
             {"required": ["validate"]},
             {"required": ["max_input_chars"]},
+            {"required": ["max_output_tokens"]},
             {"required": ["candidates"]},
             {"required": ["select_candidate"]},
             {"required": ["max_attempts"]},
@@ -300,6 +305,15 @@
         "output_example": {
           "type": "string",
           "minLength": 1
+        },
+        "material_rule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_order": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
         }
       }
     },
@@ -324,8 +338,11 @@
           "enum": [
             "no_copy_from_inputs",
             "character_identity",
+            "event_subject",
             "no_story_metadata",
             "no_repeated_scene",
+            "no_repeated_sentence",
+            "no_repeated_event_field",
             "max_chars",
             "min_chars",
             "count",
@@ -343,6 +360,8 @@
           "additionalProperties": false,
           "properties": {
             "no_copy_from_inputs": {"type": "object", "additionalProperties": false},
+            "no_repeated_sentence": {"type": "object", "additionalProperties": false},
+            "no_repeated_event_field": {"type": "object", "additionalProperties": false},
             "character_identity": {
               "type": "object", "additionalProperties": false,
               "properties": {"require_subject": {"type": "boolean"}}

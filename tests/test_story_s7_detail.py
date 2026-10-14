@@ -28,6 +28,7 @@ def test_s7_detail_is_text_with_the_volume_range_and_continuation() -> None:
     assert definition["validate"]["checks"] == [
         "no_story_metadata",
         "no_repeated_scene",
+        "no_repeated_sentence",
         {"no_new_proper_nouns": {"mode": "warn"}},
         "no_copy_from_inputs",
         {"avoid_listed": {"table": "tables/meta_terms.yaml"}},

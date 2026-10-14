@@ -56,7 +56,7 @@ def _event() -> dict[str, object]:
         "why": "失われた道を確かめるため。",
         "intent": "羅針盤の示す方角を選ぶ。",
         "what": "カナは灯りを一つ消して水門を開く。",
-        "result": "隠れていた通路が現れる。",
+        "result": "カナは現れた通路を見つける。",
         "emotion": "ためらいの後に決意を感じる。",
         "foreshadowing": "通路の奥で別の音がする。",
     }
@@ -143,7 +143,7 @@ def test_s7_card_includes_climax_only_for_a_climax_stage() -> None:
     climax_card = generate_task_card(definition, "climax", inputs=climax_inputs)
     assert "選択の結果を引き受ける。" in climax_card
     assert "### 筋のクライマックス" in climax_card
-    assert "クライマックスの条件が入力にある場合" in climax_card
+    assert "クライマックス条件は入力がある場合のみ" in climax_card
     assert "最後のスロット" not in climax_card
 
 

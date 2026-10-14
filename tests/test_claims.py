@@ -471,14 +471,14 @@ def test_card_failure_tries_next_task_in_the_same_run(
         seed=123,
         tasks=[TaskSpec("D1.bad", "D1.bad"), TaskSpec("D1.good", "D1.good")],
     )
-    original = orchestrator._build_task_card
+    original = orchestrator._build_task_card_and_inputs
 
     def fail_first(manifest, candidate_run_id, task_id, ticket):
         if task_id == "D1.bad":
             raise RuntimeError("card failed")
         return original(manifest, candidate_run_id, task_id, ticket)
 
-    monkeypatch.setattr(orchestrator, "_build_task_card", fail_first)
+    monkeypatch.setattr(orchestrator, "_build_task_card_and_inputs", fail_first)
     result = orchestrator.claim_next(run_id, executor_id="worker")
     assert result is not None
     manifest = orchestrator.load_run(run_id)

@@ -119,7 +119,7 @@ def test_s8_compare_inputs_are_only_the_two_event_descriptions() -> None:
         },
         "targets": [
             {
-                "id": "e001",
+                "comparison_kind": "events", "id": "e001",
                 "event": {"result": "Aの結果", "who": ["c1"]},
             }
         ],
@@ -139,13 +139,14 @@ def test_s8_compare_inputs_are_only_the_two_event_descriptions() -> None:
 
     card = generate_task_card(definition, "ticket", inputs=inputs)
 
-    assert set(inputs) == {"event_a", "event_b"}
+    assert set(inputs) == {"comparison_kind", "event_a", "event_b"}
+    assert inputs["comparison_kind"] == "events"
     assert inputs["event_a"]["id"] == "e001"
     assert inputs["event_b"]["id"] == "e003"
     assert "Aの結果" in card
     assert "Bの結果" in card
     assert "事実として両立しないことだけを指す" in card
-    assert "人物の心情・関係・状況の変化や展開は矛盾に含めない" in card
+    assert "心情・関係・状況の変化や展開は矛盾でない" in card
     assert "比較計画" not in card
     input_section = card.split("## 手順", 1)[0]
     assert "e002" not in input_section
@@ -159,8 +160,8 @@ def test_s8_compare_input_assembly_selects_the_numbered_target() -> None:
     plan_output = {
         "current": {"result": "現在"},
         "targets": [
-            {"id": "e001", "event": {"result": "一つ目"}},
-            {"id": "e002", "event": {"result": "二つ目"}},
+            {"comparison_kind": "events", "id": "e001", "event": {"result": "一つ目"}},
+            {"comparison_kind": "events", "id": "e002", "event": {"result": "二つ目"}},
         ],
     }
     task = {

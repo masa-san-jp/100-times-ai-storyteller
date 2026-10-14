@@ -254,6 +254,32 @@ def _without_string_constraints(value: Any) -> Any:
     return value
 
 
+def effective_output_tokens(model: ModelConfig, max_output_tokens: int | None = None) -> int:
+    """Return the per-call ceiling without modifying the model profile."""
+    if max_output_tokens is None:
+        return model.max_tokens
+    if isinstance(max_output_tokens, bool) or not isinstance(max_output_tokens, int) or max_output_tokens < 1:
+        raise AdapterError("max_output_tokens must be a positive integer")
+    return min(model.max_tokens, max_output_tokens)
+
+
+def _ollama_card_content(card: str) -> str:
+    """Move a recognized card's transport ticket without changing its contents."""
+    first, separator, body = card.partition("\n")
+    if not separator or re.fullmatch(r"# タスク [^\s]+", first) is None:
+        return card
+    if not body.startswith("\n## あなたの役割\n"):
+        return card
+    lines = body.split("\n")
+    headings = ("## あなたの役割", "## 入力", "## 手順", "## 出力形式", "## 守ること")
+    if any(lines.count(heading) != 1 for heading in headings):
+        return card
+    positions = [lines.index(heading) for heading in headings]
+    if positions != sorted(positions):
+        return card
+    return body + "\n" + first
+
+
 class OllamaAdapter:
     """Small urllib-only client for Ollama's non-streaming chat API."""
 
@@ -271,17 +297,18 @@ class OllamaAdapter:
         schema: Mapping[str, Any] | None = None,
         json_mode: str | None = None,
         retry_budget: float = 1800.0,
+        max_output_tokens: int | None = None,
     ) -> AdapterResponse:
         mode = json_mode or self.model.json_mode
         if mode not in _JSON_MODES:
             raise AdapterError(f"json_mode が不正です: {mode}")
         payload: dict[str, Any] = {
             "model": self.model.name,
-            "messages": [{"role": "user", "content": card}],
+            "messages": [{"role": "user", "content": _ollama_card_content(card)}],
             "stream": False,
             "options": {
                 "temperature": self.model.temperature,
-                "num_predict": self.model.max_tokens,
+                "num_predict": effective_output_tokens(self.model, max_output_tokens),
                 "num_ctx": self.model.context_length,
             },
         }
@@ -464,9 +491,13 @@ class AutoRunner:
                     datetime.fromisoformat(claim_info["claim"]["lease_expires_at"][:-1] + "+00:00")
                     - datetime.fromisoformat(orchestrator._now()[:-1] + "+00:00")
                 ).total_seconds()
+                output_options = (
+                    {"max_output_tokens": definition["max_output_tokens"]}
+                    if "max_output_tokens" in definition else {}
+                )
                 response = adapter.complete(
                     claim["card"], schema=schema, json_mode=mode,
-                    retry_budget=lease_left - 300,
+                    retry_budget=lease_left - 300, **output_options,
                 )
                 empty_response = not response.content.strip()
                 invalid = empty_response or (

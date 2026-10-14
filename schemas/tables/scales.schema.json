@@ -163,6 +163,10 @@
         "character_fact_counts"
       ],
       "properties": {
+        "expansion_axes": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
         "axes": {
           "$ref": "#/$defs/preset/properties/axes"
         },
@@ -357,7 +361,10 @@
           }
         },
         "world_facts_scope": {
-          "const": "described_viewpoints"
+          "enum": [
+            "described_viewpoints",
+            "selected_keys"
+          ]
         },
         "character_fact_counts": {
           "type": "object",
@@ -381,8 +388,40 @@
               "minimum": 1
             }
           }
+        },
+        "world_fact_keys": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "event_candidates": {
+          "type": "integer",
+          "minimum": 2
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "world_facts_scope": {
+                "const": "selected_keys"
+              }
+            },
+            "required": [
+              "world_facts_scope"
+            ]
+          },
+          "then": {
+            "required": [
+              "world_fact_keys"
+            ]
+          }
+        }
+      ]
     }
   },
   "$defs": {

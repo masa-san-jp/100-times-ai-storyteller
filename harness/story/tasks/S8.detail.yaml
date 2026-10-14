@@ -1,5 +1,5 @@
 id: S8.detail
-version: 1
+version: 6
 kind: llm
 element: judgement
 output: json
@@ -21,11 +21,15 @@ inputs:
     required: false
     truncate: tail
 card:
-  role: この場面の本文だけを検査する。
+  role: 本文を検査。
   steps:
-  - 確定した出来事・筋の条件を追加・反転・置換しているか、直前の場面の行動や結果を進展なく再演しているかを検査する。未定の条件は判定しない。
-  - 構造の説明と内部 ID が本文にないかも検査する。
-  - いずれかに該当すれば answer は yes、なければ no。reason は根拠を1文で書く。入力にない事情を補わない。
+  - 確定事項の追加・反転・置換を検査。同じ前後関係を逆転と判定しない。未定は対象外。
+  - 条件適合でなく直前の行動・結果の進展ない再演を検査。
+  - 非言及は否定ではなく矛盾でない。前提→帰結から逆や唯一の必要条件を導かない。必要条件・前後関係の追加・反転・置換は yes。
+  - 禁止は実施した行為だけを検査。能力・可能性・意思・条件引用だけを実施としない。実施の併記は検査し、帰結の非言及でも違反は yes。
+  - 構造説明・内部 ID も検査。
+  - 例：「押すと灯る」に「灯った」だけ／「押した」だけは no。押さなかった・灯らなかったと補わない。
+  - 違反なら answer=yes、他は no。reason は具体的な食い違いか再演を1文。入力外は禁止。
   output_example: '{"answer": "...", "reason": "..."}'
 validate:
   schema: schemas/tasks/S8.compare.schema.json
@@ -37,3 +41,4 @@ validate:
       field: reason
       n: 1
 max_input_chars: 3500
+max_output_tokens: 2048

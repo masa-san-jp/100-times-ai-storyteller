@@ -100,7 +100,7 @@ def test_conditions_are_compared_even_for_the_first_event():
         inputs={'slots': [{'id': 'e001', 'thread': 't001'}]},
         dependency_outputs={'S7.assemble-e001': event, 'S7.condition-e001-trigger': event['conditions'][0]})
     plan = story_s8_plan(context)
-    assert plan.output['targets'] == [{'conditions': event['conditions']}]
+    assert plan.output['targets'] == [{'comparison_kind': 'conditions', 'conditions': event['conditions']}]
     assert [t.type for t in plan.add_tasks] == ['S8.compare', 'S8.judge']
     assert 'conditions' not in plan.output['current']  # each condition appears once in the bounded card
     judgement = story_s8_judge(SimpleNamespace(task_id='S8.judge-e001', task={'index': ['e001']},
@@ -189,7 +189,11 @@ def test_detail_judgement_keeps_full_body_and_conditions_within_model_context():
     fitted = _fit_inputs(definition, values)
     assert fitted["body"] == values["body"] and fitted["event"] == event
     card = generate_task_card(definition, "a" * 32, inputs=values)
-    assert 2 * len(card) + 8192 <= 16384
+    from storyteller.adapter import load_model_config
+    model = load_model_config("gpt-oss:20b", provider="ollama", config_path=ROOT / "config/models.yaml")
+    assert definition["max_output_tokens"] == 2048
+    output_tokens = min(model.max_tokens, definition["max_output_tokens"])
+    assert 2 * len(card) + output_tokens <= model.context_length
 
 
 def test_exhausted_format_quality_failure_warns_and_continues(tmp_path):

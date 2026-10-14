@@ -92,8 +92,11 @@ def story_s7_select(context: CodeTaskContext) -> CodeTaskResult:
     """Choose one candidate of ``what``: ``least_similar`` in a batch, else random."""
     _, method = candidate_settings()
     candidates = context.inputs.get("candidates")
-    if not isinstance(candidates, Mapping) or not candidates:
+    if not isinstance(candidates, Mapping):
         raise ValueError("S7 の候補がありません")
+    if not candidates:
+        return CodeTaskResult(output={"candidate": None, "text": "（未定）",
+                                      "method": "undecided", "similarity": None})
     ordered = sorted(candidates.items(), key=lambda item: int(item[0].rsplit("-c", 1)[1]))
     comparands = other_run_texts(context) if method == "least_similar" else []
     similarity: float | None = None

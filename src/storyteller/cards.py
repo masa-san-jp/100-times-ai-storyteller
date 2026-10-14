@@ -10,6 +10,8 @@ from typing import Any
 import yaml
 
 from storyteller.selectors import resolve_inputs
+from storyteller.event_fields import selected_event_steps
+from storyteller.plot_quality import selected_condition_steps
 from storyteller.story_quality import split_card_inputs
 
 
@@ -60,6 +62,8 @@ def generate_task_card(
     card = task_definition.get("card")
     if output not in {"json", "text"} or not isinstance(card, Mapping):
         raise TaskCardError("task definition is missing card output details")
+    if "input_order" in card and _char_len(input_body) > task_definition.get("max_input_chars", 3000):
+        raise InputBudgetError("入力が予算を超える")
 
     lines = [
         f"# タスク {ticket}",
@@ -72,7 +76,12 @@ def generate_task_card(
         "",
         "## 手順",
     ]
-    steps = card.get("steps")
+    try:
+        steps = selected_event_steps(task_definition, rendered_slots)
+        if task_definition.get("id") == "S7.condition":
+            steps = selected_condition_steps(task_definition, rendered_slots)
+    except ValueError as exc:
+        raise TaskCardError(str(exc)) from exc
     if not isinstance(steps, Sequence) or isinstance(steps, (str, bytes)):
         raise TaskCardError("card.steps must be a non-empty sequence")
     for number, step in enumerate(steps, start=1):
@@ -88,6 +97,11 @@ def generate_task_card(
         )
 
     lines.extend(["", "## 出力形式"])
+    if "max_output_tokens" in task_definition:
+        maximum = task_definition["max_output_tokens"]
+        if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1:
+            raise TaskCardError("max_output_tokens must be a positive integer")
+        lines.append(f"生成上限：{maximum}トークン（モデル設定の上限が小さい場合はその値）。")
     if output == "json":
         lines.extend(
             [
@@ -107,11 +121,16 @@ def generate_task_card(
                 raise TaskCardError("card.output_example must be a non-empty string")
             lines.extend(["例：", example])
 
+    material_rule = (
+        _required_string(card, "material_rule")
+        if "material_rule" in card
+        else "入力に書かれていないことを付け加えない。"
+    )
     lines.extend(
         [
             "",
             "## 守ること",
-            "- 入力に書かれていないことを付け加えない。",
+            "- " + material_rule,
             "- 出力形式以外の文章を書かない。",
             "- 日本語で書く（ID・列挙値を除く）。",
         ]
@@ -150,7 +169,24 @@ def prepare_task_inputs(
         )
     else:
         slot_values = dict(inputs)
-    return _fit_inputs(task_definition, _without_sources(slot_values))
+    slot_values = _without_sources(slot_values)
+    if task_definition.get("id") in {
+        f"S5.{name}" for name in (
+            "profile", "intro", "appearance", "personality", "values", "voice",
+            "inner_conflict", "backstory", "relationship", "motive", "catchphrase",
+        )
+    }:
+        character = slot_values.get("character")
+        if isinstance(character, Mapping) and isinstance(character.get("elements"), Mapping):
+            # Only assigned element provenance is model metadata. Other source
+            # fields may contain required story material and must survive.
+            elements = {
+                axis: {key: value for key, value in element.items() if key != "source"}
+                if isinstance(element, Mapping) else element
+                for axis, element in character["elements"].items()
+            }
+            slot_values["character"] = {**character, "elements": elements}
+    return _fit_inputs(task_definition, slot_values)
 
 
 def _without_sources(value: Any) -> Any:
@@ -267,18 +303,39 @@ def _truncate_value_until_fit(
 
 
 def _input_char_count(definition: Mapping[str, Any], values: Mapping[str, Any]) -> int:
-    return _char_len(_render_input_body(definition, values))
+    return _char_len(_render_input_body(definition, values, display_order=False))
 
 
 def input_char_count(
     definition: Mapping[str, Any], values: Mapping[str, Any]
 ) -> int:
-    """Return the NFC character count of the rendered input section."""
+    """Count the input budget in definition order, independent of display order."""
     return _input_char_count(definition, values)
 
 
+
+def _input_slot_order(
+    definition: Mapping[str, Any], slots: Mapping[str, Any], *, display_order: bool,
+) -> Sequence[str]:
+    card = definition.get("card", {})
+    if not isinstance(card, Mapping) or "input_order" not in card:
+        return list(slots)
+    order = card["input_order"]
+    if not isinstance(order, list) or any(not isinstance(name, str) for name in order):
+        raise TaskCardError("card.input_order must be a string array")
+    if len(set(order)) != len(order):
+        raise TaskCardError("card.input_order has duplicate keys")
+    unknown = set(order) - slots.keys()
+    if unknown:
+        raise TaskCardError("card.input_order has unknown keys: " + ", ".join(sorted(unknown)))
+    missing = slots.keys() - set(order)
+    if missing:
+        raise TaskCardError("card.input_order has missing keys: " + ", ".join(sorted(missing)))
+    return order if display_order else list(slots)
+
+
 def _render_input_body(
-    definition: Mapping[str, Any], values: Mapping[str, Any]
+    definition: Mapping[str, Any], values: Mapping[str, Any], *, display_order: bool = True,
 ) -> str:
     lines: list[str] = []
     slots = definition.get("inputs", {})
@@ -287,7 +344,8 @@ def _render_input_body(
     material, instructions = split_card_inputs(values)
     grouped = bool(instructions) or str(definition.get("id", "")).startswith("S")
     last_heading = None
-    for name, slot in slots.items():
+    for name in _input_slot_order(definition, slots, display_order=display_order):
+        slot = slots[name]
         for heading, group in (("物語の素材", material), ("作り方の指示", instructions)):
             if name not in group:
                 continue

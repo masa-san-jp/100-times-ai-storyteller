@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from .adapter import (
     _JSON_MODES,
+    effective_output_tokens,
     AdapterResponse,
     ModelConfig,
     _card_requests_json,
@@ -54,6 +55,7 @@ class OpenAICompatibleAdapter:
         schema: Mapping[str, Any] | None = None,
         json_mode: str | None = None,
         retry_budget: float = 1800.0,
+        max_output_tokens: int | None = None,
     ) -> AdapterResponse:
         mode = json_mode or self.model.json_mode
         if mode not in _JSON_MODES:
@@ -63,7 +65,7 @@ class OpenAICompatibleAdapter:
             "messages": [{"role": "user", "content": card}],
             "stream": False,
             "temperature": self.model.temperature,
-            "max_tokens": self.model.max_tokens,
+            "max_tokens": effective_output_tokens(self.model, max_output_tokens),
         }
         if schema is not None or _card_requests_json(card):
             if mode == "schema":

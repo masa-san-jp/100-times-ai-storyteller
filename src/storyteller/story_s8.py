@@ -68,9 +68,9 @@ def story_s8_plan(context: CodeTaskContext) -> CodeTaskResult:
     from .plot_quality import conditions_from_outputs
     conditions = conditions_from_outputs(context.dependency_outputs,
         [key for key in getattr(context, "task", {}).get("deps", ()) if key.startswith("S7.condition-")])
-    targets = [{"id": target_id, "event": {key: deepcopy(value) for key, value in _event_output(context.dependency_outputs, target_id).items() if key != "conditions"}} for target_id in target_ids]
+    targets = [{"comparison_kind": "events", "id": target_id, "event": {key: deepcopy(value) for key, value in _event_output(context.dependency_outputs, target_id).items() if key != "conditions"}} for target_id in target_ids]
     if conditions:
-        targets.append({"conditions": conditions})
+        targets.append({"comparison_kind": "conditions", "conditions": conditions})
     compare_ids: list[str] = []
     additions: list[TaskSpec] = []
     for number, target_id in enumerate(targets, start=1):

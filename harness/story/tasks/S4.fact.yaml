@@ -1,5 +1,5 @@
 id: S4.fact
-version: 1
+version: 2
 kind: llm
 element: text
 inputs:

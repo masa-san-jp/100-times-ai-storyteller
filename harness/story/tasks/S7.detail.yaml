@@ -1,5 +1,5 @@
 id: S7.detail
-version: 12
+version: 14
 kind: llm
 element: text
 inputs:
@@ -83,7 +83,7 @@ continuation: true
 card:
   role: 出来事の一つの場面を、正本として説明的に詳述する。
   steps:
-  - 確定した発動・禁止・解決条件を守り、入力にない条件を追加・反転・置換しない。本文に内部 ID と構造の説明を書かない。
+  - 確定した発動・禁止・解決条件を守る。禁止行為を実施しない。条件を追加・反転・置換せず、内部ID・構造説明を書かない。
   - 場面の働きが担当する部分だけを書く。発端は開始まで、展開は行動の過程、転換は変化、余波は結果の後だけとする。他の場面の行動と結果を最初から語り直さない。直前の場面に書かれたことは再演しない。
   - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
   - 出来事の when・where・who・why・intent・what・result・emotion を、入力された内容から正確に引き継ぐ。
@@ -96,6 +96,7 @@ validate:
   checks:
   - no_story_metadata
   - no_repeated_scene
+  - no_repeated_sentence
   - no_new_proper_nouns:
       mode: warn
   - no_copy_from_inputs

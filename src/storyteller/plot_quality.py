@@ -25,6 +25,44 @@ _STRUCTURE_EXPLANATION = re.compile(
 _POLARITY_OR_NUMBER = re.compile(r"[0-9]+|ない|なかった|禁止|せず|できず")
 
 
+def selected_condition_steps(definition: Mapping[str, Any], inputs: Mapping[str, Any]) -> Sequence[str]:
+    """Select one condition scope from the task definition, without authoring it."""
+    steps = definition.get("card", {}).get("steps")
+    if definition.get("id") != "S7.condition":
+        return steps
+    if not isinstance(steps, Sequence) or isinstance(steps, (str, bytes)):
+        raise ValueError("S7.condition card.steps must be a sequence")
+    scopes = {}
+    for step in steps:
+        if not isinstance(step, str):
+            raise ValueError("S7.condition card.steps must contain strings")
+        key, separator, body = step.partition("：")
+        if key in CONDITION_KINDS and separator:
+            if key in scopes:
+                raise ValueError(f"duplicate condition instruction: {key}")
+            if not body.strip():
+                raise ValueError(f"empty condition instruction: {key}")
+            scopes[key] = body
+    if not scopes and definition.get("version", 0) < 2:
+        return steps
+    missing = set(CONDITION_KINDS) - scopes.keys()
+    if missing:
+        raise ValueError("missing condition instruction: " + ", ".join(sorted(missing)))
+    label = inputs.get("condition_kind")
+    kind = next((key for key, value in CONDITION_LABELS.items() if value == label), None)
+    if kind is None:
+        raise ValueError("unknown condition_kind")
+    result = []
+    for step in steps:
+        key, separator, body = step.partition("：")
+        if key in CONDITION_KINDS and separator:
+            if key == kind:
+                result.append("作り方の指示：" + body)
+        else:
+            result.append(step)
+    return result
+
+
 def condition_ids(event_id: str) -> tuple[str, ...]:
     return tuple(f"S7.condition-{event_id}-{kind}" for kind in CONDITION_KINDS)
 

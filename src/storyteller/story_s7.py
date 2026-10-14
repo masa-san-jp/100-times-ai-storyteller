@@ -10,17 +10,11 @@ from .story_s7_candidates import (
     candidate_settings, candidate_task_ids, is_candidate_task_id, select_task_id,
     selected_text,
 )
+from .event_fields import EVENT_FIELDS, EVENT_LABELS
 from .task_outputs import task_sources
 from .validation import output_char_count
 
 
-EVENT_FIELDS = (
-    "what", "where", "when", "why", "intent", "result", "emotion", "foreshadowing"
-)
-EVENT_LABELS = dict(zip(EVENT_FIELDS, (
-    "何が起きたか", "どこで起きたか", "いつ起きたか", "出来事の理由",
-    "人物の意思", "出来事の結果", "人物が受ける感情", "後の出来事への伏線",
-)))
 
 
 def event_source_for_card(
@@ -47,13 +41,15 @@ def event_source_for_card(
 
 
 def event_tasks(
-    parent: str, event_id: str, first_deps: Sequence[str], previous_event: str | None, conditions: Sequence[str] = ()
+    parent: str, event_id: str, first_deps: Sequence[str], previous_event: str | None, conditions: Sequence[str] = (), *, candidate_count: int | None = None
 ) -> list[TaskSpec]:
     """Keep every earlier field available, but only the previous event's result."""
     additions = []
     field_ids: list[str] = []
     previous_result = (previous_event,) if previous_event else ()
     count, _ = candidate_settings()
+    if candidate_count is not None:
+        count = candidate_count
     for field in EVENT_FIELDS:
         if field == "what" and count > 1:
             # ``what`` is generated ``count`` times with the same card; the

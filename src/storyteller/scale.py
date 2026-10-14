@@ -158,6 +158,8 @@ def _derive_dev(
                 "cast": dev["cast"],
                 "parts": None,
                 "world_sections": list(dev["world_sections"]),
+                **({"expansion_axes": expansion_axes(dev["expansion_axes"], element_axes)}
+                   if "expansion_axes" in dev else {}),
                 "pool_need": _pool_needs(
                     dev["cast"], int(dev["candidate_multiplier"]), element_axes
                 ),
@@ -215,3 +217,12 @@ def _pool_needs(cast: int, candidate_multiplier: int, axes: tuple[str, ...]) -> 
         axis: candidate_multiplier * (cast if axis in character_axes else 1)
         for axis in axes
     }
+
+
+def expansion_axes(value: Any, catalog: tuple[str, ...]) -> list[str]:
+    """Validate a saved dev selection and return it in catalog order."""
+    if (not isinstance(value, list) or not value
+            or any(not isinstance(key, str) or key not in catalog for key in value)
+            or len(set(value)) != len(value)):
+        raise ScaleError("dev.expansion_axes は既知の要素軸の空でない重複なし一覧で指定してください")
+    return [key for key in catalog if key in value]

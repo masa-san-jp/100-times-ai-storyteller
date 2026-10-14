@@ -172,6 +172,7 @@ candidate_multiplier: 3
 # 開発用の規模 dev（ADR-0009、scale.md「開発用の規模 dev」）。ユーザー向けのプリセットではない。
 # 出来事数は、最小の構造テンプレート three-beat の段階数（3）に合わせる。
 dev:
+  expansion_axes: [want]
   axes:
     time: hours
     space: spot
@@ -184,25 +185,27 @@ dev:
   viewpoints_per_section: 1
   list_item_count: 1
   materials_per_paragraph: 1
-  world_facts_scope: described_viewpoints
+  world_facts_scope: selected_keys
+  world_fact_keys: [place.location_name, place.area, place.facility_status, people.age, people.residence, people.affiliation_year, people.occupation]
+  event_candidates: 2
   character_fact_counts:
     family: 1
     timeline: 1
     skills: 1
   candidate_multiplier: 1
   task_chars:
-    story_beat: [80, 160]
-    world_facet: [80, 160]
-    world_list_item: [80, 160]
+    story_beat: [40, 80]
+    world_facet: [40, 80]
+    world_list_item: [40, 80]
     character:
-      profile: [80, 160]
-      backstory: [80, 160]
-      relationship: [80, 160]
-      appearance: [80, 160]
-      personality: [80, 160]
-      values: [80, 160]
-      voice: [80, 160]
-      inner_conflict: [80, 160]
-      motive: [80, 120]
+      profile: [40, 80]
+      backstory: [40, 80]
+      relationship: [40, 80]
+      appearance: [40, 80]
+      personality: [40, 80]
+      values: [40, 80]
+      voice: [40, 80]
+      inner_conflict: [40, 80]
+      motive: [40, 80]
       intro: [15, 50]
       catchphrase: [15, 60]
