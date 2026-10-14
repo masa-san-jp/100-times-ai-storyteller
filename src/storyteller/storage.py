@@ -295,11 +295,26 @@ def _lock_is_stale(path: Path, stale_after: float, now: float) -> bool:
 
 
 def _remove_lock_if_owned(path: Path, token: str) -> None:
-    try:
-        contents = path.read_text(encoding="utf-8")
-        details = json.loads(contents)
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return
+    # A transient Windows read denial must not silently leave an owned lock.
+    # Keep retries short, and re-read the current token before any deletion.
+    read_deadline = None
+    while True:
+        try:
+            contents = path.read_text(encoding="utf-8")
+            details = json.loads(contents)
+        except PermissionError as error:
+            if sys.platform != "win32" or error.errno != errno.EACCES:
+                raise
+            if read_deadline is None:
+                read_deadline = time.monotonic() + 1.0
+            remaining = read_deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(DEFAULT_LOCK_RETRY_INTERVAL, remaining))
+            continue
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return
+        break
     if not isinstance(details, dict) or details.get("token") != token:
         return
     try:

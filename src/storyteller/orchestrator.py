@@ -591,6 +591,8 @@ class Orchestrator:
             except LockTimeoutError:
                 raise
             except (OSError, ValueError, ClaimError) as error:
+                if run_id is not None and isinstance(error, PermissionError):
+                    raise
                 advance_failed = True
                 _warn_skipped_run(candidate_run_id, error)
 
@@ -654,6 +656,8 @@ class Orchestrator:
                 except LockTimeoutError:
                     raise
                 except (OSError, ValueError, ClaimError) as error:
+                    if run_id is not None and isinstance(error, PermissionError):
+                        raise
                     _warn_skipped_run(candidate_run_id, error)
                     break
         return None

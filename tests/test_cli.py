@@ -1,9 +1,12 @@
+import errno
 import io
 import json
 import os
 import subprocess
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import jsonschema
 import pytest
@@ -231,6 +234,73 @@ def test_submit_invalid_ticket_uses_exit_code_three(tmp_path, monkeypatch, capsy
 
     assert main(["submit", "0" * 32]) == 3
     assert "ticket" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("specified_run", [False, True])
+@pytest.mark.parametrize("phase", ["advance", "_finish_claim"])
+@pytest.mark.parametrize("transient", [False, True])
+def test_release_read_denial_cli_visibility_and_run_isolation(
+    tmp_path, monkeypatch, capsys, specified_run, phase, transient,
+):
+    import storyteller.storage as storage
+    from storyteller.orchestrator import Orchestrator
+    from tests.test_claims import llm_definition
+
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition("D1.echo")})
+    bad_run = orchestrator.create_run(seed=1, run_id="20260927-031500-000001")
+    healthy_run = orchestrator.create_run(seed=2, run_id="20260927-031500-000002")
+    lock_path = orchestrator.run_dir(bad_run) / "manifest.lock"
+    original_operation = getattr(orchestrator, phase)
+    original_read = Path.read_text
+    clock = SimpleNamespace(now=0.0)
+    denied_reads = []
+
+    def sleep(seconds):
+        clock.now += seconds
+
+    def fail_release(run_id, *args):
+        if run_id != bad_run:
+            return original_operation(run_id, *args)
+        with monkeypatch.context() as patch:
+            def denied(path, *a, **kw):
+                if path == lock_path and (not transient or not denied_reads):
+                    denied_reads.append(path)
+                    raise PermissionError(errno.EACCES, "injected release read denial", str(path))
+                return original_read(path, *a, **kw)
+            patch.setattr(Path, "read_text", denied)
+            return original_operation(run_id, *args)
+
+    monkeypatch.setattr(orchestrator, phase, fail_release)
+    if phase == "advance":
+        monkeypatch.setattr(orchestrator, "_no_code_task_pending", lambda run_id: False)
+    monkeypatch.setattr("storyteller.cli._orchestrator", lambda *args: orchestrator)
+    monkeypatch.setenv("STORYTELLER_HOME", str(tmp_path))
+    monkeypatch.setattr(storage, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(storage, "time", SimpleNamespace(
+        monotonic=lambda: clock.now, sleep=sleep, time=time.time,
+    ))
+    args = ["next", "--json"] + (["--run", bad_run] if specified_run else [])
+    assert main(args) == (1 if specified_run and not transient else 0)
+    output = capsys.readouterr()
+    if transient:
+        assert output.err == "" and len(denied_reads) == 1
+        assert not lock_path.exists()
+        card = json.loads(output.out)
+        assert orchestrator.load_run(bad_run)["tasks"]["D1.echo"]["claim"]["ticket"] == card["ticket"]
+        assert main(["next", "--run", healthy_run, "--json"]) == 0
+        assert json.loads(capsys.readouterr().out)["ticket"] != card["ticket"]
+        return
+    assert "injected release read denial" in output.err
+    assert lock_path.exists()
+    if specified_run:
+        assert output.out == ""
+        assert orchestrator.load_run(healthy_run)["tasks"]["D1.echo"]["state"] == "ready"
+    else:
+        assert bad_run in output.err
+        card = json.loads(output.out)
+        task = orchestrator.load_run(healthy_run)["tasks"]["D1.echo"]
+        assert task["claim"]["ticket"] == card["ticket"]
+        assert task["state"] == "claimed"
 
 
 def test_subprocess_json_and_status_outputs_are_machine_readable(tmp_path):
