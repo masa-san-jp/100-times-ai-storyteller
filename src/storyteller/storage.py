@@ -10,6 +10,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import re
 import secrets
 import socket
 import sys
@@ -18,6 +19,7 @@ from collections.abc import Callable, Mapping, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from stat import S_ISREG
 from typing import Any, TextIO
 
 import yaml
@@ -37,6 +39,8 @@ SYNC_FOLDER_MARKERS = (
 DEFAULT_LOCK_TIMEOUT = 10.0
 DEFAULT_LOCK_RETRY_INTERVAL = 0.1
 DEFAULT_STALE_LOCK_AGE = 30.0
+
+_WAITER_NAME = re.compile(r"([0-9]+)-([0-9]+)-([0-9a-fA-F]{32})\.wait")
 
 
 class DataDirectoryError(ValueError):
@@ -323,6 +327,55 @@ def _remove_lock_if_owned(path: Path, token: str) -> None:
         pass
 
 
+def _first_waiter(
+    directory: Path, *, own_entry_name: str | None = None,
+    warned_entries: set[str] | None = None,
+) -> tuple[int, str] | None:
+    """Find the oldest live request, discarding only valid obsolete entries."""
+    first = None
+    try:
+        entries = os.scandir(directory)
+    except FileNotFoundError:
+        return None
+    with entries:
+        for entry in entries:
+            match = _WAITER_NAME.fullmatch(entry.name)
+            if match is None:
+                continue
+            start_ns, deadline_ns = int(match[1]), int(match[2])
+            if deadline_ns < start_ns:
+                continue
+            try:
+                stat = entry.stat(follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if not S_ISREG(stat.st_mode) or stat.st_size != 0:
+                continue
+            # Observe the entry before taking this clock reading. A request
+            # arriving during enumeration is not a pre-reboot future entry.
+            now_ns = time.monotonic_ns()
+            if deadline_ns <= now_ns or start_ns > now_ns:
+                # Own cleanup belongs to acquire_lock's finally: unlike this
+                # optional cleanup, its failure must fail the request.
+                if entry.name == own_entry_name:
+                    continue
+                try:
+                    os.unlink(entry.path)
+                except FileNotFoundError:
+                    pass
+                except PermissionError as error:
+                    if warned_entries is None or entry.name not in warned_entries:
+                        print(f"警告: 不要なロック待機エントリを削除できません: {entry.path}: {error}",
+                              file=sys.stderr)
+                        if warned_entries is not None:
+                            warned_entries.add(entry.name)
+                continue
+            order = (start_ns, match[3])
+            if first is None or order < first:
+                first = order
+    return first
+
+
 @contextmanager
 def acquire_lock(
     path: os.PathLike[str] | str,
@@ -339,61 +392,91 @@ def acquire_lock(
     if stale_after < 0:
         raise ValueError("stale_after must be non-negative")
 
+    start_ns = time.monotonic_ns()
+    deadline_ns = start_ns + int(timeout * 1_000_000_000)
     lock_path = _as_path(path)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + timeout
+    waiters = lock_path.with_name(lock_path.name + ".waiters")
     token = secrets.token_hex(16)
     acquired = False
-
-    while True:
+    last_denial = None
+    registered = False
+    warned_entries: set[str] = set()
+    entry_path = waiters / f"{start_ns}-{deadline_ns}-{token}.wait"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    try:
         try:
-            descriptor = os.open(
-                lock_path,
-                os.O_WRONLY
-                | os.O_CREAT
-                | os.O_EXCL
-                | getattr(os, "O_BINARY", 0),
-                0o666,
-            )
-        except FileExistsError:
-            if _lock_is_stale(lock_path, stale_after, time.time()):
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            if timeout > 0:
+                waiters.mkdir(exist_ok=True)
+                descriptor = os.open(entry_path, flags, 0o666)
+                registered = True
+                # Ephemeral queue entries are explicitly exempt from fsync.
+                os.close(descriptor)
+
+            while True:
+                first = _first_waiter(
+                    waiters, own_entry_name=entry_path.name if registered else None,
+                    warned_entries=warned_entries,
+                )
+                now_ns = time.monotonic_ns()
+                if timeout == 0:
+                    if first is not None:
+                        raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
+                elif now_ns >= deadline_ns:
+                    if last_denial is not None:
+                        raise last_denial
+                    raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
+                elif first != (start_ns, token):
+                    last_denial = None
+                    time.sleep(min(retry_interval, (deadline_ns - now_ns) / 1_000_000_000))
+                    continue
+
                 try:
-                    lock_path.unlink()
+                    descriptor = os.open(lock_path, flags, 0o666)
+                except FileExistsError:
+                    last_denial = None
+                    if timeout == 0:
+                        raise LockTimeoutError(f"timed out acquiring lock: {lock_path}") from None
+                    if _lock_is_stale(lock_path, stale_after, time.time()):
+                        try:
+                            lock_path.unlink()
+                        except FileNotFoundError:
+                            pass
+                        continue
+                except PermissionError as error:
+                    # The Windows CRT can report a delete-pending lock as
+                    # EACCES. Keep the request's original queue/deadline.
+                    if sys.platform != "win32" or error.errno != errno.EACCES:
+                        raise
+                    last_denial = error
+                    if timeout == 0 or time.monotonic_ns() >= deadline_ns:
+                        raise
+                else:
+                    try:
+                        with os.fdopen(descriptor, "wb", closefd=True) as stream:
+                            # Existence provides exclusion; metadata is only
+                            # for ownership and recovery, as before.
+                            stream.write(_lock_contents(token))
+                    except BaseException:
+                        _remove_lock_if_owned(lock_path, token)
+                        raise
+                    acquired = True
+                    if timeout > 0 and time.monotonic_ns() >= deadline_ns:
+                        raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
+                    break
+
+                remaining_ns = deadline_ns - time.monotonic_ns()
+                if remaining_ns <= 0:
+                    if last_denial is not None:
+                        raise last_denial
+                    raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
+                time.sleep(min(retry_interval, remaining_ns / 1_000_000_000))
+        finally:
+            if registered:
+                try:
+                    entry_path.unlink()
                 except FileNotFoundError:
                     pass
-                continue
-            if time.monotonic() >= deadline:
-                raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
-            remaining = max(0.0, deadline - time.monotonic())
-            time.sleep(min(retry_interval, remaining))
-            continue
-        except PermissionError as error:
-            # On Windows a lock whose deletion is still pending can make
-            # O_EXCL open report EACCES rather than EEXIST. Retry only this
-            # acquisition operation, without removing or opening the lock in
-            # another mode. A persistent denial remains a PermissionError.
-            if sys.platform != "win32" or error.errno != errno.EACCES:
-                raise
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise
-            time.sleep(min(retry_interval, remaining))
-            continue
-        except OSError:
-            raise
-        else:
-            try:
-                with os.fdopen(descriptor, "wb", closefd=True) as stream:
-                    # The lock is its existence, not its contents; an fsync
-                    # here only lengthens the hold (slow on Windows).
-                    stream.write(_lock_contents(token))
-            except BaseException:
-                _remove_lock_if_owned(lock_path, token)
-                raise
-            acquired = True
-            break
-
-    try:
         yield lock_path
     finally:
         if acquired:

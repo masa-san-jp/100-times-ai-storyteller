@@ -229,7 +229,8 @@ def test_windows_lock_open_retries_access_denied_without_bypassing_o_excl(
 
     def pending_delete(path, flags, mode):
         nonlocal attempts
-        assert Path(path) == lock_path
+        if Path(path) != lock_path:
+            return original_open(path, flags, mode)
         assert flags & os.O_EXCL and flags & os.O_CREAT
         attempts += 1
         if attempts <= 2:
@@ -255,14 +256,19 @@ def test_lock_open_does_not_retry_other_permission_errors(
     error = PermissionError(number, "permanent denial")
     sleeps = []
 
-    def deny(*args):
+    lock_path = tmp_path / "manifest.lock"
+    original_open = os.open
+
+    def deny(path, flags, mode):
+        if Path(path) != lock_path:
+            return original_open(path, flags, mode)
         raise error
 
     monkeypatch.setattr("storyteller.storage.sys", SimpleNamespace(platform=platform))
     monkeypatch.setattr("storyteller.storage.os.open", deny)
     monkeypatch.setattr("storyteller.storage.time.sleep", sleeps.append)
     with pytest.raises(PermissionError) as caught:
-        with acquire_lock(tmp_path / "manifest.lock"):
+        with acquire_lock(lock_path):
             pytest.fail("lock was not acquired")
     assert caught.value is error
     assert sleeps == []
@@ -283,6 +289,8 @@ def test_windows_lock_open_denial_is_bounded_and_does_not_remove_an_owner(
 
     def deny(path, flags, mode):
         nonlocal attempts
+        if Path(path) != lock_path:
+            return original_open(path, flags, mode)
         attempts += 1
         if existing_lock and attempts > 1:
             return original_open(path, flags, mode)
@@ -295,13 +303,14 @@ def test_windows_lock_open_denial_is_bounded_and_does_not_remove_an_owner(
     monkeypatch.setattr("storyteller.storage.sys", SimpleNamespace(platform="win32"))
     monkeypatch.setattr("storyteller.storage.os.open", deny)
     monkeypatch.setattr("storyteller.storage.time", SimpleNamespace(
-        monotonic=lambda: clock.now, sleep=sleep, time=time.time,
+        monotonic=lambda: clock.now, monotonic_ns=lambda: int(clock.now * 1_000_000_000),
+        sleep=sleep, time=time.time,
     ))
     expected = LockTimeoutError if existing_lock else PermissionError
     with pytest.raises(expected) as caught:
         with acquire_lock(lock_path, timeout=0.2):
             pytest.fail("lock was not acquired")
-    assert attempts == 3 and sleeps == [0.1, 0.1]
+    assert attempts == 2 and sleeps == [0.1, 0.1]
     if existing_lock:
         assert lock_path.read_text(encoding="utf-8") == "another owner's lock"
     else:
@@ -390,7 +399,8 @@ def test_lock_release_reports_permanent_read_denial_without_deleting_unknown_own
 
     monkeypatch.setattr("storyteller.storage.sys", SimpleNamespace(platform=platform))
     monkeypatch.setattr("storyteller.storage.time", SimpleNamespace(
-        monotonic=lambda: clock.now, sleep=sleep, time=time.time,
+        monotonic=lambda: clock.now, monotonic_ns=lambda: int(clock.now * 1_000_000_000),
+        sleep=sleep, time=time.time,
     ))
     with pytest.raises(PermissionError) as caught:
         with acquire_lock(lock_path):
