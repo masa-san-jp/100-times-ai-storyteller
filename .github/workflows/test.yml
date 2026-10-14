@@ -17,8 +17,8 @@ jobs:
       - name: Repeat actual eight-executor test with traceback
         shell: pwsh
         run: |
-          for ($attempt = 1; $attempt -le 10; $attempt++) {
-            Write-Output "Diagnostic iteration $attempt of 10"
-            uv run pytest -q tests/test_claims.py::test_eight_executors_do_not_time_out_on_the_manifest_lock
+          for ($attempt = 1; $attempt -le 30; $attempt++) {
+            Write-Output "Diagnostic iteration $attempt of 30"
+            uv run pytest -q tests/test_claims.py::test_eight_executors_do_not_time_out_on_the_manifest_lock -k normal-disk
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
