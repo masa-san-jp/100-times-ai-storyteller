@@ -189,6 +189,23 @@ def _filler_text(person_id: str, field: str, length: int) -> str:
     return repeated[:length - 1] + "。"
 
 
+def _scene_filler_text(task_id: str, length: int) -> str:
+    """Build deterministic, complete scene sentences without identical repeats."""
+    marker = hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:12]
+    pieces = []
+    remaining = length
+    number = 1
+    while remaining > 0:
+        sentence = f"記録x{marker}の第{number:04d}項を確かめ、人物は見えている細部を慎重に見直した。"
+        if len(sentence) > remaining:
+            pieces.append(sentence[:remaining - 1] + "。")
+            break
+        pieces.append(sentence)
+        remaining -= len(sentence)
+        number += 1
+    return "".join(pieces)
+
+
 def _fake_output(
     task_id: str,
     task: dict[str, Any],
@@ -201,6 +218,8 @@ def _fake_output(
 
     if "output_chars" in inputs:
         minimum, maximum = inputs["output_chars"]
+        if task_type == "S7.detail":
+            return _scene_filler_text(task_id, (minimum + maximum) // 2)
         prefix = inputs["facts"]["name"] + "は" if task_type in {
             "S5.profile", "S5.intro", "S5.appearance", "S5.personality", "S5.values", "S5.inner_conflict", "S5.backstory"} else ""
         return prefix + _filler_text(task_id, "歩み", (minimum + maximum) // 2 - len(prefix))
@@ -309,7 +328,7 @@ def _fake_output(
     if task_type == "S7.detail":
         # Minimum-length scenes must still reach the short-scale floor (§10).
         sentence = "人物は場面の状況を確認し、行動の結果を受け止めた。"
-        return sentence + _filler_text(task_id, "場面の記述", 1500 - len(sentence))
+        return sentence + _scene_filler_text(task_id, 1500 - len(sentence))
 
     if task_type == "S4.consistency":
         return {"answer": "no", "reason": "確定した事実と両立する。"}
