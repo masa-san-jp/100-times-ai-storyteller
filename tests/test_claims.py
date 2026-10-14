@@ -3,6 +3,7 @@ from __future__ import annotations
 import multiprocessing
 import json
 import os
+import sys
 import time
 import traceback
 from contextlib import contextmanager
@@ -717,12 +718,46 @@ def _claim_and_submit_loop(
     fsync_delay: float = 0,
 ) -> None:
     orchestrator = Orchestrator(data_dir, {"D1.echo": llm_definition("D1.echo")})
+    timings = {}
+    holding = [None]
+    original_lock = orchestrator_module.manifest_lock
     original_fsync = os.fsync
-    if fsync_delay:
-        def slow_fsync(descriptor: int) -> None:
-            time.sleep(fsync_delay)
+
+    def record(name, elapsed):
+        timing = timings.setdefault(name, {"count": 0, "total_seconds": 0.0, "max_seconds": 0.0})
+        timing["count"] += 1
+        timing["total_seconds"] += elapsed
+        timing["max_seconds"] = max(timing["max_seconds"], elapsed)
+
+    @contextmanager
+    def measured_lock(*args, **kwargs):
+        caller = sys._getframe(2).f_code.co_name
+        waiting_since = time.perf_counter()
+        held_since = None
+        try:
+            with original_lock(*args, **kwargs) as path:
+                held_since = time.perf_counter()
+                record(f"wait:{caller}", held_since - waiting_since)
+                holding[0] = caller
+                yield path
+        finally:
+            if held_since is None:
+                record(f"failed_wait:{caller}", time.perf_counter() - waiting_since)
+            else:
+                record(f"hold:{caller}", time.perf_counter() - held_since)
+            holding[0] = None
+
+    def measured_fsync(descriptor: int) -> None:
+        started = time.perf_counter()
+        try:
+            if fsync_delay:
+                time.sleep(fsync_delay)
             original_fsync(descriptor)
-        os.fsync = slow_fsync
+        finally:
+            record(f"fsync:{holding[0] or 'outside'}", time.perf_counter() - started)
+
+    orchestrator_module.manifest_lock = measured_lock
+    os.fsync = measured_fsync
     start_event.wait(30)
     done = 0
     try:
@@ -733,9 +768,12 @@ def _claim_and_submit_loop(
             result = orchestrator.submit(claimed["ticket"], '{"value": "x"}')
             assert result.accepted
             done += 1
-        queue.put(done)
+        queue.put({"pid": os.getpid(), "done": done, "timings": timings})
     except BaseException as error:  # pragma: no cover - surfaced by the parent
-        queue.put({"error": repr(error), "traceback": traceback.format_exc()})
+        queue.put({
+            "pid": os.getpid(), "done": done, "timings": timings,
+            "error": repr(error), "traceback": traceback.format_exc(),
+        })
 
 
 @pytest.mark.parametrize("fsync_delay", [0, 0.15], ids=["normal-disk", "slow-disk"])
@@ -764,9 +802,10 @@ def test_eight_executors_do_not_time_out_on_the_manifest_lock(
     results = [queue.get(timeout=300) for _ in processes]
     for process in processes:
         process.join(timeout=60)
-    errors = [result["traceback"] for result in results if isinstance(result, dict)]
-    assert not errors, "\n\n".join(errors)
-    assert results == [5] * 8
+    errors = [result["traceback"] for result in results if "error" in result]
+    diagnostics = json.dumps(results, ensure_ascii=False, indent=2)
+    assert not errors, "\n\n".join(errors) + "\nWorker timings:\n" + diagnostics
+    assert [result["done"] for result in results] == [5] * 8, diagnostics
     assert all(process.exitcode == 0 for process in processes)
     manifest = orchestrator.load_run(run_id)
     states = [task["state"] for task in manifest["tasks"].values()]
