@@ -51,7 +51,7 @@ st next [--run RUN_ID] [--executor-id ID] [--wait SECONDS] [--json]
 - `--json` のときは `{"ticket", "card", "lease_expires_at"}` を出力する。タスクIDは出力しない（[task-model.md](task-model.md) §3）。
 - `--run` で指定した run が `halted` の場合は、終了コード 6 を返す。
 - `--wait SECONDS`：`ready` のタスクがないとき、指定秒数まで5秒間隔で待つ（0以上の整数。0は待たない。負の値は終了コード 1）。待っても見つからなければ終了コード 2。
-- `--run` で指定した run が存在しない場合は終了コード 1、`completed` / `stalled` / `duplicate` の場合は終了コード 2 とする。 指定した run のロック取得・解放が恒久的な権限拒否で失敗した場合は終了コード 1 とする。run を指定しない場合は、[task-model.md §5](task-model.md#5-claimlease) の run の異常の隔離に従い、特定の run だけの権限拒否を標準エラー出力に示して他の run を続ける。カードを公開できなかった run の処理を成功したものとして返さない。
+- `--run` で指定した run が存在しない場合は終了コード 1、`completed` / `stalled` / `duplicate` の場合は終了コード 2 とする。 指定した run のロック取得・解放が恒久的な権限拒否で失敗した場合は終了コード 1 とする。run を指定しない場合は、[task-model.md §5](task-model.md#5-claim-と-lease) の run の異常の隔離に従い、特定の run だけの権限拒否を標準エラー出力に示して他の run を続ける。カードを公開できなかった run の処理を成功したものとして返さない。
 - `--executor-id` を省略したときは、実行者ワークスペースの設定、なければホスト名とプロセスIDから作る。
 
 ### `st submit`
