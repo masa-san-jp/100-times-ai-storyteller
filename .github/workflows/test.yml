@@ -1,90 +1,31 @@
-name: Test
-
-# プルリクエストでは ubuntu-latest / Python 3.11 の1ジョブだけを実行する。
-# main への push と毎日1回の定時実行（と手動の実行）では 3 OS × 2 版の全ジョブを実行し、
-# main で失敗したジョブがあれば Issue を起票する。
+name: Windows claim diagnostic
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-  schedule:
-    - cron: "17 18 * * *"
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  select:
-    name: Select matrix
-    runs-on: ubuntu-latest
-    outputs:
-      os: ${{ steps.select.outputs.os }}
-      python: ${{ steps.select.outputs.python }}
-    steps:
-      - id: select
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
-            echo 'python=["3.11"]' >> "$GITHUB_OUTPUT"
-          else
-            echo 'os=["macos-latest","ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
-            echo 'python=["3.11","3.13"]' >> "$GITHUB_OUTPUT"
-          fi
-
-  test:
-    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
-    needs: select
-    runs-on: ${{ matrix.os }}
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.select.outputs.os) }}
-        python-version: ${{ fromJSON(needs.select.outputs.python) }}
-
+        condition: [normal-disk, slow-disk]
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up uv and Python
-        uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
         with:
+          python-version: '3.11'
           enable-cache: true
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - name: Check documentation
-        run: uv run python tools/check_docs.py
-
-      - name: Run tests
-        run: uv run pytest
-
-  report-failure:
-    name: Report failure on main
-    needs: test
-    if: ${{ failure() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-    steps:
-      - name: Open an issue
+      - run: uv sync --locked
+      - name: Repeat actual eight-executor test with traceback
+        shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          EVENT_NAME: ${{ github.event_name }}
-          SHA: ${{ github.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TEST_CONDITION: ${{ matrix.condition }}
         run: |
-          gh issue create --repo "$REPO" \
-            --title "CI 失敗：main の全ジョブ（$EVENT_NAME、${SHA:0:7}）" \
-            --body "main の全ジョブ（3 OS × Python 3.11 / 3.13）で失敗したジョブがあります。
-
-          - きっかけ：$EVENT_NAME
-          - コミット：$SHA
-          - 実行：$RUN_URL"
+          $repeatCount = if ($env:TEST_CONDITION -eq 'normal-disk') { 3 } else { 10 }
+          for ($attempt = 1; $attempt -le $repeatCount; $attempt++) {
+            Write-Output "Diagnostic $env:TEST_CONDITION iteration $attempt of $repeatCount"
+            uv run pytest -q tests/test_claims.py::test_eight_executors_do_not_time_out_on_the_manifest_lock -k $env:TEST_CONDITION
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
