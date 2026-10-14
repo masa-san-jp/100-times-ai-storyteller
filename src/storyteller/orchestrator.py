@@ -14,10 +14,12 @@ import socket
 import sys
 import unicodedata
 from copy import deepcopy
+from contextlib import ExitStack
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from stat import S_ISREG
 from typing import Any, Final
 
 from .cards import (
@@ -27,7 +29,7 @@ from .cards import (
     input_char_count,
     prepare_task_inputs,
 )
-from .cache import cache_key, lookup_cache, save_cache
+from .cache import cache_key, cache_path, lookup_cache
 from .task_outputs import read_task_output
 from .failure_reports import write_failure_reports
 from .repair import generate_repair_card, latest_repair_source
@@ -42,6 +44,7 @@ from .storage import (
     atomic_write_json,
     atomic_write_text,
     manifest_lock,
+    prepare_atomic_write_bytes,
 )
 from .report_layout import find_report_dir, report_manifest_paths
 from .validation import (
@@ -126,6 +129,89 @@ class SubmissionResult:
     @property
     def passed(self) -> bool:
         return self.accepted
+
+
+class _TaskReadCache:
+    """Reuse successful JSON reads only during one locked cache scan.
+
+    Each use rechecks file identity and metadata. Values are copied so one
+    task's input fitting cannot mutate the next task's dependency view.
+    """
+
+    def __init__(self, run_dir: Path) -> None:
+        self.run_dir = run_dir
+        self._input_path = str(run_dir / "input.json")
+        self._paths: dict[str, tuple[Path, str, str]] = {}
+        self._values: dict[tuple[str, ...], tuple[tuple[Any, ...], Any]] = {}
+
+    @staticmethod
+    def _signature(path: str) -> Any:
+        try:
+            stat = os.stat(path)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return _MISSING
+        return (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size,
+                stat.st_dev, stat.st_ino, stat.st_mode)
+
+    def _read(
+        self, paths: tuple[str, ...], reader: Callable[[], Any],
+        *, first_signature: Any = _MISSING,
+    ) -> Any:
+        signatures = []
+        for index, path in enumerate(paths):
+            signature = (first_signature if index == 0 and first_signature is not _MISSING
+                         else self._signature(path))
+            if signature is _MISSING:
+                # Let the original reader decide how to report this error;
+                # an unreadable signature can never justify a cache hit.
+                self._values.pop(paths, None)
+                return reader()
+            signatures.append(signature)
+        signature = tuple(signatures)
+        cached = self._values.get(paths)
+        if cached is not None and cached[0] == signature:
+            return deepcopy(cached[1])
+        value = reader()
+        self._values[paths] = (signature, deepcopy(value))
+        return value
+
+    def run_input(self) -> Any:
+        return self._read((self._input_path,), lambda: _read_run_input(self.run_dir))
+
+    def task_output(self, task_id: str, task_type: str) -> tuple[bool, Any]:
+        paths = self._paths.get(task_id)
+        if paths is None:
+            directory = self.run_dir / "tasks" / task_id
+            paths = (directory, str(directory / "output.json"), str(directory / "input.json"))
+            self._paths[task_id] = paths
+        directory, output, inputs = paths
+        signature = self._signature(output)
+        if signature is _MISSING or signature is None or not S_ISREG(signature[-1]):
+            # Text readers can consult other tasks (e.g. S4.item_name).
+            # Missing/unreadable outputs also retain the original error path.
+            return False, None
+        return True, self._read(
+            (output, inputs), lambda: read_task_output(directory, task_type),
+            first_signature=signature,
+        )
+
+
+@dataclass(frozen=True)
+class _TaskInputs:
+    definition: Mapping[str, Any]
+    inputs: Mapping[str, Any]
+    run_input: Any
+    dependency_outputs: Mapping[str, Any]
+    run_dir: Path
+
+
+@dataclass(frozen=True)
+class _PendingClaim:
+    result: dict[str, str]
+    inputs: dict[str, Any]
+    claim: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -582,6 +668,8 @@ class Orchestrator:
             except LockTimeoutError:
                 raise
             except (OSError, ValueError, ClaimError) as error:
+                if run_id is not None and isinstance(error, PermissionError):
+                    raise
                 advance_failed = True
                 _warn_skipped_run(candidate_run_id, error)
 
@@ -637,14 +725,16 @@ class Orchestrator:
                         _update_run_status(manifest)
                         _touch_manifest(manifest, now)
                         self._persist_manifest(run_dir, manifest)
-                        if result is not None:
-                            return result
                         # A card error or O_EXCL race consumed this candidate.
                         # Re-enter the same run before moving to the next one.
-                        retry_same_run = True
+                        retry_same_run = result is None
+                    if result is not None:
+                        return self._finish_claim(candidate_run_id, task_id, result)
                 except LockTimeoutError:
                     raise
                 except (OSError, ValueError, ClaimError) as error:
+                    if run_id is not None and isinstance(error, PermissionError):
+                        raise
                     _warn_skipped_run(candidate_run_id, error)
                     break
         return None
@@ -714,7 +804,7 @@ class Orchestrator:
             _update_run_status(manifest)
             _touch_manifest(manifest, now)
             self._persist_manifest(run_dir, manifest)
-            return result
+        return self._finish_claim(run_id, task_id, result)
 
     _claim_task = claim_task
 
@@ -1006,6 +1096,57 @@ class Orchestrator:
         discard_partial: bool = False,
         fatal: bool = False,
     ) -> SubmissionResult:
+        # A successful submission needs two durable files before its manifest
+        # transition. Fsync their private temporary files outside the manifest
+        # lock; only publish them after rechecking the ticket and lease below.
+        # This also leaves a real opportunity for polling executors to acquire
+        # the lock between this executor's claim and its commit on slow disks.
+        with ExitStack() as staged:
+            prepared = None
+            if validation.passed:
+                manifest = self.load_run(run_id)
+                task = _get_task(manifest, task_id)
+                from .world_facts import specialize_fact_definition
+                definition = specialize_fact_definition(
+                    self.task_definitions[task["type"]], card_inputs,
+                )
+                stored_value = _postprocess_accepted_output(task, validation.value)
+                key = self._cache_key_for_task(manifest, task_id, card_inputs)
+                json_text = json.dumps(stored_value, ensure_ascii=False, indent=2) + "\n"
+                publish_cache = staged.enter_context(prepare_atomic_write_bytes(
+                    cache_path(self.data_dir, key), json_text.encode("utf-8"),
+                ))
+                if definition.get("output") == "json":
+                    output_name, output_text = "output.json", json_text
+                elif definition.get("output") == "text":
+                    if not isinstance(stored_value, str):
+                        raise OrchestrationError("text タスクの検証結果が文字列ではありません")
+                    output_name, output_text = "output.md", stored_value
+                else:
+                    raise OrchestrationError("task definition output must be json or text")
+                publish_output = staged.enter_context(prepare_atomic_write_bytes(
+                    self.task_dir(run_id, task_id) / output_name,
+                    output_text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"),
+                ))
+                prepared = (key, stored_value, output_name, publish_cache, publish_output)
+            return self._commit_prepared_submission(
+                ticket, run_id, task_id, raw_output, validation, card_inputs,
+                discard_partial=discard_partial, fatal=fatal, prepared=prepared,
+            )
+
+    def _commit_prepared_submission(
+        self,
+        ticket: str,
+        run_id: str,
+        task_id: str,
+        raw_output: Any,
+        validation: Any,
+        card_inputs: Mapping[str, Any],
+        *,
+        discard_partial: bool,
+        fatal: bool,
+        prepared: tuple[str, Any, str, Callable[[], None], Callable[[], None]] | None,
+    ) -> SubmissionResult:
         run_dir = self.run_dir(run_id)
         with manifest_lock(run_dir):
             manifest = load_manifest(run_dir / "manifest.json")
@@ -1035,18 +1176,15 @@ class Orchestrator:
                 f"{task_id}: {warning}" for warning in warnings
             )
             if validation.passed:
-                stored_value = _postprocess_accepted_output(task, validation.value)
-                key = self._cache_key_for_task(
-                    manifest,
-                    task_id,
-                    card_inputs,
-                )
-                save_cache(self.data_dir, key, stored_value)
-                _write_submitted_output(
-                    self.task_dir(run_id, task_id),
-                    definition,
-                    stored_value,
-                )
+                assert prepared is not None
+                key, stored_value, output_name, publish_cache, publish_output = prepared
+                publish_cache()
+                publish_output()
+                other_name = "output.md" if output_name == "output.json" else "output.json"
+                try:
+                    (self.task_dir(run_id, task_id) / other_name).unlink()
+                except FileNotFoundError:
+                    pass
                 if task["type"] == "S2.counter":
                     from .table_append import append_counter_element
                     _, append_warning = append_counter_element(
@@ -1432,7 +1570,7 @@ class Orchestrator:
         executor_id: str,
         isolation: str,
         now: str,
-    ) -> dict[str, str] | None:
+    ) -> _PendingClaim | None:
         task = _get_task(manifest, task_id)
         if task["kind"] != "llm" or task["state"] != "ready":
             return None
@@ -1487,27 +1625,84 @@ class Orchestrator:
             reason="実行者がclaim",
             executor_id=executor_id,
         )
-        try:
-            atomic_write_text(self.task_dir(run_id, task_id) / "card.md", card)
-            atomic_write_json(
-                self.task_dir(run_id, task_id) / "input.json", card_inputs
-            )
-        except BaseException:
-            _release_claim(self.run_dir(run_id), task_id, task)
-            _set_task_state(
-                manifest,
-                task_id,
-                "ready",
-                now,
-                reason="タスクカードの保存に失敗",
-                executor_id=executor_id,
-            )
-            raise
-        return {
+        return _PendingClaim({
             "ticket": ticket,
             "card": card,
             "lease_expires_at": lease_expires_at,
-        }
+        }, card_inputs, manifest_claim)
+
+    def _finish_claim(
+        self, run_id: str, task_id: str, pending: _PendingClaim,
+    ) -> dict[str, str]:
+        """Durably prepare the reserved claim's card without holding the lock.
+
+        The O_EXCL claim and manifest already agree, so other executors cannot
+        take this task while its two private files are being fsynced. Publish
+        only while the same live claim still owns the task. A crash before
+        publication leaves a normal claim that lease expiry can recover.
+        """
+        run_dir = self.run_dir(run_id)
+        directory = self.task_dir(run_id, task_id)
+        try:
+            with ExitStack() as staged:
+                publish_card = staged.enter_context(prepare_atomic_write_bytes(
+                    directory / "card.md",
+                    pending.result["card"].replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"),
+                ))
+                publish_inputs = staged.enter_context(prepare_atomic_write_bytes(
+                    directory / "input.json",
+                    (json.dumps(pending.inputs, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+                ))
+                with manifest_lock(run_dir):
+                    manifest = load_manifest(run_dir / "manifest.json")
+                    if self._halt_if_harness_changed(manifest):
+                        _touch_manifest(manifest, self._now())
+                        self._persist_manifest(run_dir, manifest)
+                    if manifest["status"] == "halted":
+                        raise HaltedRunError(f"run は停止中です: {run_id}")
+                    claim = _require_claim_locked(
+                        manifest, run_dir, task_id, pending.result["ticket"], self._now(),
+                    )
+                    if claim != pending.claim:
+                        raise InvalidClaimError("カードの準備中に claim が変更されました")
+                    publish_card()
+                    publish_inputs()
+            return pending.result
+        except BaseException as error:
+            try:
+                self._rollback_pending_claim(run_id, task_id, pending)
+            except Exception as rollback_error:
+                raise error from rollback_error
+            raise
+
+    def _rollback_pending_claim(
+        self, run_id: str, task_id: str, pending: _PendingClaim,
+    ) -> None:
+        """Undo a failed publication only if the original claim still owns it."""
+        run_dir = self.run_dir(run_id)
+        with manifest_lock(run_dir):
+            manifest = load_manifest(run_dir / "manifest.json")
+            task = _get_task(manifest, task_id)
+            if task["state"] != "claimed" or task.get("claim") != pending.claim:
+                return
+            try:
+                payload = _read_claim_file(self.task_dir(run_id, task_id) / "claim.json")
+            except InvalidClaimError:
+                return
+            if payload["task_id"] != task_id or _manifest_claim(payload) != pending.claim:
+                return
+            now = self._now()
+            _release_claim(
+                run_dir, task_id, task,
+                archive_prefix="claim.expired" if _claim_expired(payload, now) else None,
+            )
+            _set_task_state(
+                manifest, task_id, "ready", now, reason="タスクカードの保存に失敗",
+                executor_id=pending.claim["executor_id"],
+            )
+            _update_run_status(manifest)
+            _touch_manifest(manifest, now)
+            self._persist_manifest(run_dir, manifest)
 
     def _build_task_card(
         self,
@@ -1893,34 +2088,39 @@ class Orchestrator:
                 self._now(),
             )
 
-    def _build_context(
+    def _resolve_task_inputs(
         self,
         manifest: Mapping[str, Any],
         run_id: str,
         task_id: str,
-    ) -> CodeTaskContext:
+        *,
+        run_dir: Path | None = None,
+        reads: _TaskReadCache | None = None,
+    ) -> _TaskInputs:
         task = _get_task(manifest, task_id)
+        if run_dir is None:
+            run_dir = self.run_dir(run_id)
         definition = self.task_definitions[task["type"]]
         dependency_outputs = _read_dependency_outputs(
-            self.run_dir(run_id), manifest, task
+            run_dir, manifest, task, reads=reads,
         )
         from .character_facts import supplement_character_outputs
-        dependency_outputs = supplement_character_outputs(self.run_dir(run_id), manifest, task, dependency_outputs)
+        dependency_outputs = supplement_character_outputs(run_dir, manifest, task, dependency_outputs)
         from .world_facts import supplement_fact_outputs
-        dependency_outputs = supplement_fact_outputs(self.run_dir(run_id), manifest, task, dependency_outputs, definition=definition)
+        dependency_outputs = supplement_fact_outputs(run_dir, manifest, task, dependency_outputs, definition=definition)
         source_outputs = _source_outputs(
             manifest, task, definition, dependency_outputs
         )
         from .story_materials import sequential_sources
         source_outputs = sequential_sources(task, manifest, dependency_outputs, source_outputs)
-        run_input = _read_run_input(self.run_dir(run_id))
+        run_input = _read_run_input(run_dir) if reads is None else reads.run_input()
         try:
             # Slots whose source tasks were all skipped are shown as 未定 (§6.7).
             undecided = _undecided_slots(manifest, task, definition)
             if "glossary" in definition.get("inputs", {}):
                 # Supplement the assignment view with a derived glossary;
                 # the persisted assignment and registration outputs stay intact.
-                registrations = registration_outputs(self.run_dir(run_id), manifest)
+                registrations = registration_outputs(run_dir, manifest)
                 glossary = build_glossary(registrations)
                 base_definition = {**definition, "inputs": {
                     name: slot for name, slot in definition["inputs"].items()
@@ -1960,17 +2160,27 @@ class Orchestrator:
         definition, output_chars = dev_task_definition(definition, manifest.get("scale", {}), self.repository_root)
         if output_chars is not None:
             inputs = {**inputs, "output_chars": output_chars}
+        return _TaskInputs(definition, inputs, run_input, dependency_outputs, run_dir)
+
+    def _build_context(
+        self,
+        manifest: Mapping[str, Any],
+        run_id: str,
+        task_id: str,
+    ) -> CodeTaskContext:
+        task = _get_task(manifest, task_id)
+        resolved = self._resolve_task_inputs(manifest, run_id, task_id)
         return CodeTaskContext(
             run_id=run_id,
             task_id=task_id,
             task=deepcopy(task),
-            definition=definition,
-            inputs=inputs,
-            run_input=run_input,
-            outputs=deepcopy(dependency_outputs),
-            dependency_outputs=dependency_outputs,
+            definition=resolved.definition,
+            inputs=resolved.inputs,
+            run_input=resolved.run_input,
+            outputs=deepcopy(resolved.dependency_outputs),
+            dependency_outputs=resolved.dependency_outputs,
             data_dir=self.data_dir,
-            run_dir=self.run_dir(run_id),
+            run_dir=resolved.run_dir,
             seed=derive_task_seed(
                 int(manifest["seed"]), task_id, int(task["attempt"])
             ),
@@ -1994,6 +2204,8 @@ class Orchestrator:
         an executor for a value that code has already determined.
         """
 
+        run_dir = self.run_dir(run_id)
+        reads = _TaskReadCache(run_dir)
         changed = False
         completed = True
         while completed:
@@ -2013,12 +2225,14 @@ class Orchestrator:
                     # cache_key を None に戻す。
                     continue
                 try:
-                    context = self._build_context(manifest, run_id, task_id)
+                    context = self._resolve_task_inputs(
+                        manifest, run_id, task_id, run_dir=run_dir, reads=reads,
+                    )
                     card_inputs = _prepare_card_inputs(
                         context.definition,
                         context.inputs,
                         continuation_tail_chars=_required_continuation_tail(
-                            context.definition, task, self.task_dir(run_id, task_id)
+                            context.definition, task, _task_directory(run_dir, task_id)
                         ),
                     )
                     fixed = None
@@ -2045,8 +2259,8 @@ class Orchestrator:
                             changed = completed = True
                             continue
                     if fixed is not None:
-                        atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
-                        _write_submitted_output(self.task_dir(run_id, task_id), context.definition, fixed)
+                        atomic_write_json(_task_directory(run_dir, task_id) / "input.json", card_inputs)
+                        _write_submitted_output(_task_directory(run_dir, task_id), context.definition, fixed)
                         reason = ("選択肢が1つに確定" if context.definition.get("element") == "choice"
                                   else "値の範囲が1つに確定")
                         _set_task_state(manifest, task_id, "done", self._now(), reason=reason)
@@ -2066,6 +2280,11 @@ class Orchestrator:
                     continue
 
                 task["cache_key"] = key
+                if not os.path.exists(os.path.join(
+                    str(self.data_dir), "cache", key[:2], f"{key}.json"
+                )):
+                    changed = True
+                    continue
                 hit, output = lookup_cache(self.data_dir, key)
                 if not hit:
                     changed = True
@@ -2079,9 +2298,9 @@ class Orchestrator:
                         changed = True
                         continue
                 output = _postprocess_accepted_output(task, output)
-                atomic_write_json(self.task_dir(run_id, task_id) / "input.json", card_inputs)
+                atomic_write_json(_task_directory(run_dir, task_id) / "input.json", card_inputs)
                 _write_submitted_output(
-                    self.task_dir(run_id, task_id),
+                    _task_directory(run_dir, task_id),
                     context.definition,
                     output,
                 )
@@ -2093,7 +2312,7 @@ class Orchestrator:
                     reason="キャッシュの出力を再利用",
                 )
                 task["error"] = None
-                _remove_partial_output(self.task_dir(run_id, task_id))
+                _remove_partial_output(_task_directory(run_dir, task_id))
                 changed = completed = True
             if completed:
                 _refresh_blocked_tasks(manifest, self._now())
@@ -3816,12 +4035,19 @@ def _summarize_world_sections(value: Any) -> list[dict[str, str]]:
     return summaries
 
 
+def _task_directory(run_dir: Path, task_id: str) -> Path:
+    if not isinstance(task_id, str) or not _TASK_ID.fullmatch(task_id):
+        raise ValueError(f"invalid task id: {task_id!r}")
+    return run_dir / "tasks" / task_id
+
+
 def _read_dependency_outputs(
     run_dir: Path,
     manifest: Mapping[str, Any],
     task: Mapping[str, Any],
     *,
     strict: bool = True,
+    reads: _TaskReadCache | None = None,
 ) -> dict[str, Any]:
     """Read ``done`` dependencies' outputs from disk.
 
@@ -3837,9 +4063,14 @@ def _read_dependency_outputs(
         dependency = manifest["tasks"][task_id]
         if dependency["state"] != "done":
             continue
-        output_json = run_dir / "tasks" / task_id / "output.json"
-        output_md = run_dir / "tasks" / task_id / "output.md"
         try:
+            if reads is not None:
+                reused, output = reads.task_output(task_id, dependency["type"])
+                if reused:
+                    outputs[task_id] = output
+                    continue
+            output_json = run_dir / "tasks" / task_id / "output.json"
+            output_md = run_dir / "tasks" / task_id / "output.md"
             if output_json.is_file() or output_md.is_file():
                 outputs[task_id] = read_task_output(run_dir / "tasks" / task_id, dependency["type"])
             elif strict:

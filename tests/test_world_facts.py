@@ -82,6 +82,49 @@ def test_name_fact_and_calendar_use_one_name_and_assigned_sounds():
         assert any("schema" in error for error in invalid.errors)
 
 
+@pytest.mark.parametrize("task_type,index", [
+    ("S4.fact", "place.location_name"),
+    ("S5.fact", "c1-family.1.name"),
+])
+def test_name_fact_submit_persists_specialized_json_and_cache(tmp_path, task_type, index):
+    from storyteller.cache import lookup_cache
+    from storyteller.orchestrator import Orchestrator, TaskSpec
+    from storyteller.task_outputs import read_task_output, task_sources
+
+    definition = _definition(task_type)
+    assert definition["output"] == "text"
+    # Supply the catalog shape and sounds directly; retain the real task's
+    # output contract, specialization, validation, and persistence paths.
+    definition["inputs"] = {
+        name: {"label": name, "from": "input", "select": f"input.{name}", "required": True}
+        for name in ("shape", "name_sound")
+    }
+    inputs = {name: _inputs("name")[name] for name in definition["inputs"]}
+    harness = Orchestrator(tmp_path, {task_type: definition})
+    task_id = f"{task_type}-{index}"
+    run_id = harness.create_run(seed=1, tasks=[TaskSpec(task_id, task_type, index=(index,))], input_data=inputs)
+    directory = harness.task_dir(run_id, task_id)
+    claim = harness.claim_next(run_id, executor_id="test")
+    invalid = harness.submit(claim["ticket"], '{"name":"カナ","reading":"ホホ"}')
+    assert not invalid.accepted and any("uses_given" in error for error in invalid.errors)
+    assert not (directory / "output.json").exists()
+    assert not (tmp_path / "cache").exists()
+    claim = harness.claim_next(run_id, executor_id="test")
+    (directory / "output.md").write_text("old text", encoding="utf-8")
+    expected = {"name": "カナ", "reading": "カナ"}
+    accepted = harness.submit(claim["ticket"], json.dumps(expected, ensure_ascii=False))
+    assert accepted.accepted and accepted.value == expected
+    assert json.loads((directory / "output.json").read_text(encoding="utf-8")) == expected
+    assert not (directory / "output.md").exists()
+    assert read_task_output(directory, task_type) == {**expected, "sources": task_sources(directory)}
+    restarted = Orchestrator(tmp_path, {task_type: definition})
+    task = restarted.load_run(run_id)["tasks"][task_id]
+    assert task["state"] == "done" and task["tries"] == 1
+    assert lookup_cache(tmp_path, task["cache_key"]) == (True, expected)
+    assert harness.task_definitions[task_type]["output"] == "text"
+    assert list(tmp_path.rglob(".*.tmp")) == []
+
+
 def test_catalog_covers_all_sections_viewpoints_and_list_items():
     catalog = load_table("world_facts")
     fields = [*catalog["facts"], *catalog["item_facts"]]

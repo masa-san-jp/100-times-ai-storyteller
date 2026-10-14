@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -447,6 +448,133 @@ def test_submit_rechecks_lease_under_manifest_lock(tmp_path: Path, monkeypatch) 
     with pytest.raises(InvalidClaimError):
         orchestrator.submit(claimed["ticket"], '{"text":"ok"}')
     assert orchestrator.load_run(run_id)["tasks"]["D1.echo"]["state"] == "claimed"
+
+
+@pytest.mark.parametrize("change", ["expire", "revoke", "reclaim", "other-owner", "duplicate"])
+def test_prepared_submission_rechecks_claim_before_publishing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str,
+) -> None:
+    from storyteller.cache import cache_path
+    from storyteller.storage import atomic_write_json
+
+    clock = Clock()
+    orchestrator = Orchestrator(
+        tmp_path, {"D1.echo": llm_definition(validate={}, lease_minutes=0.05)}, clock=clock,
+    )
+    run_id = orchestrator.create_run(seed=1, input_data={"given": "a"})
+    claimed = orchestrator.claim_next(run_id, executor_id="first")
+    task_dir = orchestrator.task_dir(run_id, "D1.echo")
+    manifest = orchestrator.load_run(run_id)
+    key = orchestrator._cache_key_for_task(manifest, "D1.echo", {"given": "a"})
+    cached = cache_path(tmp_path, key)
+    atomic_write_json(cached, {"text": "old-cache"})
+    atomic_write_json(task_dir / "output.json", {"text": "old-output"})
+    original = orchestrator_module.prepare_atomic_write_bytes
+    preparations = 0
+
+    @contextmanager
+    def change_claim_during_preparation(path, data):
+        nonlocal preparations
+        with original(path, data) as publish:
+            assert not (orchestrator.run_dir(run_id) / "manifest.lock").exists()
+            preparations += 1
+            if preparations == 2:
+                if change == "expire":
+                    clock.value += timedelta(seconds=31)
+                elif change in {"revoke", "reclaim"}:
+                    orchestrator.revoke_claim(run_id, "D1.echo", reason="取消")
+                    if change == "reclaim":
+                        cached.unlink()
+                        replacement = orchestrator.claim_next(run_id, executor_id="replacement")
+                        assert replacement is not None
+                        assert replacement["ticket"] != claimed["ticket"]
+                        atomic_write_json(cached, {"text": "old-cache"})
+                elif change == "other-owner":
+                    payload = json.loads((task_dir / "claim.json").read_text(encoding="utf-8"))
+                    payload["executor_id"] = "other"
+                    atomic_write_json(task_dir / "claim.json", payload)
+                else:
+                    assert orchestrator.submit(claimed["ticket"], '{"text":"winner"}').accepted
+            def publish_while_locked():
+                assert (orchestrator.run_dir(run_id) / "manifest.lock").exists()
+                publish()
+            yield publish_while_locked
+
+    monkeypatch.setattr(orchestrator_module, "prepare_atomic_write_bytes", change_claim_during_preparation)
+    with pytest.raises(InvalidClaimError):
+        orchestrator.submit(claimed["ticket"], '{"text":"loser"}')
+    expected_cache = "winner" if change == "duplicate" else "old-cache"
+    assert json.loads(cached.read_text(encoding="utf-8")) == {"text": expected_cache}
+    expected_output = "winner" if change == "duplicate" else "old-output"
+    assert json.loads((task_dir / "output.json").read_text(encoding="utf-8")) == {"text": expected_output}
+    assert list(tmp_path.rglob(".*.tmp")) == []
+
+
+def test_submission_prepare_fsync_failure_preserves_old_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+    from storyteller.cache import cache_path
+    from storyteller.storage import atomic_write_json
+
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition(validate={})})
+    run_id = orchestrator.create_run(seed=1, input_data={"given": "a"})
+    claimed = orchestrator.claim_next(run_id, executor_id="worker")
+    key = orchestrator._cache_key_for_task(orchestrator.load_run(run_id), "D1.echo", {"given": "a"})
+    cached = cache_path(tmp_path, key)
+    output = orchestrator.task_dir(run_id, "D1.echo") / "output.json"
+    atomic_write_json(cached, {"text": "old-cache"})
+    atomic_write_json(output, {"text": "old-output"})
+    original = os.fsync
+    calls = 0
+
+    def fail_second_fsync(descriptor):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected output fsync failure")
+        original(descriptor)
+
+    monkeypatch.setattr("storyteller.storage.os.fsync", fail_second_fsync)
+    with pytest.raises(OSError, match="injected output fsync failure"):
+        orchestrator.submit(claimed["ticket"], '{"text":"new"}')
+    assert json.loads(cached.read_text(encoding="utf-8")) == {"text": "old-cache"}
+    assert json.loads(output.read_text(encoding="utf-8")) == {"text": "old-output"}
+    assert orchestrator.load_run(run_id)["tasks"]["D1.echo"]["state"] == "claimed"
+    assert list(tmp_path.rglob(".*.tmp")) == []
+
+
+def test_concurrent_prepared_submissions_can_share_a_cache_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from storyteller.cache import cache_path
+
+    orchestrator = Orchestrator(tmp_path, {"D1.echo": llm_definition(validate={}, share_across_runs=True)})
+    runs = [orchestrator.create_run(
+        seed=seed, input_data={"given": "a"}, run_id=f"20260927-031500-{seed:06x}",
+    ) for seed in (1, 2)]
+    claims = [orchestrator.claim_next(run, executor_id="worker") for run in runs]
+    original = orchestrator_module.prepare_atomic_write_bytes
+    preparations = 0
+
+    @contextmanager
+    def interleave(path, data):
+        nonlocal preparations
+        with original(path, data) as publish:
+            preparations += 1
+            if preparations == 2:
+                assert orchestrator.submit(claims[1]["ticket"], '{"text":"second"}').accepted
+            yield publish
+
+    monkeypatch.setattr(orchestrator_module, "prepare_atomic_write_bytes", interleave)
+    assert orchestrator.submit(claims[0]["ticket"], '{"text":"first"}').accepted
+    for run, text in zip(runs, ("first", "second")):
+        manifest = orchestrator.load_run(run)
+        task = manifest["tasks"]["D1.echo"]
+        assert task["state"] == "done"
+        assert json.loads((orchestrator.task_dir(run, "D1.echo") / "output.json").read_text(encoding="utf-8")) == {"text": text}
+        assert json.loads(cache_path(tmp_path, task["cache_key"]).read_text(encoding="utf-8")) == {"text": "first"}
+    assert list(tmp_path.rglob(".*.tmp")) == []
 
 
 def test_invalidation_rejects_non_done_and_resets_downstream(tmp_path: Path) -> None:

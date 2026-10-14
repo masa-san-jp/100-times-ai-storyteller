@@ -88,7 +88,9 @@ def test_dedicated_plot_type_produces_the_canonical_files(tmp_path: Path, plot_i
         encoding="utf-8",
     )
     created = _cli(
-        data_dir, "new", "--free", str(free_input), "--scale", "short",
+        # All seven templates run end to end here; short-scale coverage stays
+        # in test_story_cli_e2e and the phase-2 heavy scale tests.
+        data_dir, "new", "--free", str(free_input), "--scale", "dev",
         "--seed", "808", "--plot-type", plot_id,
     )
     assert created.returncode == 0, created.stderr
@@ -101,7 +103,9 @@ def test_dedicated_plot_type_produces_the_canonical_files(tmp_path: Path, plot_i
         repository_root=harness.repository_root, harness_kind=harness.harness_kind,
     )
 
-    sent_yes = False
+    comparison_yes_slot: str | None = None
+    submitted_counts: Counter[str] = Counter()
+    regenerated_what: set[str] = set()
     for _ in range(2000):
         claimed = harness.claim_next(run_id, executor_id="e2e", isolation="none")
         if claimed is None:
@@ -109,16 +113,36 @@ def test_dedicated_plot_type_produces_the_canonical_files(tmp_path: Path, plot_i
         task_id, task = _claimed_task(data_dir, run_id, claimed["ticket"])
         inputs = _task_input(data_dir, run_id, task_id)
         is_compare = task["type"] == "S8.compare"
-        output = _fake_output(task_id, task, inputs, send_comparison_yes=is_compare and not sent_yes)
-        sent_yes = sent_yes or (is_compare and output["answer"] == "yes")
+        output = _fake_output(
+            task_id, task, inputs,
+            send_comparison_yes=is_compare and comparison_yes_slot is None,
+        )
         text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
         submitted = harness.submit(claimed["ticket"], text)
         assert submitted.accepted, (task_id, submitted.errors)
+        submitted_counts[task_id] += 1
+        if is_compare and output["answer"] == "yes":
+            assert comparison_yes_slot is None
+            comparison_yes_slot = inputs["event_b"]["id"]
+        if (task["type"] == "S7.event"
+                and task["index"][:2] == [comparison_yes_slot, "what"]):
+            assert task["invalidations"] >= 1
+            regenerated_what.add(task_id)
     else:
         raise AssertionError("完走しませんでした")
 
     manifest = _manifest(data_dir, run_id)
     assert manifest["status"] == "completed"
+    assert comparison_yes_slot is not None
+    what_tasks = {
+        name: task for name, task in manifest["tasks"].items()
+        if task["type"] == "S7.event"
+        and task["index"][:2] == [comparison_yes_slot, "what"]
+    }
+    assert what_tasks and regenerated_what == set(what_tasks)
+    for name, task in what_tasks.items():
+        assert task["invalidations"] >= 1 and task["state"] == "done", name
+        assert submitted_counts[name] == task["invalidations"] + 1, name
     story_dir = data_dir / "runs" / run_id / "story"
     for name in ("story.json", "story.md", "characters.md", "world.md"):
         assert (story_dir / name).is_file(), name

@@ -27,6 +27,7 @@ from .orchestrator import (
     InvalidClaimError,
     InvalidTransition,
     OrchestrationError,
+    _warn_skipped_run,
 )
 from .storage import DataDirectoryError, LockTimeoutError, resolve_data_dir
 from .table_edit import register_cli_commands as register_table_commands
@@ -301,11 +302,17 @@ def _next(args: argparse.Namespace) -> int:
                 # 待機中の再確認はロックを取らない。進められる作業が無ければ
                 # claim_next（ロックを取る）を呼ばずに次の周期まで待つ。
                 continue
-            result = orchestrator.claim_next(
-                run_id,
-                executor_id=executor_id,
-                isolation=isolation,
-            )
+            try:
+                result = orchestrator.claim_next(
+                    run_id,
+                    executor_id=executor_id,
+                    isolation=isolation,
+                )
+            except PermissionError as error:
+                if args.run_id is not None:
+                    raise
+                _warn_skipped_run(run_id, error)
+                continue
             if result is None:
                 continue
             if args.as_json:
