@@ -67,7 +67,7 @@ def test_detail_prohibition_and_maximum_retry_budget():
     assert '条件を追加・反転・置換せず' in card
     assert '内部ID・構造説明を書かない' in card
     assert len(definition['card']['steps'][0]) <= len(PREVIOUS_RULES['S7.detail'])
-    assert definition['version'] == 13
+    assert definition['version'] == 14
 
 
 @pytest.mark.parametrize('task', ['S7.event', 'S7.detail'])

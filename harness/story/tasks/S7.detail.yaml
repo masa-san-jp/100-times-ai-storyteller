@@ -1,5 +1,5 @@
 id: S7.detail
-version: 13
+version: 14
 kind: llm
 element: text
 inputs:
@@ -96,6 +96,7 @@ validate:
   checks:
   - no_story_metadata
   - no_repeated_scene
+  - no_repeated_sentence
   - no_new_proper_nouns:
       mode: warn
   - no_copy_from_inputs

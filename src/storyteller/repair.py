@@ -87,6 +87,8 @@ def repair_conditions(
             from .event_fields import selected_event_steps
             lines.extend(step for step in selected_event_steps(definition, inputs)
                          if step.startswith("作り方の指示："))
+        elif name == "no_repeated_sentence":
+            lines.append("同じ長い文を繰り返さず、担当部分を重複のない文で書く。")
         elif name == "no_repeated_scene":
             lines.append("直前の場面の行動・結果を再演せず、担当部分だけを書く。")
         elif name == "ends_complete":

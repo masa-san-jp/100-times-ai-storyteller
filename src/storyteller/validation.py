@@ -101,7 +101,7 @@ _PROPER_NOUN_PATTERNS = (
         r"(?:王国|帝国|教団|国|町|村|市|島|山|川|会|社|家|様|氏)"
     ),
 )
-_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete", "no_story_metadata", "no_repeated_scene", "no_repeated_event_field"})
+_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete", "no_story_metadata", "no_repeated_scene", "no_repeated_event_field", "no_repeated_sentence"})
 _COMPLETE_ENDINGS = frozenset("。．.！!？?」』）)】…")
 _DEFAULT_HARNESS_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA_CACHE: dict[
@@ -362,6 +362,20 @@ def _run_check(
             from .character_facts import UNDECIDED
             if previous and previous != normalise(UNDECIDED) and normalise(output) == previous:
                 return ["no_repeated_event_field: 何が起きたかを全文再述せず、指定項目だけを書いてください"], []
+        return [], []
+    if name == "no_repeated_sentence":
+        if output_kind != "text" or not isinstance(output, str):
+            raise ValidationConfigurationError("no_repeated_sentence requires text output")
+        if arguments:
+            raise ValidationConfigurationError("no_repeated_sentence takes no arguments")
+        seen: set[str] = set()
+        for sentence in re.split(r"[。！？.!?\r\n]+", output):
+            normalised = "".join(unicodedata.normalize("NFKC", sentence).split()).rstrip("。！？.!?")
+            if len(normalised) < 20:
+                continue
+            if normalised in seen:
+                return ["no_repeated_sentence: 同じ20文字以上の文を本文内で繰り返さないでください"], []
+            seen.add(normalised)
         return [], []
     if name == "no_repeated_scene":
         from .plot_quality import similarity
