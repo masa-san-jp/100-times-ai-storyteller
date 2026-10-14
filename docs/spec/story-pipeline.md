@@ -103,7 +103,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 - 主人公以外の人物の項目には、主人公の文脈として、主人公の名前と役を入力に含める。`motive`・`catchphrase` では、主人公の `intro` も含める。主人公の割り当て要素・禁忌・抑圧されている自己像は、主人公自身の項目にだけ入力する（P1）。
 - すべての項目の入力に、その人物の役の定義文（`tables/roles.yaml`。heros-journey・world-building の4役の定義を取り込む）と、プロット型の `character_requirements` を含める。
 - `name`：入力は、S3 で割り当てた音6個と、名前の響きの説明文だけ。`element: name`。出力は `{"name": "...", "reading": "カタカナの読み"}`。検証：`reading` が、与えた音のうち2個以上を含む（`uses_given`）。
-- `profile`：入力は、その人物の名前・役・割り当て要素（主人公は `taboo` を含む）。
+- `profile`：入力は、その人物の名前・役・割り当て要素（主人公は `taboo` を含む）。 事実シートとの整合は保つが、身長・出身地・家族などの全項目を本文へ列挙する必要はない。既存の手順が要求する名前・役・年齢・性別・種族・能力・願望・課題を字数内で統合し、不要な列挙で上限を超えない。事実・主語・字数の検証は変えない。
 - 長い項目（profile・appearance・personality・values・backstory・relationship・voice・inner_conflict）は `output: text`、`extend_to_min: true` とし、本文だけを書かせる。短い項目（intro・motive・catchphrase）も `output: text`（`element: text`）とし、本文だけを書かせる。name は `element: name`。
 - `motive`：入力は、その人物の名前・役・プロフィールと、他の人物の名前・役だけ。出力は本文だけ（120字以内）。主人公に「抑圧されている自己像」が割り当てられていれば、入力に含める。
 - `intro`：短い紹介（50字以内で、文末記号で終わる1文。world-building の short_introduction）。`ends_complete` で検査する。
