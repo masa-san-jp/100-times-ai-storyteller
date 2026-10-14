@@ -274,6 +274,8 @@ def specialize_fact_definition(definition: Mapping[str, Any], inputs: Mapping[st
     else:
         result["validate"] = {"checks": [*common_checks, {"min_chars": {"n": 1}}, {"max_chars": {"n": inputs.get("max_chars", 40)}},
                                           {"no_new_proper_nouns": {"mode": "warn"}}]}
+        if shape == "text" and result["id"] == "S5.fact" and result.get("version", 1) >= 2:
+            result["validate"]["checks"].append("no_story_metadata")
         step = f"{inputs.get('max_chars', 40)}字以内の1句で、具体的な種類・行為・条文・手続だけを書く。曖昧な程度語で埋めない。"
         if step not in result["card"]["steps"]:
             result["card"]["steps"].append(step)
