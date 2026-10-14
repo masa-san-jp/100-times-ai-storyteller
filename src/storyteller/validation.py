@@ -359,7 +359,8 @@ def _run_check(
         if field in [label for key, label in EVENT_LABELS.items() if key != "what"] and isinstance(what, str):
             normalise = lambda value: "".join(unicodedata.normalize("NFKC", value).split())
             previous = normalise(what)
-            if previous and normalise(output) == previous:
+            from .character_facts import UNDECIDED
+            if previous and previous != normalise(UNDECIDED) and normalise(output) == previous:
                 return ["no_repeated_event_field: 何が起きたかを全文再述せず、指定項目だけを書いてください"], []
         return [], []
     if name == "no_repeated_scene":

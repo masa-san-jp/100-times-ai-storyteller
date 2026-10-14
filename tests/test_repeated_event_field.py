@@ -116,3 +116,19 @@ def test_what_repair_never_receives_field_scope():
     card = generate_repair_card(d, 'ticket', original_output='本文',
         reason='no_repeated_event_field: 合成理由', inputs=inputs('本文', 'what'))
     assert '作り方の指示：' not in card
+
+
+@pytest.mark.parametrize('sentinel', ['（未定）', '(未定)', ' （ 未定 ） '])
+def test_all_skipped_candidates_produce_unknown_what_context(sentinel):
+    from types import SimpleNamespace
+    from storyteller.story_s7_candidates import story_s7_select
+    from storyteller.story_s7 import event_source_for_card
+    selected = story_s7_select(SimpleNamespace(inputs={'candidates': {}})).output
+    assert selected['text'] == '（未定）' and selected['candidate'] is None
+    selected['text'] = sentinel
+    context = event_source_for_card({'index': ('e001', 'result')}, 'S7.event', {},
+        {'S7.select-e001': selected})
+    assert context['何が起きたか'] == sentinel
+    result = check(sentinel, context['何が起きたか'])
+    baseline = validate_output({'output': 'text', 'element': 'text'}, sentinel)
+    assert result.passed and result.value == baseline.value
