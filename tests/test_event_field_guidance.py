@@ -34,7 +34,7 @@ def test_only_selected_field_scope_is_card_instruction(field):
             assert scopes[other] not in card
     assert '灯りを消したときだけ水門が開く。' in card
     assert '閉じた水門の前まで到着した。' in card
-    assert definition['version'] == 19
+    assert definition['version'] == 20
     assert 'event_subject' in definition['validate']['checks']
 
 
@@ -155,7 +155,7 @@ def test_local_progress_uses_existing_materials_without_planning_other_stages(fi
     assert '灯りを消したときだけ水門が開く。' in card
     scope = _scopes(definition)['what']
     assert ('既存素材への観察・扱い・照合・選択' in card) == (field == 'what')
-    assert ('固定条件の発動行動を毎回再実行する指示ではない' in card) == (field == 'what')
+    assert ('固定条件の発動を毎回再実行しない' in card) == (field == 'what')
     assert ('作り方の指示：' + scope in card) == (field == 'what')
 
 

@@ -20,7 +20,7 @@ def _previous_definition():
 def test_context_does_not_require_repeating_whole_event_in_every_field(field):
     definition = _load_definition()
     previous = _previous_definition()
-    assert definition['version'] == 19 and previous['version'] == 17
+    assert definition['version'] == 20 and previous['version'] == 17
     assert definition['inputs'] == previous['inputs']
     assert definition['validate'] == previous['validate']
     assert definition['card']['input_order'] == previous['card']['input_order']
@@ -28,7 +28,7 @@ def test_context_does_not_require_repeating_whole_event_in_every_field(field):
     for key in ('output', 'candidates', 'select_candidate', 'max_input_chars', 'max_invalidations', 'continuation'):
         assert definition[key] == previous[key]
     scopes = lambda d: [step for step in d['card']['steps'] if step.partition('：')[0] in EVENT_FIELDS]
-    assert scopes(definition) == scopes(previous)
+    assert [s for s in scopes(definition) if s.partition('：')[0] not in ('what', 'result')] == [s for s in scopes(previous) if s.partition('：')[0] not in ('what', 'result')]
     slot = _slot()
     slot['absent_role_note'] = '調停する役は不在。'
     source = event_source_for_card({'index': ('e001', field)}, 'S6.expand', {'slots': [slot]})
