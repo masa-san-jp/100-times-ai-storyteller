@@ -54,7 +54,7 @@ def _output():
 
 
 def _inputs(shape="integer", **extra):
-    return {"label": "年齢", "shape": shape, "bounds": {"min": 0, "max": 1000},
+    return {"fact_key": "age", "prior_skills": [], "label": "年齢", "shape": shape, "bounds": {"min": 0, "max": 1000},
             "name": "リオ", "character": _character("protagonist", "c1", "本人"),
             "calendar": "開拓暦", "current_year": 300, **extra}
 
@@ -270,7 +270,10 @@ def _finish(harness, run_id, *, skipped=()):
         elif inputs["shape"] in {"integer", "number"}:
             value = str(inputs.get("bounds", {}).get("max", 170))
         else:
-            value = "母" if inputs["label"] == "続柄" else "水路を点検する"
+            value = "母" if inputs["label"] == "続柄" else {
+                "skills.1": "流水の音から漏れを探す", "skills.2": "支流の濁りの変化を読み取る",
+                "skills.3": "仲間へ流れの変化を伝えて点検を分担する",
+            }.get(inputs.get("fact_key"), "水路を点検する")
         result = harness.submit(claim["ticket"], value)
         assert result.accepted, result.errors
 
@@ -317,7 +320,10 @@ def _advance_until_ready(harness, run_id, target):
         elif inputs["shape"] in {"integer", "number"}:
             value = str(inputs.get("bounds", {}).get("max", 170))
         else:
-            value = "母" if inputs["label"] == "続柄" else "水路を点検する"
+            value = "母" if inputs["label"] == "続柄" else {
+                "skills.1": "流水の音から漏れを探す", "skills.2": "支流の濁りの変化を読み取る",
+                "skills.3": "仲間へ流れの変化を伝えて点検を分担する",
+            }.get(inputs.get("fact_key"), "水路を点検する")
         assert harness.submit(claim["ticket"], value).accepted
 
 

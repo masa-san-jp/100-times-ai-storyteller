@@ -62,6 +62,10 @@ def repair_conditions(
 ) -> list[str]:
     """Describe what the rewritten output must satisfy, from the task definition."""
     lines: list[str] = []
+    from .character_facts import is_skill_fact, selected_skill_steps
+    if is_skill_fact(definition, inputs):
+        lines.extend(step for step in selected_skill_steps(definition, inputs)
+                     if step.startswith("作り方の指示："))
     validation = definition.get("validate") or {}
     for check in validation.get("checks", []) if isinstance(validation, Mapping) else []:
         name, arguments = (
@@ -148,6 +152,10 @@ def generate_repair_card(
     for name in ("conditions", "decided_conditions"):
         if name in inputs:
             lines.extend(["### 確定した筋の条件（変更・追加しない）", _render_value(inputs[name])])
+    from .character_facts import is_skill_fact
+    if is_skill_fact(definition, inputs):
+        lines.extend(["### 今回の事実キー", inputs["fact_key"],
+                      "### 先に確定した技能（再述しない）", _render_value(inputs["prior_skills"])])
     previous_index = None
     if repeated_scene and isinstance(inputs.get("previous_scene"), str):
         lines.extend(["### 直前の場面（再演しない）", unicodedata.normalize("NFC", inputs["previous_scene"])[-600:]])

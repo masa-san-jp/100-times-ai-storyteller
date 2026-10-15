@@ -70,7 +70,7 @@ def test_new_text_check_is_versioned_without_changing_legacy_or_world_checks():
     world['version'] = 99
     assert specialize_fact_definition(world, source)['validate'] == first['validate']
     assert 'no_story_metadata' not in first['validate']['checks']
-    assert source == before and current['version'] == 2
+    assert source == before and current['version'] == 3
     assert cache_key(current['id'], 1, source, seed=1) != cache_key(current['id'], 2, source, seed=1)
 
 
