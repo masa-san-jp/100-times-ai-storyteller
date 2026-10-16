@@ -68,7 +68,7 @@ F1.split v3以降と、構造化した`checks.llm`を持つプロファイルは
 - replayは進展のない行動/結果の再演に関する助言であり、自動無効化に使わない。意図した要約、回想、画面と語りの重なりを機械的な不合格条件にしない。
 - 出力は`answer: yes|no|unknown`、`reason`、`source_quote`、`body_quote`、`subject`の5フィールド。reason以外の引用/subjectは該当なしなら空文字。yesのevent_coverageではsource_quoteが対象what/resultのいずれかの全文と一致する必要がある。その全文が本文に実在するなら、不整合な判定としてunknown扱いにする。yesのcondition_conflictではsource_quoteが対象条件の全文と一致し、空でないbody_quoteが元本文の部分文字列である必要がある。yesのnamed_actorでは空でないsubjectがbody_quote内に実在し、body_quoteが元本文に実在し、subjectが許可名/読みのNFKC正規化後の完全一致ではないことを必要とする。CODEは引用の実在と対象の一致を検査するが、意味の正しさまで証明するとは扱わない。
 - 不足/不正な引用、unknown、reviewの省略は未確認として記録し、本文は保持する。意味判定の引用不備を直すためにモデルを自動再呼出ししない。noも、示された引用が原文に存在しない場合は未確認とする。schemaの型/必須項目の検査は通常の提出契約に従う。
-- F4.verifyは`assessment: passed|failed|unresolved`を出力する。CODE検査不合格またはerrorのyesで上記引用条件が揃ったときだけfailedとして従来の無効化上限へ進む。未確認があればunresolved、いずれもなければpassedとする。`passed`の真偽値はassessmentがpassedのときだけtrue。advisoryのyesは助言としてwarningsに残す。unresolvedはwarningsに検査対象と理由を残し、自動無効化しない。ファイル出力/全体のcompletedと、未確認なしの検査通過を混同しない。既存のCODE検査・字数・skip・無効化上限・品質上限時の採用方針を変えない。
+- F4.verifyは`assessment: passed|failed|unresolved`を出力する。CODE検査不合格またはerrorのyesで上記引用条件が揃ったときだけfailedとして従来の無効化上限へ進む。優先順位はfailed、unresolved、passedの順とし、failedの条件が1件でもあれば他の未確認によって上書きしない。failedの条件がなく未確認があればunresolved、いずれもなければpassedとする。`passed`の真偽値はassessmentがpassedのときだけtrue。advisoryのyesは助言としてwarningsに残す。unresolvedはwarningsに検査対象と理由を残し、自動無効化しない。ファイル出力/全体のcompletedと、未確認なしの検査通過を混同しない。既存のCODE検査・字数・skip・無効化上限・品質上限時の採用方針を変えない。
 
 #### 旧形式の検査
 
