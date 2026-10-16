@@ -249,7 +249,9 @@ def test_f0_and_f1_compute_ranges_units_and_parts(tmp_path: Path, dummy_format: 
     tasks = manifest["tasks"]
     assert tasks["F1.split-dummy"]["state"] == "done"
     assert tasks["F2.write-u01p1-dummy"]["state"] == "ready"
-    assert tasks["F2.write-u01p2-dummy"]["deps"] == ["F1.split-dummy", "F2.write-u01p1-dummy"]
+    assert tasks["F2.write-u01p2-dummy"]["deps"] == [
+        "F1.split-dummy", "F2.write-u01p1-dummy", "F4.verify-u01p1-dummy",
+    ]
     assert tasks["F4.judge-u01p1-b1-dummy"]["deps"] == ["F1.split-dummy", "F2.write-u01p1-dummy"]
     assert tasks["F4.verify-u01p1-dummy"]["deps"] == [
         "F1.split-dummy", "F2.write-u01p1-dummy", "F4.judge-u01p1-b1-dummy"
@@ -311,8 +313,11 @@ def test_dummy_format_passes_f0_to_f4_and_assembles(tmp_path: Path, dummy_format
     assert f"{first.strip()}\n\n{second.strip()}\n" in text
 
 
-def test_f2_card_carries_only_its_own_inputs_and_the_previous_tail(tmp_path: Path, dummy_format: Path) -> None:
+def test_legacy_f2_card_carries_only_its_own_inputs_and_the_previous_tail(tmp_path: Path, dummy_format: Path) -> None:
     data_dir, run_id, orchestrator = _start(tmp_path, dummy_format)
+    # Legacy v1 can expose the tail before F4 checks its length. The v2
+    # verified-predecessor path is covered with valid bodies separately.
+    orchestrator.task_definitions["F1.split"]["version"] = 1
     orchestrator.advance(run_id)
     first = _claim_task(orchestrator, run_id)
     assert first is not None and first[0] == "F2.write-u01p1-dummy"

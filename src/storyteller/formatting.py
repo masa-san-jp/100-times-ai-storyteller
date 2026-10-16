@@ -213,6 +213,8 @@ def make_handlers(
             part_id = part["id"]
             write = f2_id(part_id, name, continuation)
             deps = (context.task_id,) if previous is None else (context.task_id, previous)
+            if previous is not None and context.definition.get("version", 1) >= 2:
+                deps += (verifies[-1],)
             tasks.append(TaskSpec(write, _f2_type(continuation), deps=deps, index=(part_id, name)))
             judges = []
             for number in range(1, len(questions) + 1):
