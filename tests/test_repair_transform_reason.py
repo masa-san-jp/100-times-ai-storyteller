@@ -48,6 +48,29 @@ def test_submit_raw85_trim28_then_reclaim_explains_transform(tmp_path):
     assert current['error'] == ERROR
 
 
+@pytest.mark.parametrize('dot', ['.', '．'])
+def test_decimal_without_prior_ending_fails_and_keeps_raw_attempt_for_repair(tmp_path, dot):
+    raw = f'身長0{dot}0cmで筋肉質である。'
+    definition = llm('D1.profile', 'text', [
+        {'max_chars': {'n': len(f'身長0{dot}'), 'fix': 'trim'}},
+    ], max_input_chars=2800)
+    harness = Orchestrator(tmp_path, {definition['id']: definition})
+    run = harness.create_run(seed=5, input_data=MATERIAL)
+    claim = harness.claim_next(run, executor_id='test')
+
+    submitted = harness.submit(claim['ticket'], raw)
+
+    assert not submitted.accepted
+    assert any('max_chars' in error for error in submitted.errors)
+    path = harness.task_dir(run, definition['id']) / 'attempts/1.json'
+    record = json.loads(path.read_text(encoding='utf-8'))
+    assert record['output'] == raw
+    assert record['warnings'] == []
+    repair = harness.claim_next(run, executor_id='test')
+    assert raw in repair['card']
+    assert json.loads(path.read_text(encoding='utf-8')) == record
+
+
 @pytest.mark.parametrize('warning', ['missing', None, [], ['他の警告']])
 def test_old_record_or_unrelated_warning_keeps_exact_existing_card(tmp_path, warning):
     harness, run, definition, path, record = submit_trim_failure(tmp_path)

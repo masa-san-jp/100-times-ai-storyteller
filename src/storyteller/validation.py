@@ -738,6 +738,13 @@ def _apply_max_chars_fixes(
             if length > limit:
                 break
             if character in _COMPLETE_ENDINGS:
+                if (
+                    character in ".．"
+                    and 1 < position < len(normalized)
+                    and normalized[position - 2].isdigit()
+                    and normalized[position].isdigit()
+                ):
+                    continue
                 last_ending = position
         if not last_ending:
             continue  # The ordinary max_chars check reports the failure.
