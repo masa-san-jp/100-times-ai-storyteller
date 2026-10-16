@@ -53,6 +53,25 @@ checks:
 - F1.split v2以降が作る同一様式の2つ目以降のF2は、直前のF2本文に加え、そのF4.verifyの完了にも依存する。直前本文が不合格で無効化・再生成されている間は、後続のF2をclaimしない。これにより未確定本文を入力にした後続生成の巻き添えを防ぐ。様式間の並列性、同一部分の各質問の並列性、入力素材/字数/試行/無効化/省略/警告付き採用の既存契約は変更しない。最初のF2とF3の組立条件は従来どおり。F1 v1は従来の依存グラフを保持し、版を変えただけで既存done済みF1を自動再展開しない。
 
 ### F4 検証 [C+L]
+
+#### 対象を限定した検査（P3-09）
+
+F1.split v3以降と、構造化した`checks.llm`を持つプロファイルは、以下の検査を使う。従来の質問文字列配列、旧F1出力、F4.judge v2は従来の処理を維持する。新版の仕組みを旧done済みF1へ自動で適用しない。
+
+- `checks.llm`は、従来の文字列配列、または`kind`・`question`・`severity`を必須とするオブジェクトの配列を受け付ける。混在は拒否する。kindは`event_coverage`・`named_actor`・`condition_conflict`・`replay`、severityは`error`・`advisory`。`replay`はadvisoryだけを許す。小説・脚本・スライドはこの構造化指定へ移行し、最初の3種類をerror、replayをadvisoryとする。値と質問文の原本は各profileとする。
+- F1は各部分の`reviews`に対象をCODEで展開し、`kind`・`question`・`severity`・`source`を保存する。event_coverageは対象出来事1件ごとに`source={id,what,result}`、named_actorは部分1つにつき`source={characters:[{name,reading}]}`、condition_conflictは対象部分の重複を除いた確定条件1件ごとに`source={condition}`、replayは部分1つにつき`source={}`とする。条件がなければcondition_conflictの推論は作らない。並びはprofile順、出来事/条件の元の順とする。資料全体、人物プロフィール、別の出来事の項目を補助文脈として足さない。
+- 各対象について新しい`F4.review`のLLMタスクを1件作る。これは1つの対象について1つの質問だけを判定する。既存のF4.judgeとキャッシュを共有しない。F4.verifyはこの部分の全reviewを待ち、後続F2は従来どおり前verify完了を待つ。様式間・同一部分のレビュー間は並列でよい。
+- 入力は1件のreview、対象部分の本文、様式名とする。上限14000字を維持し、source/本文は切り捨てない。スライドはCODEで画面表示とノートの語りを区別した検査表示を作る。HTMLコメントの区切り以外の文字・順序を保持し、不正構文では元本文を使う。引用の照合対象はラベルを含まない元本文とする。元F2/F3出力は変更しない。
+- event_coverageは、指定されたwhat/resultの行動・結果の欠落だけを調べる。人物一覧から各人の必須行動を補わず、時刻/場所/感情や入力にない具体語句の非再掲を欠落としない。言い換え・台詞・スライドの語りも描写として読む。明確に欠落と判断できなければunknownとする。
+- named_actorは、許可名/読み以外の明示的に名付けられた人物を、新たな行動・台詞の主体として追加しているかを調べる。匿名の背景集団、単なる名前への言及、別名か判断できないものを勝手に違反と断定しない。
+- condition_conflictは、渡した条件1件の前提・禁止・帰結を、本文の明示的な行動/結果が覆しているかだけを調べる。描かれていない条件の発動を補わず、能力の説明だけを新しい筋の条件としない。追加条件が元の成立条件を否定する場合も対象。本文と条件の意味を比較できなければunknownとする。
+- replayは進展のない行動/結果の再演に関する助言であり、自動無効化に使わない。意図した要約、回想、画面と語りの重なりを機械的な不合格条件にしない。
+- 出力は`answer: yes|no|unknown`、`reason`、`source_quote`、`body_quote`、`subject`の5フィールド。reason以外の引用/subjectは該当なしなら空文字。yesのevent_coverageではsource_quoteが対象what/resultのいずれかの全文と一致する必要がある。その全文が本文に実在するなら、不整合な判定としてunknown扱いにする。yesのcondition_conflictではsource_quoteが対象条件の全文と一致し、空でないbody_quoteが元本文の部分文字列である必要がある。yesのnamed_actorでは空でないsubjectがbody_quote内に実在し、body_quoteが元本文に実在し、subjectが許可名/読みのNFKC正規化後の完全一致ではないことを必要とする。CODEは引用の実在と対象の一致を検査するが、意味の正しさまで証明するとは扱わない。
+- 不足/不正な引用、unknown、reviewの省略は未確認として記録し、本文は保持する。意味判定の引用不備を直すためにモデルを自動再呼出ししない。noも、示された引用が原文に存在しない場合は未確認とする。schemaの型/必須項目の検査は通常の提出契約に従う。
+- F4.verifyは`assessment: passed|failed|unresolved`を出力する。CODE検査不合格またはerrorのyesで上記引用条件が揃ったときだけfailedとして従来の無効化上限へ進む。未確認があればunresolved、いずれもなければpassedとする。`passed`の真偽値はassessmentがpassedのときだけtrue。advisoryのyesは助言としてwarningsに残す。unresolvedはwarningsに検査対象と理由を残し、自動無効化しない。ファイル出力/全体のcompletedと、未確認なしの検査通過を混同しない。既存のCODE検査・字数・skip・無効化上限・品質上限時の採用方針を変えない。
+
+#### 旧形式の検査
+
 - [C] `checks.code` の検査と、書式の構文（Fountain、Marp）。
 - [L] `checks.llm` の質問を1つずつ、別のタスクとして yes/no で問う。入力は、その単位の events と本文だけ。期待する答えはすべて `no` とする。
 - 不合格の単位の F2 タスクを無効化する（[task-model.md](task-model.md) §4.3）。F2 の `max_invalidations` は2とし、超えた場合は F2 の `on_exhausted`（既定は `skip`）に従う。`skip` の単位は本文を F3 で「（未定）」として示し、run は止めない（§6.7）。
