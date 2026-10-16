@@ -22,11 +22,23 @@
     },
     "unit": {
       "type": "string",
-      "enum": ["chapter", "scene", "slide", "prompt", "section"]
+      "enum": [
+        "chapter",
+        "scene",
+        "slide",
+        "prompt",
+        "section"
+      ]
     },
     "unit_mapping": {
       "type": "string",
-      "enum": ["structure", "scene", "per_event", "person_and_event", "world_cast"]
+      "enum": [
+        "structure",
+        "scene",
+        "per_event",
+        "person_and_event",
+        "world_cast"
+      ]
     },
     "chars_per_event": {
       "type": "array",
@@ -59,7 +71,9 @@
     "checks": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["code"],
+      "required": [
+        "code"
+      ],
       "properties": {
         "code": {
           "type": "array",
@@ -70,11 +84,66 @@
           }
         },
         "llm": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "question",
+                  "severity"
+                ],
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "event_coverage",
+                      "named_actor",
+                      "condition_conflict",
+                      "replay"
+                    ]
+                  },
+                  "question": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "severity": {
+                    "enum": [
+                      "error",
+                      "advisory"
+                    ]
+                  }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "kind": {
+                          "const": "replay"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "severity": {
+                          "const": "advisory"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
         }
       }
     }

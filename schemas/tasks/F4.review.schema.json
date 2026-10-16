@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scoped format review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["answer", "reason", "source_quote", "body_quote", "subject"],
+  "properties": {
+    "answer": {"type": "string", "enum": ["yes", "no", "unknown"]},
+    "reason": {"type": "string"},
+    "source_quote": {"type": "string"},
+    "body_quote": {"type": "string"},
+    "subject": {"type": "string"}
+  }
+}

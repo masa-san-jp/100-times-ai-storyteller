@@ -1,0 +1,46 @@
+id: F4.review
+version: 1
+kind: llm
+element: judgement
+output: json
+inputs:
+  review:
+    label: 今回の検査対象（この1件だけ）
+    from: F1.split
+    select: parts[{slot}].reviews[{beat}]
+    required: true
+  body:
+    label: 対象部分の本文
+    from: F2.write
+    select: output
+    required: false
+  body_once:
+    label: 対象部分の本文
+    from: F2.write_once
+    select: output
+    required: false
+  format:
+    label: 様式名
+    from: F1.split
+    select: format
+    required: true
+card:
+  role: 今回の検査対象1件と本文だけを比較し、質問に yes・no・unknown で答える。
+  steps:
+  - review の kind・question・source だけを対象にする。明確に判断できなければ unknown とし、入力にない事実や必須の詳細を補わない。
+  - event_coverage は source の what/result の行動・結果が欠けるかだけを調べる。人物ごとの必須行動、時刻・場所・感情、入力にない具体語句や逐語引用を要求しない。言い換え・台詞・スライドの語りも描写として読む。
+  - named_actor は許可された名前・読み以外の明示的な名を持つ人物を、新しい行動・台詞の主体として加えたかだけを調べる。匿名の背景集団、名前への言及、別名か判断できないものを違反と断定しない。
+  - condition_conflict は渡された条件1件の前提・禁止・帰結を、本文の明示的な行動・結果が覆すかだけを調べる。追加条件による元条件の否定も対象とする。描かれていない発動を補わず、能力の説明だけを新しい筋の条件としない。比較できなければ unknown とする。
+  - replay は進展のない行動・結果の再演についての助言である。要約・回想・画面と語りの重なりだけを機械的な違反としない。
+  - スライドでは画面表示と語りの両方を本文として読む。脚本の場所・時刻の見出しは組み立て時に付くため、本文への見出しの再掲を要求しない。
+  - 明確に該当すれば answer を yes、該当しなければ no、不確かなら unknown にする。reason は理由を1文で書く。
+  - source_quote と body_quote は資料・本文の原文からそのまま引用し、subject は該当人物の名を書く。該当しない欄は空文字にする。引用を捏造しない。表示ラベルは本文の引用に含めない。
+  - yes の event_coverage は欠けた what または result の全文を source_quote に書く。yes の condition_conflict は条件全文を source_quote、違反箇所を body_quote に書く。yes の named_actor は人物名を subject、その名がある本文箇所を body_quote に書く。
+  output_example: '{"answer": "...", "reason": "...", "source_quote": "...", "body_quote": "...", "subject": "..."}'
+validate:
+  schema: schemas/tasks/F4.review.schema.json
+  checks:
+  - min_chars:
+      field: reason
+      n: 1
+max_input_chars: 14000

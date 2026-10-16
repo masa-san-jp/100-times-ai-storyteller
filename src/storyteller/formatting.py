@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from . import format_scene, format_slides, format_visual
+from . import format_scene, format_slides, format_visual, format_review
 from .format_units import UNIT_MAPPERS
 from . import reference_book
 from .orchestrator import CodeTaskContext, CodeTaskResult, Orchestrator, TaskSpec
@@ -203,6 +203,10 @@ def make_handlers(
         profile = context.inputs["selection"]["profile"]
         story = read_story(context.run_dir, root)
         plan = build_plan(story, profile, root)
+        checks = profile["checks"].get("llm", [])
+        if context.definition.get("version", 1) >= 3 and checks and isinstance(checks[0], Mapping):
+            for part in plan["parts"]:
+                part["reviews"] = format_review.expand_reviews(checks, part, story)
         questions = plan["questions"]
         continuation = profile["continuation"]
         tasks: list[TaskSpec] = []
@@ -217,11 +221,12 @@ def make_handlers(
                 deps += (verifies[-1],)
             tasks.append(TaskSpec(write, _f2_type(continuation), deps=deps, index=(part_id, name)))
             judges = []
-            for number in range(1, len(questions) + 1):
-                judge = judge_id(part_id, number, name)
+            scoped = "reviews" in part
+            for number in range(1, len(part["reviews"] if scoped else questions) + 1):
+                judge = (format_review.review_id if scoped else judge_id)(part_id, number, name)
                 judges.append(judge)
                 tasks.append(TaskSpec(
-                    judge, "F4.judge", deps=(context.task_id, write),
+                    judge, "F4.review" if scoped else "F4.judge", deps=(context.task_id, write),
                     index=(part_id, f"b{number}", name),
                 ))
             verify = verify_id(part_id, name)
@@ -252,13 +257,20 @@ def make_handlers(
             # body. There is nothing to invalidate; F3 supplies （未定）.
             reason = "本文が省略されたため検証できません"
             return CodeTaskResult(
-                output={"part": part_id, "passed": False, "failures": [reason]},
+                output={"part": part_id, "passed": False, "failures": [reason],
+                        **({"assessment": "unresolved"} if "reviews" in part else {})},
                 manifest_updates={"warnings": [f"{verify_id(part_id, name)}: {reason}"]},
             )
         failures = check_body(body, part, plan["code_checks"], root)
         warnings: list[str] = []
         quality_only = all(error.startswith("no_story_metadata:") for error in failures)
-        for number, question in enumerate(plan["questions"], start=1):
+        if "reviews" in part:
+            review_failures, review_warnings, review_quality = format_review.collect(
+                part, name, context.dependency_outputs, body)
+            failures.extend(review_failures)
+            warnings.extend(review_warnings)
+            quality_only = quality_only and review_quality
+        for number, question in enumerate([] if "reviews" in part else plan["questions"], start=1):
             judgement = context.dependency_outputs.get(judge_id(part_id, number, name))
             if judgement is None:
                 warnings.append(f"{verify_id(part_id, name)}: 質問{number}の判定がないため確認できていません")
@@ -279,7 +291,13 @@ def make_handlers(
             else:
                 context.invalidate_task(write, "；".join(failures))
         return CodeTaskResult(
-            output={"part": part_id, "passed": passed, "failures": failures},
+            output={"part": part_id,
+                    "passed": passed and not any(warning.startswith("unresolved:") for warning in warnings)
+                    if "reviews" in part else passed,
+                    "failures": failures,
+                    **({"assessment": "failed" if failures else "unresolved"
+                        if any(warning.startswith("unresolved:") for warning in warnings) else "passed"}
+                       if "reviews" in part else {})},
             manifest_updates={"warnings": warnings} if warnings else {},
         )
 
@@ -423,7 +441,8 @@ def build_plan(
         "continuation": profile["continuation"],
         "rules": list(profile["rules"]),
         "code_checks": list(profile["checks"]["code"]),
-        "questions": list(profile["checks"].get("llm", [])),
+        "questions": [check["question"] if isinstance(check, Mapping) else check
+                      for check in profile["checks"].get("llm", [])],
         "units": unit_records,
         "parts": parts,
     }
