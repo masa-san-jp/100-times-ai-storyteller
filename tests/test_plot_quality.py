@@ -159,7 +159,7 @@ def test_f4_condition_failure_invalidates_the_offending_text():
     from storyteller.formatting import make_handlers, f2_id, judge_id
     invalidated = []
     plan = {'continuation': True, 'parts': [{'id': 'u1p1', 'conditions': ['干潮のときだけ道が現れる。']}],
-            'code_checks': [], 'questions': load_profile('novel')['checks']['llm'][2:3]}
+            'code_checks': [], 'questions': [check['question'] for check in load_profile('novel')['checks']['llm'][2:3]]}
     write = f2_id('u1p1', 'novel')
     context = SimpleNamespace(task={'index': ['u1p1', 'novel']}, inputs={'plan': plan},
         dependency_outputs={write: '仲間が三人集まったので道が現れた。',
@@ -208,7 +208,7 @@ def test_exhausted_format_quality_failure_warns_and_continues(tmp_path):
     write_manifest(path, manifest)
     invalidated = []
     plan = {"continuation": True, "parts": [{"id": "u1p1"}], "code_checks": [],
-            "questions": load_profile("novel")["checks"]["llm"][2:3]}
+            "questions": [check["question"] for check in load_profile("novel")["checks"]["llm"][2:3]]}
     context = SimpleNamespace(task={"index": ["u1p1", "novel"]}, run_dir=harness.run_dir(run),
         inputs={"plan": plan}, dependency_outputs={write: "仲間が三人集まったので道が現れた。",
             judge_id("u1p1", 1, "novel"): {"answer": "yes", "reason": "入力にない条件を加えている。"}},

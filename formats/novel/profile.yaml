@@ -14,7 +14,15 @@ rules:
 checks:
   code: [min_chars, max_chars, ends_complete]
   llm:
-    - 入力の出来事のうち、描かれていないものがありますか
-    - 入力にない人物が登場していますか
-    - 確定した筋の条件や入力の出来事にない発動・禁止・解決条件を加えたり、条件を反転・置換したりしているか？
-    - 同じ行動や結果を進展なく最初から語り直しているか？
+    - kind: event_coverage
+      question: 入力の出来事のうち、描かれていないものがありますか
+      severity: error
+    - kind: named_actor
+      question: 入力にない人物が登場していますか
+      severity: error
+    - kind: condition_conflict
+      question: 確定した筋の条件や入力の出来事にない発動・禁止・解決条件を加えたり、条件を反転・置換したりしているか？
+      severity: error
+    - kind: replay
+      question: 同じ行動や結果を進展なく最初から語り直しているか？
+      severity: advisory

@@ -2922,6 +2922,9 @@ def _prepare_card_inputs(
     reserves its actual required tail and must fail if that tail cannot fit.
     """
     budget = int(definition.get("max_input_chars", 3000))
+    if definition.get("id") == "F4.review":
+        from .format_review import card_inputs
+        inputs = card_inputs(inputs)
     choices = inputs.get("choices")
     if (definition.get("id") == "S5.fact" and inputs.get("shape") == "choice"
         and isinstance(choices, list)

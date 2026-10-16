@@ -508,7 +508,7 @@ def test_format_definitions_are_checked_by_the_harness_tool() -> None:
     assert module.check_harness() == []
     definitions = formatting.load_format_task_definitions(ROOT)
     assert set(definitions) == {
-        "F0.select", "F1.split", "F2.write", "F2.write_once", "F3.assemble", "F4.judge", "F4.verify"
+        "F0.select", "F1.split", "F2.write", "F2.write_once", "F3.assemble", "F4.judge", "F4.review", "F4.verify"
     }
     once = dict(definitions["F2.write_once"])
     regular = dict(definitions["F2.write"])

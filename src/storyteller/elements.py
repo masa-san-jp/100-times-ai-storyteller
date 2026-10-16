@@ -147,6 +147,8 @@ def element_contract_errors(definition: Mapping[str, Any], schema: Any = None) -
         errors.append("element: text 出力に JSON オブジェクトのスキーマを指定できません")
     if expected == "json":
         fields = JSON_FIELDS[element]
+        if element == "judgement" and definition.get("id") == "F4.review":
+            fields = fields | {"source_quote", "body_quote", "subject"}
         if not isinstance(schema, Mapping) or schema.get("type") != "object":
             return [*errors, "element: JSON の出力スキーマが必要です"]
         if (set(schema.get("properties", {})) != fields
