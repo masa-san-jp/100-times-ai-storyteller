@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
+import unicodedata
 from typing import Any, TYPE_CHECKING
 
 from .tables import load_table
@@ -15,6 +16,63 @@ if TYPE_CHECKING:
     from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 
 UNDECIDED = "（未定）"
+SKILL_KEYS = ("skills.1", "skills.2", "skills.3")
+
+
+def is_skill_fact(definition: Mapping[str, Any], inputs: Mapping[str, Any]) -> bool:
+    return (definition.get("id") == "S5.fact" and definition.get("version", 1) >= 3
+            and inputs.get("fact_key") in SKILL_KEYS)
+
+
+def selected_skill_steps(definition: Mapping[str, Any], inputs: Mapping[str, Any]) -> Sequence[str]:
+    """Choose a skill's scope from YAML; leave legacy and other facts alone."""
+    steps = definition.get("card", {}).get("steps")
+    if definition.get("id") != "S5.fact" or definition.get("version", 1) < 3:
+        return steps
+    selected = inputs.get("fact_key")
+    scopes = {}
+    ordered = []
+    for step in steps:
+        key, separator, body = step.partition("：")
+        if key in SKILL_KEYS and separator:
+            if key in scopes or not body.strip():
+                raise ValueError(f"duplicate or empty skill instruction: {key}")
+            scopes[key] = body
+            ordered.append((key, body))
+        else:
+            ordered.append((None, step))
+    if isinstance(selected, str) and selected.startswith("skills.") and selected not in SKILL_KEYS:
+        raise ValueError("unknown skill fact_key")
+    if selected in SKILL_KEYS and set(scopes) != set(SKILL_KEYS):
+        raise ValueError("missing skill instruction")
+    return [body if key is None else "作り方の指示：" + body
+            for key, body in ordered if key is None or key == selected]
+
+
+def prior_skill_values(entries: Sequence[Mapping[str, Any]], outputs: Mapping[str, Any], current_id: str) -> list[str]:
+    current = next(entry for entry in entries if entry["id"] == current_id)
+    key = current["key"]
+    if key not in SKILL_KEYS:
+        return []
+    allowed = SKILL_KEYS[:SKILL_KEYS.index(key)]
+    return [outputs[f"S5.fact-{entry['id']}"] for entry in entries
+            if entry["key"] in allowed and entry["person_id"] == current["person_id"]
+            and isinstance(outputs.get(f"S5.fact-{entry['id']}"), str)]
+
+
+def repeated_skill_errors(definition: Mapping[str, Any], inputs: Mapping[str, Any], output: Any) -> list[str]:
+    if not is_skill_fact(definition, inputs) or not isinstance(output, str):
+        return []
+    prior = inputs.get("prior_skills")
+    if not isinstance(prior, list) or any(not isinstance(value, str) for value in prior):
+        raise ValueError("prior_skills must be a string array")
+    normalise = lambda value: unicodedata.normalize("NFKC", value).strip()
+    for value in prior:
+        if normalise(output) == normalise(value):
+            scope = next(step for step in selected_skill_steps(definition, inputs)
+                         if step.startswith("作り方の指示："))
+            return [f"no_repeated_skill: 先行技能「{value}」と同じ回答です。今回の担当は{scope}"]
+    return []
 
 # These sections supply locations, institutions, calendars and dated history.
 CHARACTER_WORLD_SECTIONS = (

@@ -80,6 +80,9 @@ def generate_task_card(
         steps = selected_event_steps(task_definition, rendered_slots)
         if task_definition.get("id") == "S7.condition":
             steps = selected_condition_steps(task_definition, rendered_slots)
+        if task_definition.get("id") == "S5.fact":
+            from .character_facts import selected_skill_steps
+            steps = selected_skill_steps(task_definition, rendered_slots)
     except ValueError as exc:
         raise TaskCardError(str(exc)) from exc
     if not isinstance(steps, Sequence) or isinstance(steps, (str, bytes)):

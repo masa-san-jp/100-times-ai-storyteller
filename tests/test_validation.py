@@ -441,6 +441,58 @@ def test_max_chars_trim_uses_the_last_ending_within_the_limit(ending, output_kin
     assert result.warnings == ("字数の上限で切り詰め",)
 
 
+@pytest.mark.parametrize("dot", [".", "．"])
+@pytest.mark.parametrize("after_dot", ["", "0"])
+@pytest.mark.parametrize("output_kind", ["text", "json"])
+def test_max_chars_trim_excludes_decimal_dot_using_the_full_original(dot, after_dot, output_kind):
+    prefix = "人間の姿をした竜である。"
+    text = f"{prefix}身長0{dot}0cmで筋肉質である。"
+    arguments = {"n": len(f"{prefix}身長0{dot}{after_dot}"), "fix": "trim"}
+    if output_kind == "json":
+        arguments["field"] = "nested.body"
+        raw = json.dumps({"nested": {"body": text}, "other": "そのまま"}, ensure_ascii=False)
+        expected = {"nested": {"body": prefix}, "other": "そのまま"}
+    else:
+        raw = text
+        expected = prefix
+    task = output_task(output=output_kind, checks=[{"max_chars": arguments}])
+
+    result = validate_output(task, raw)
+
+    assert result.passed, result.errors
+    assert result.value == expected
+    assert result.warnings == ("字数の上限で切り詰め",)
+    assert text in raw
+
+
+@pytest.mark.parametrize("dot", [".", "．"])
+@pytest.mark.parametrize("text", ["身長0{dot}0cmで筋肉質である。", "０{dot}０cmである。"])
+def test_max_chars_trim_rejects_decimal_without_a_prior_sentence_ending(dot, text):
+    raw = text.format(dot=dot)
+    limit = raw.index(dot) + 1
+    task = output_task(output="text", checks=[{"max_chars": {"n": limit, "fix": "trim"}}])
+
+    result = validate_output(task, raw)
+
+    assert not result.passed
+    assert result.value == raw
+    assert result.warnings == ()
+    assert any("max_chars" in error for error in result.errors)
+
+
+@pytest.mark.parametrize("text", [".続き。", "0.続き。", "先頭．続き。", "先頭。0.続き。"])
+def test_max_chars_trim_keeps_non_decimal_dot_candidates(text):
+    dot = "." if "." in text else "．"
+    limit = text.index(dot) + 1
+    task = output_task(output="text", checks=[{"max_chars": {"n": limit, "fix": "trim"}}])
+
+    result = validate_output(task, text)
+
+    assert result.passed, result.errors
+    assert result.value == text[:limit]
+    assert result.warnings == ("字数の上限で切り詰め",)
+
+
 def test_max_chars_trim_counts_nfc_characters_and_excludes_whitespace():
     task = output_task(output="text", checks=[{"max_chars": {"n": 4, "fix": "trim"}}])
 

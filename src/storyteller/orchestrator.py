@@ -3901,6 +3901,9 @@ def _source_outputs(
                         option["name"] = choice_names[option["id"]]
             source_value = {**source_value, "character_fact_tasks": entries,
                 "character": character_card_view(next(person for person in source_value["cast"] if person["id"] == person_id))}
+            if definition.get("version", 1) >= 3:
+                from .character_facts import prior_skill_values
+                source_value["prior_skills"] = prior_skill_values(entries, dependency_outputs, task["index"][0])
         elif (slot == "S3.assign" and task.get("type", "").startswith("S5.")
               and input_slots.get("character", {}).get("select") == "character"):
             from .character_facts import character_card_view

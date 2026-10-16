@@ -469,7 +469,7 @@ class AutoRunner:
                 if not until_empty:
                     time.sleep(0.2)
                     continue
-                if not self._has_claimed_tasks(run_id):
+                if not self._has_pending_tasks(run_id):
                     return
                 time.sleep(0.05)
                 continue
@@ -563,7 +563,7 @@ class AutoRunner:
             return (
                 orchestrator.claim_next(
                     run_id,
-                    executor_id=re.sub(r"[^A-Za-z0-9._-]", "-", f"{self.model.provider}.{self.model.name}")[:64],
+                    executor_id=self._executor_id(),
                     isolation="adapter",
                 ),
                 orchestrator,
@@ -572,12 +572,15 @@ class AutoRunner:
             orchestrator = self._orchestrator_for_run(candidate_run_id)
             claim = orchestrator.claim_next(
                 candidate_run_id,
-                executor_id=re.sub(r"[^A-Za-z0-9._-]", "-", f"{self.model.provider}.{self.model.name}")[:64],
+                executor_id=self._executor_id(),
                 isolation="adapter",
             )
             if claim is not None:
                 return claim, orchestrator
         return None, None
+
+    def _executor_id(self) -> str:
+        return re.sub(r"[^A-Za-z0-9._-]", "-", f"{self.model.provider}.{self.model.name}")[:64]
 
     def _orchestrator_for_run(self, run_id: str) -> Orchestrator:
         if self.orchestrator_factory is not None:
@@ -639,7 +642,9 @@ class AutoRunner:
             manifest["updated_at"] = now.isoformat().replace("+00:00", "Z")
             write_manifest(run_dir / "manifest.json", manifest)
 
-    def _has_claimed_tasks(self, run_id: str | None) -> bool:
+    def _has_pending_tasks(self, run_id: str | None) -> bool:
+        """Recheck ready work as well as claims after an empty claim result."""
+        executor_id = self._executor_id()
         runs_dir = self.data_dir / "runs"
         run_dirs = (
             [entry for entry in runs_dir.iterdir() if entry.is_dir()]
@@ -666,7 +671,15 @@ class AutoRunner:
                 # A stalled run yields no task to take; do not wait for
                 # other executors' live claims (cli.md `st auto`).
                 continue
-            if any(task.get("state") == "claimed" for task in manifest["tasks"].values()):
+            # Another worker can finish the last claim after our empty poll,
+            # leaving eligible ready work and no live claims in this snapshot.
+            if any(
+                task.get("state") == "claimed"
+                or (task.get("state") == "ready" and (
+                    task["kind"] == "code" or task.get("executor") in (None, executor_id)
+                ))
+                for task in manifest["tasks"].values()
+            ):
                 return True
         return False
 

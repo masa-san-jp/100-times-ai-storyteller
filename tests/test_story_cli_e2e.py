@@ -282,7 +282,10 @@ def _fake_output(
             bounds = inputs.get("bounds", {})
             value = 170 if inputs["label"] == "身長" else 30
             return str(max(bounds.get("min", value), min(value, bounds.get("max", value))))
-        return "母" if inputs["label"] == "続柄" else "水路を点検する"
+        return "母" if inputs["label"] == "続柄" else {
+            "skills.1": "流水の音から漏れを探す", "skills.2": "支流の濁りの変化を読み取る",
+            "skills.3": "仲間へ流れの変化を伝えて点検を分担する",
+        }.get(inputs.get("fact_key"), "水路を点検する")
 
     if task_type.startswith("S5."):
         field = task_type.removeprefix("S5.")

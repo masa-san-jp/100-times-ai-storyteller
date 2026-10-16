@@ -101,7 +101,7 @@ _PROPER_NOUN_PATTERNS = (
         r"(?:王国|帝国|教団|国|町|村|市|島|山|川|会|社|家|様|氏)"
     ),
 )
-_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete", "no_story_metadata", "no_repeated_scene", "no_repeated_event_field", "no_repeated_sentence"})
+_REPAIRABLE_CHECKS = frozenset({"max_chars", "min_chars", "ends_complete", "no_story_metadata", "no_repeated_scene", "no_repeated_event_field", "no_repeated_sentence", "no_repeated_skill"})
 _COMPLETE_ENDINGS = frozenset("。．.！!？?」』）)】…")
 _DEFAULT_HARNESS_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA_CACHE: dict[
@@ -229,8 +229,16 @@ def validate_output(
         warnings.extend(check_warnings)
         if check_errors:
             failed_checks.add(name)
+    from .character_facts import repeated_skill_errors
+    try:
+        skill_errors = repeated_skill_errors(task_definition, slot_values, value)
+    except ValueError as error:
+        raise ValidationConfigurationError(str(error)) from error
+    if skill_errors:
+        errors.extend(skill_errors)
+        failed_checks.add("no_repeated_skill")
     nonrepairable_checks = failed_checks - _REPAIRABLE_CHECKS
-    if "no_repeated_event_field" in failed_checks:
+    if failed_checks & {"no_repeated_event_field", "no_repeated_skill"}:
         nonrepairable_checks.discard("no_copy_from_inputs")
     unrepairable = unrepairable or bool(nonrepairable_checks)
 
@@ -730,6 +738,13 @@ def _apply_max_chars_fixes(
             if length > limit:
                 break
             if character in _COMPLETE_ENDINGS:
+                if (
+                    character in ".．"
+                    and 1 < position < len(normalized)
+                    and normalized[position - 2].isdigit()
+                    and normalized[position].isdigit()
+                ):
+                    continue
                 last_ending = position
         if not last_ending:
             continue  # The ordinary max_chars check reports the failure.

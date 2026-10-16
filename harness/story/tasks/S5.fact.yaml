@@ -1,8 +1,18 @@
 id: S5.fact
-version: 2
+version: 3
 kind: llm
 element: text
 inputs:
+  fact_key:
+    label: 今回の事実キー
+    from: S3.assign
+    select: character_fact_tasks[{slot}].key
+    required: true
+  prior_skills:
+    label: この人物の先に確定した技能（再述しない）
+    from: S3.assign
+    select: prior_skills
+    required: true
   label:
     label: 今回の事実の見出し
     from: S3.assign
@@ -93,6 +103,9 @@ card:
   role: 人物の今回の見出しに対応する客観的な事実の値を1つだけ定める。
   steps:
   - 今回の見出しだけを扱い、割り当てられた人物の年齢・種族・能力・役割と、先に決まった事実に矛盾させない。技能は能力を具体化する。
+  - skills.1：割り当てられた能力の基本的な使い方を1つ書く。能力の作用・制限を変更せず、実施済みの出来事としては書かない。
+  - skills.2：先行技能とは異なる対象や状況への能力の応用を1つ書く。能力の作用・制限を変更せず、実施済みの出来事としては書かない。
+  - skills.3：先の2件とは異なる、他者との共同作業への能力の応用を1つ書く。能力の作用・制限を変更せず、実施済みの出来事としては書かない。
   - 暦は与えられたものを使い、年や数値は指定された範囲に収める。
   - 文章値（text）では構造の説明や内部 ID を書かず、人物は入力の確定名で表す。
   - 値1つだけを書く。見出し・単位・出典・説明や作り方の指示を加えない。
