@@ -213,9 +213,9 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 | `claimed` → `ready` | 提出が不合格で試行の上限に達していない、lease が切れた、claim が取り消された、継続が必要になった（§8） |
 | `claimed` → `failed` | 提出が不合格で試行の上限に達した |
 | `ready` → `failed` | コードタスクが例外で終了した、入力の生成に失敗した（§2.4, §3.2） |
-| `blocked` / `ready` → `skipped` | コードタスクが不要と判断した |
+| `blocked` / `ready` → `skipped` | コードタスクが不要と判断した。`S8.condition_check` の比較する条件が未定になった（[story-pipeline.md](story-pipeline.md)「§9.5 筋の条件と本文の品質」） |
 | `done` → `ready` | 無効化された（§4.3） |
-| `done` → `skipped` | S4 の描写が無効化の上限に達し、`on_exhausted: skip` の場合（§4.3） |
+| `done` → `skipped` | S4 の描写、F2 の本文、S7.condition v3 以降の条件が無効化の上限に達し、`on_exhausted: skip` の場合（§4.3） |
 | `done` / `ready` / `claimed` → `blocked` | 依存先が無効化された（§4.3） |
 | `failed` → `ready` | `st retry` |
 
@@ -229,7 +229,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
   1. 状態を `ready` に戻し、`invalidations` と `attempt` を1ずつ増やす（`attempt` が変わるので、タスクの seed とキャッシュキーも変わる）。
   2. 次のカードの「前回の不合格理由」に、検査の理由を書く。
   3. 無効化されたタスクに直接・間接に依存するタスクを `blocked` に戻し、それらの出力を破棄する。`claimed` のものは claim を取り消す（`claim.json` を `claim.revoked.<n>.json` に改名し、その ticket による提出を終了コード 3 で拒否する）。
-- `invalidations` が `max_invalidations` を超える無効化が起きた場合は、無効化せずに `failed` にする。ただし世界の描写（S4.section・S4.item）は、検査・手動操作などの呼び出し元にかかわらず、無効化の上限で `on_exhausted` に従う。既定の `skip` では描写を `done` から `skipped` にし、失敗報告と警告を残し、後続は未定として進む。S4.diversity が上限で警告付き採用をする扱いは変えない。
+- `invalidations` が `max_invalidations` を超える無効化が起きた場合は、無効化せずに `failed` にする。ただし世界の描写（S4.section・S4.item）と、筋の条件（S7.condition v3 以降。[story-pipeline.md](story-pipeline.md)「§9.5 筋の条件と本文の品質」の条件どうしの検査）は、検査・手動操作などの呼び出し元にかかわらず、無効化の上限で `on_exhausted` に従う。既定の `skip` では描写を `done` から `skipped` にし、失敗報告と警告を残し、後続は未定として進む。S4.diversity が上限で警告付き採用をする扱いは変えない。
 
 ## 5. claim と lease
 
@@ -267,7 +267,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 | `avoid_listed` | `fields`（任意）, `table`（例：`tables/cliches.yaml`） | 指定したテーブルの表現を、正規化後の部分文字列として含まない |
 | `character_identity` | `require_subject`（任意、boolean、既定 false。text のみ） | 人物の事実シート `facts` の `name`・`age`・`birth_year`・`calendar` に対し、対象名に直接係る現在年齢・生年の明示記述を照合する。判定範囲と限界は [story-pipeline.md](story-pipeline.md) §10 を参照。不一致は不合格とし、字数修正で解消可能とは扱わない |
 | `event_subject` | なし（text のみ） | S7 の `what`・`result` は、カードの割り当て人物の既知名を冒頭の主語にする。共同主語・引用符・未定の範囲は [story-pipeline.md](story-pipeline.md) S7 に従う。主体の不一致は不合格とし、字数修正で解消可能とは扱わない |
-| `no_repeated_sentence` | なし（text のみ） | 同じ本文を句点・感嘆符・疑問符（。！？.!?）または改行で文に分け、各文をNFKC正規化・空白除去した後、終端記号を除く20文字以上の文が完全一致で2回以上現れたら不合格。短い文・共有語句・部分一致は対象外。出力を削除・改変しない |
+| `no_repeated_sentence` | `exclude_quoted`（任意、boolean、既定 false）, `excerpt`（任意、boolean、既定 false）。text のみ | 同じ本文を句点・感嘆符・疑問符（。！？.!?）または改行で文に分け、各文をNFKC正規化・空白除去した後、終端記号を除く20文字以上の文が完全一致で2回以上現れたら不合格。短い文・共有語句・部分一致は対象外。`exclude_quoted: true` では、文に分ける前に、対応の取れた「」『』で囲んだ部分（括弧を含み、入れ子も含む）を空文字に置き換える。対応はスタックで取り、種類の違う閉じ括弧や対応しない括弧は文字として残す。`excerpt: true` では、不合格の理由を「no_repeated_sentence: 同じ20文字以上の文を本文内で繰り返さないでください。重複した文：<抜粋>」とする。抜粋は2回目に現れた文を NFC 正規化した文字列（NFKC 正規化も文中の空白除去もしない。括弧を除いた後、文に分けた区切りの記号は含まず、前後の空白だけを除く）で、120コードポイントを超える場合は先頭120コードポイントに「…」を付け、「；」は「;」に置き換える。`excerpt` を指定しない場合の理由は従来どおりとし、既存の利用箇所（S7.detail）のカードは変わらない。出力を削除・改変しない |
 | `no_repeated_event_field` | なし（text のみ） | S7.eventのwhat以外の項目では、出力全文が先に決まったwhat全文と、NFKC正規化・空白除去後に完全一致しない。whatが未定・空なら検査しない。部分一致や共有語句は不合格にしない |
 | `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` ではすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
 
@@ -345,7 +345,7 @@ run は、1つのタスクの不合格で止めない（[ADR-0009](../adr/0009-n
 - 継続時は、必要な末尾の長さを `min(1000, partial.md の NFC 正規化後の文字数)` とし、その長さを予約して §3.2 の規則で入力を再調整する。1000字未満の既出本文は全文を保持し、1000字以上の既出本文では最低1000字を保持する。必須の人物事実・対象名・筋の条件を予約のために省略しない。
 - 末尾の長さ = `max_input_chars` − 再調整後の「入力」節の文字数（上限 6000字、既出本文の長さまで）。この値が必要な末尾の長さに満たない場合は、そのタスクを `failed` にし、理由を「継続の予算が足りない」とする。入力の上限、提出の字数・意味の検証、継続の回数の上限は変更しない。
 - 継続は、最初の提出の後に2回まで行う（`continuation_step` は最大2）。2回目の継続の提出がなお途中で切れている場合は、`partial.md` を破棄し、1回の不合格として §6.3 に従う。
-- 途中で切れていない提出を受け取ったら、`partial.md` と連結した全体を §6 で検証する。
+- 途中で切れていない提出を受け取ったら、`partial.md` と連結した全体を §6 で検証する。連結した全体が不合格の場合の扱いは、F2.write v4 以降では [format-pipeline.md](format-pipeline.md) §4.5 に従う。それ以外のタスク（S7.detail など）は従来どおりとする。
 - **字数の不足による継続**：タスク定義の `extend_to_min: true` のタスクで、連結した全体が `min_chars` に満たない場合は、不合格にせずに継続のカードを作り、手順に「既出の文章を繰り返さず、同じ内容をさらに具体的に書き足す」を加える（継続の回数の上限は上と共通）。上限に達してもなお満たない場合、`min_chars` の半分以上あれば合格として manifest の `warnings` に記録し、半分に満たなければ不合格とする。小さいモデルが指示より短く書く傾向への対策である。
 - すべての LLM タスクの出典は、実行者に書かせず、コードが記録する（§6.6）。
 - `continuation: false` のタスクで、`--truncated` が指定された提出は不合格とする。`st submit --truncated` を `output: json` のタスクに指定した場合は、終了コード 1 とする。
