@@ -229,7 +229,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
   1. 状態を `ready` に戻し、`invalidations` と `attempt` を1ずつ増やす（`attempt` が変わるので、タスクの seed とキャッシュキーも変わる）。
   2. 次のカードの「前回の不合格理由」に、検査の理由を書く。
   3. 無効化されたタスクに直接・間接に依存するタスクを `blocked` に戻し、それらの出力を破棄する。`claimed` のものは claim を取り消す（`claim.json` を `claim.revoked.<n>.json` に改名し、その ticket による提出を終了コード 3 で拒否する）。
-- `invalidations` が `max_invalidations` を超える無効化が起きた場合は、無効化せずに `failed` にする。ただし世界の描写（S4.section・S4.item）は、検査・手動操作などの呼び出し元にかかわらず、無効化の上限で `on_exhausted` に従う。既定の `skip` では描写を `done` から `skipped` にし、失敗報告と警告を残し、後続は未定として進む。S4.diversity が上限で警告付き採用をする扱いは変えない。
+- `invalidations` が `max_invalidations` を超える無効化が起きた場合は、無効化せずに `failed` にする。ただし世界の描写（S4.section・S4.item）と、筋の条件（S7.condition v3 以降。[story-pipeline.md](story-pipeline.md) §9.5 の条件どうしの検査）は、検査・手動操作などの呼び出し元にかかわらず、無効化の上限で `on_exhausted` に従う。既定の `skip` では描写を `done` から `skipped` にし、失敗報告と警告を残し、後続は未定として進む。S4.diversity が上限で警告付き採用をする扱いは変えない。
 
 ## 5. claim と lease
 
@@ -267,7 +267,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 | `avoid_listed` | `fields`（任意）, `table`（例：`tables/cliches.yaml`） | 指定したテーブルの表現を、正規化後の部分文字列として含まない |
 | `character_identity` | `require_subject`（任意、boolean、既定 false。text のみ） | 人物の事実シート `facts` の `name`・`age`・`birth_year`・`calendar` に対し、対象名に直接係る現在年齢・生年の明示記述を照合する。判定範囲と限界は [story-pipeline.md](story-pipeline.md) §10 を参照。不一致は不合格とし、字数修正で解消可能とは扱わない |
 | `event_subject` | なし（text のみ） | S7 の `what`・`result` は、カードの割り当て人物の既知名を冒頭の主語にする。共同主語・引用符・未定の範囲は [story-pipeline.md](story-pipeline.md) S7 に従う。主体の不一致は不合格とし、字数修正で解消可能とは扱わない |
-| `no_repeated_sentence` | なし（text のみ） | 同じ本文を句点・感嘆符・疑問符（。！？.!?）または改行で文に分け、各文をNFKC正規化・空白除去した後、終端記号を除く20文字以上の文が完全一致で2回以上現れたら不合格。短い文・共有語句・部分一致は対象外。出力を削除・改変しない |
+| `no_repeated_sentence` | `exclude_quoted`（任意、boolean、既定 false。text のみ） | 同じ本文を句点・感嘆符・疑問符（。！？.!?）または改行で文に分け、各文をNFKC正規化・空白除去した後、終端記号を除く20文字以上の文が完全一致で2回以上現れたら不合格。短い文・共有語句・部分一致は対象外。`exclude_quoted: true` では、「」『』で囲んだ部分を比較の前に除く。数字に挟まれた `.`・`．` は文の区切りにしない。不合格の理由には重複した文を120字以内で示し、「；」は「;」に置き換える。出力を削除・改変しない |
 | `no_repeated_event_field` | なし（text のみ） | S7.eventのwhat以外の項目では、出力全文が先に決まったwhat全文と、NFKC正規化・空白除去後に完全一致しない。whatが未定・空なら検査しない。部分一致や共有語句は不合格にしない |
 | `no_new_proper_nouns` | `fields`（任意。省略時は、`output: json` ではすべての文字列値を再帰的に、`text` では出力全体を対象にする）, `mode`（`warn` / `fail`） | §6.4 |
 
