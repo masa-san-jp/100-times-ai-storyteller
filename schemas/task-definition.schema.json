@@ -360,7 +360,10 @@
           "additionalProperties": false,
           "properties": {
             "no_copy_from_inputs": {"type": "object", "additionalProperties": false},
-            "no_repeated_sentence": {"type": "object", "additionalProperties": false},
+            "no_repeated_sentence": {
+              "type": "object", "additionalProperties": false,
+              "properties": {"exclude_quoted": {"type": "boolean"}, "excerpt": {"type": "boolean"}}
+            },
             "no_repeated_event_field": {"type": "object", "additionalProperties": false},
             "character_identity": {
               "type": "object", "additionalProperties": false,

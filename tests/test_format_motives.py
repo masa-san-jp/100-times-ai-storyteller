@@ -107,7 +107,7 @@ def test_undecided_motive_is_excluded_and_a_part_without_motives_has_an_empty_ar
 def test_f2_card_shows_one_name_motive_line_per_person_and_hides_an_empty_array(tmp_path, dummy_format, continuation):
     h, run = setup(tmp_path, dummy_format, continuation=continuation)
     write = "F2.write" if continuation else "F2.write_once"
-    assert h.task_definitions[write]["version"] == 3
+    assert h.task_definitions[write]["version"] >= 3
     assert list(h.task_definitions[write]["inputs"])[:3] == ["events", "characters", "motives"]
     cards = cards_by_task(h, run)
     first = cards[f"{write}-u01p1-dummy"]
@@ -190,7 +190,7 @@ def test_finished_v3_split_is_not_reexpanded_by_the_v4_definition(tmp_path, dumm
 def test_visual_prompts_and_reference_book_parts_have_no_motives_key(tmp_path):
     data, run = _completed_story_run(tmp_path)
     h = create_story_orchestrator(data)
-    assert h.task_definitions["F1.split"]["version"] == 4
+    assert h.task_definitions["F1.split"]["version"] >= 4
     _story_with_world(h.run_dir(run))
     for name in ("visual-prompts", "reference-book"):
         formatting.start_formatting(h, run, name)

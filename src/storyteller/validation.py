@@ -336,6 +336,39 @@ def _normalise_check(check: Any) -> tuple[str, Mapping[str, Any]]:
     raise ValidationConfigurationError("validation check must be a name or one-key mapping")
 
 
+_QUOTE_PAIRS = {"「": "」", "『": "』"}
+_QUOTE_CLOSERS = frozenset(_QUOTE_PAIRS.values())
+_EXCERPT_CODEPOINTS = 120
+
+
+def _without_quoted(text: str) -> str:
+    """Remove matched 「」『』 spans, brackets and nesting included (task-model §6.2).
+
+    Pairs are matched with a stack; a closing bracket of another kind and an
+    unmatched bracket stay as characters.
+    """
+
+    stack: list[tuple[str, int]] = []
+    removed = [False] * len(text)
+    for position, char in enumerate(text):
+        if char in _QUOTE_PAIRS:
+            stack.append((char, position))
+        elif char in _QUOTE_CLOSERS and stack and _QUOTE_PAIRS[stack[-1][0]] == char:
+            _, start = stack.pop()
+            for index in range(start, position + 1):
+                removed[index] = True
+    return "".join(char for char, gone in zip(text, removed) if not gone)
+
+
+def _sentence_excerpt(sentence: str) -> str:
+    """The excerpt of a repeated sentence for ``no_repeated_sentence`` with ``excerpt``."""
+
+    excerpt = unicodedata.normalize("NFC", sentence).strip()
+    if len(excerpt) > _EXCERPT_CODEPOINTS:
+        excerpt = excerpt[:_EXCERPT_CODEPOINTS] + "…"
+    return excerpt.replace("；", ";")
+
+
 def _run_check(
     name: str,
     arguments: Mapping[str, Any],
@@ -374,15 +407,22 @@ def _run_check(
     if name == "no_repeated_sentence":
         if output_kind != "text" or not isinstance(output, str):
             raise ValidationConfigurationError("no_repeated_sentence requires text output")
-        if arguments:
-            raise ValidationConfigurationError("no_repeated_sentence takes no arguments")
+        unknown = set(arguments) - {"exclude_quoted", "excerpt"}
+        if unknown or any(not isinstance(value, bool) for value in arguments.values()):
+            raise ValidationConfigurationError(
+                "no_repeated_sentence takes only boolean exclude_quoted and excerpt"
+            )
+        text = _without_quoted(output) if arguments.get("exclude_quoted", False) else output
         seen: set[str] = set()
-        for sentence in re.split(r"[。！？.!?\r\n]+", output):
+        for sentence in re.split(r"[。！？.!?\r\n]+", text):
             normalised = "".join(unicodedata.normalize("NFKC", sentence).split()).rstrip("。！？.!?")
             if len(normalised) < 20:
                 continue
             if normalised in seen:
-                return ["no_repeated_sentence: 同じ20文字以上の文を本文内で繰り返さないでください"], []
+                reason = "no_repeated_sentence: 同じ20文字以上の文を本文内で繰り返さないでください"
+                if arguments.get("excerpt", False):
+                    reason += f"。重複した文：{_sentence_excerpt(sentence)}"
+                return [reason], []
             seen.add(normalised)
         return [], []
     if name == "no_repeated_scene":

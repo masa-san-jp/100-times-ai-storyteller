@@ -12,6 +12,7 @@ import json
 import math
 import re
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -211,6 +212,9 @@ def make_handlers(
         if context.definition.get("version", 1) >= 3 and checks and isinstance(checks[0], Mapping):
             for part in plan["parts"]:
                 part["reviews"] = format_review.expand_reviews(checks, part, story)
+        if context.definition.get("version", 1) >= 5:
+            # format-pipeline §4.5: F2 v4 adds these checks at submission.
+            plan["submit_checks"] = deepcopy(profile.get("submit_checks", []))
         questions = plan["questions"]
         continuation = profile["continuation"]
         tasks: list[TaskSpec] = []
