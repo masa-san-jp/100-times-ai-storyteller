@@ -3144,9 +3144,12 @@ def _apply_invalidation(
     current_count = int(target["invalidations"])
     if current_count >= max_invalidations:
         target["error"] = reason
-        # F2 bodies and S4 descriptions follow their specified exhaustion policy.
+        # F2 bodies, S4 descriptions and S7.condition v3+ (story-pipeline
+        # §9.5) follow their specified exhaustion policy.
         on_exhausted = (definition.get("on_exhausted", "skip")
                         if target["type"] in {"F2.write", "F2.write_once", "S4.section", "S4.item"}
+                        or (target["type"] == "S7.condition"
+                            and int(definition.get("version", 1)) >= 3)
                         else "fail")
         next_state = "failed" if on_exhausted == "fail" else "skipped"
         _force_task_state(manifest, task_id, next_state, at, reason=reason)
@@ -3579,11 +3582,47 @@ def _set_task_state(
     task["history"].append(event)
 
 
+def _condition_check_undecided(
+    manifest: Mapping[str, Any], task: Mapping[str, Any]
+) -> bool:
+    """An S8.condition_check whose conditions to compare are undecided.
+
+    story-pipeline §9.5: the current condition is skipped, or every earlier
+    condition is skipped.
+    """
+    if task["type"] != "S8.condition_check":
+        return False
+    current_key = list(task["index"])
+    current: list[str] = []
+    earlier: list[str] = []
+    for dependency in task["deps"]:
+        record = manifest["tasks"].get(dependency)
+        if record is None or record["type"] != "S7.condition":
+            continue
+        (current if list(record["index"]) == current_key else earlier).append(record["state"])
+    return "skipped" in current or (bool(earlier) and all(state == "skipped" for state in earlier))
+
+
 def _refresh_blocked_tasks(manifest: dict[str, Any], at: str) -> None:
     changed = True
     while changed:
         changed = False
         for task_id, task in manifest["tasks"].items():
+            if task["state"] not in {"blocked", "ready"}:
+                continue
+            if _condition_check_undecided(manifest, task) and all(
+                dependency in manifest["tasks"]
+                and manifest["tasks"][dependency]["state"] in {"done", "skipped"}
+                for dependency in task["deps"]
+            ):
+                # A planned omission, not a failure: the reason stays only in
+                # the state history (no error, warning or failure report).
+                _set_task_state(manifest, task_id, "skipped", at,
+                                reason="比較する条件が未定")
+                task["error"] = None
+                task["cache_key"] = None
+                changed = True
+                continue
             if task["state"] != "blocked":
                 continue
             if all(
@@ -3821,6 +3860,10 @@ def _source_outputs(
         if slot == "S7.condition":
             expected = [dependency for dependency in dependencies
                         if manifest["tasks"][dependency]["type"] == slot]
+            if expected and task.get("type") == "S8.condition_check":
+                result[slot] = _condition_check_source(
+                    manifest, task, expected, dependency_outputs)
+                continue
             if expected:
                 result[slot] = {
                     _dependency_index_key(dependency, manifest["tasks"][dependency]):
@@ -3940,6 +3983,32 @@ def _source_outputs(
                 task, slot, source_value, dependency_outputs)
         result[slot] = source_value
     return result
+
+
+def _condition_check_source(
+    manifest: Mapping[str, Any],
+    task: Mapping[str, Any],
+    expected: Sequence[str],
+    dependency_outputs: Mapping[str, Any],
+) -> dict[str, str]:
+    """The current condition and the done earlier ones (story-pipeline §9.5)."""
+    from .plot_quality import CONDITION_KINDS, CONDITION_LABELS
+
+    current_index = list(task["index"])
+    condition = "（未定）"
+    earlier: dict[str, str] = {}
+    for dependency in expected:
+        record = manifest["tasks"][dependency]
+        index = list(record["index"])
+        if index == current_index:
+            condition = dependency_outputs.get(dependency, "（未定）")
+        elif record["state"] == "done" and dependency in dependency_outputs:
+            earlier[index[-1]] = dependency_outputs[dependency]
+    decided = "\n".join(
+        f"{CONDITION_LABELS[kind]}：{earlier[kind]}"
+        for kind in CONDITION_KINDS if kind in earlier
+    )
+    return {"condition": condition, "decided": decided}
 
 
 def _dependency_index_key(

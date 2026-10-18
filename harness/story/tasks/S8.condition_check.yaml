@@ -1,0 +1,35 @@
+id: S8.condition_check
+version: 1
+kind: llm
+element: judgement
+inputs:
+  condition:
+    label: 今回の条件（記述B）
+    from: S7.condition
+    select: condition
+    required: true
+  decided_conditions:
+    label: 先に確定した条件（記述A）
+    from: S7.condition
+    select: decided
+    required: true
+output: json
+card:
+  role: 筋の条件が、先に確定した条件と両立するかを検査する。
+  steps:
+  - 記述Bは今回の条件、記述Aは先に確定した条件。どれも出来事ではなく、物語が守る制約である。
+  - 記述Bと記述Aのいずれかを、両方とも満たす出来事が論理的に存在しえない場合だけ yes とする。例：Aが行為Xを必要とし、Bが同じ行為Xを禁じる。Aが状態Yの成立を帰結とし、Bが同じ状態Yの不成立を帰結とする。
+  - 扱う行為・物・状態が異なるだけ、一方の帰結が他方の前提になる、同じ行為に言及しているだけの場合は no とする。言及しない事柄を否定とみなさない。
+  - reason は、両立しない行為・状態をB・Aから具体的に1文で示す。no の場合も根拠を1文で示す。入力外は補わない。
+  output_example: '{"answer": "...", "reason": "..."}'
+validate:
+  schema: schemas/tasks/S8.compare.schema.json
+  checks:
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - min_chars:
+      field: reason
+      n: 1
+max_input_chars: 2800
+on_exhausted: skip

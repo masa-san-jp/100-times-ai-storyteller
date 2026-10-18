@@ -352,6 +352,9 @@ def _fake_output(
         reason = "比較対象と結果が矛盾する。" if answer == "yes" else "二つの記述は整合している。"
         return {"answer": answer, "reason": reason}
 
+    if task_type == "S8.condition_check":
+        return {"answer": "no", "reason": "今回の条件と先の条件は別の行為を扱い両立する。"}
+
     raise AssertionError(f"未知の LLM タスクです: {task_type}")
 
 
