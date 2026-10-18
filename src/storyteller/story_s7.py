@@ -41,9 +41,15 @@ def event_source_for_card(
 
 
 def event_tasks(
-    parent: str, event_id: str, first_deps: Sequence[str], previous_event: str | None, conditions: Sequence[str] = (), *, candidate_count: int | None = None
+    parent: str, event_id: str, first_deps: Sequence[str], previous_event: str | None, conditions: Sequence[str] = (), *, candidate_count: int | None = None,
+    checks: Sequence[str] = (),
 ) -> list[TaskSpec]:
-    """Keep every earlier field available, but only the previous event's result."""
+    """Keep every earlier field available, but only the previous event's result.
+
+    ``checks`` are the condition-pair judges (story-pipeline §9.5) that the
+    event elements, the selection and the assembly wait for.
+    """
+    conditions = (*conditions, *checks)
     additions = []
     field_ids: list[str] = []
     previous_result = (previous_event,) if previous_event else ()
@@ -63,7 +69,7 @@ def event_tasks(
                 ))
             pick = select_task_id(event_id)
             additions.append(TaskSpec(
-                pick, "S7.select", deps=(parent, *ids), index=(event_id,),
+                pick, "S7.select", deps=(parent, *ids, *checks), index=(event_id,),
             ))
             field_ids.extend((*ids, pick))
             continue

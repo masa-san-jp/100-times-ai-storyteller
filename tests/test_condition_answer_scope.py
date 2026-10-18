@@ -96,7 +96,8 @@ def test_old_v1_without_scope_keys_preserves_exact_old_steps_and_card(monkeypatc
 
 def test_condition_contract_and_validation_are_unchanged():
     task = definition()
-    assert task['version'] == 2
+    # v3 (P1-68) only adds the invalidation bound; card, inputs and checks stay.
+    assert task['version'] == 3 and task['max_invalidations'] == 2
     assert set(task['inputs']) == {'condition_kind', 'object', 'world_sections', 'conflict', 'taboo', 'decided_conditions'}
     assert task['element'] == task['output'] == 'text'
     assert task['max_input_chars'] == 2800 and task['on_exhausted'] == 'skip'

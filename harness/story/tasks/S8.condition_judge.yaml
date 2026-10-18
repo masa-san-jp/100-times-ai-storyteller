@@ -1,0 +1,10 @@
+id: S8.condition_judge
+version: 1
+kind: code
+handler: story_s8_condition_judge
+inputs:
+  judgement:
+    label: 条件どうしの検査結果
+    from: S8.condition_check
+    select: output
+    required: false

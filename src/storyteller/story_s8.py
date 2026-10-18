@@ -301,3 +301,23 @@ def story_s8_detail_judge(context: CodeTaskContext) -> CodeTaskResult:
         return CodeTaskResult(output={"passed": False}, invalidations=[(target, reason)])
     warning = f"{target}: 場面の品質不合格が無効化上限に達したため、最後の出力を採用：{reason}"
     return CodeTaskResult(output={"passed": False}, manifest_updates={"warnings": [warning]} if warning not in warnings else {})
+
+
+def story_s8_condition_judge(context: CodeTaskContext) -> CodeTaskResult:
+    """Invalidate only the later condition of an incompatible pair (story-pipeline §9.5).
+
+    A skipped check has no output and is treated as compatible.  The
+    invalidation bound is applied by the orchestrator (task-model §4.3).
+    """
+    slot, kind = context.task["index"]
+    judgement = context.inputs.get("judgement")
+    if isinstance(judgement, Mapping) and "answer" not in judgement:
+        # S8.condition_check is indexed: the selector exposes index -> output.
+        judgement = judgement.get(f"{slot}-{kind}")
+    if not isinstance(judgement, Mapping) or judgement.get("answer") != "yes":
+        return CodeTaskResult(output={"slot": f"{slot}-{kind}", "invalidated": False})
+    reason = str(judgement.get("reason", "")).replace("；", ";")
+    return CodeTaskResult(
+        output={"slot": f"{slot}-{kind}", "invalidated": True},
+        invalidations=[(f"S7.condition-{slot}-{kind}", f"先の条件と両立しない：{reason}")],
+    )

@@ -1,5 +1,5 @@
 id: S7.condition
-version: 2
+version: 3
 kind: llm
 element: text
 output: text
@@ -56,4 +56,5 @@ validate:
   - max_chars:
       n: 160
 max_input_chars: 2800
+max_invalidations: 2
 on_exhausted: skip

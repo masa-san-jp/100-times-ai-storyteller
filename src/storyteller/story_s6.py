@@ -20,6 +20,7 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _REQUIRED_ROLES = frozenset(
     {"protagonist", "messenger", "supporter", "adversary", "bystander"}
 )
+_CONDITION_CHECK_VERSION = 5
 
 
 def story_s6_expand(context: CodeTaskContext) -> CodeTaskResult:
@@ -721,19 +722,42 @@ def _build_downstream_tasks(
     additions: list[TaskSpec] = []
     s7_ids_in_time_order: list[str] = []
     previous_by_thread: dict[str, str] = {}
-    from .plot_quality import condition_ids
+    from .plot_quality import CONDITION_KINDS, condition_ids
+    # story-pipeline §9.5: only S6.expand's own definition version decides
+    # whether the condition-pair checks are added (v5 and later).
+    definition = getattr(context, "definition", None)
+    own_version = definition.get("version", 0) if isinstance(definition, Mapping) else 0
+    check_conditions = isinstance(own_version, int) and own_version >= _CONDITION_CHECK_VERSION
     conditions_by_thread: dict[str, tuple[str, ...]] = {}
+    final_judge_by_thread: dict[str, tuple[str, ...]] = {}
     for slot in slots:
         if slot["thread"] in conditions_by_thread:
             continue
         ids = condition_ids(slot["id"])
         conditions_by_thread[slot["thread"]] = ids
+        final_judge_by_thread[slot["thread"]] = ()
         for number, task_id in enumerate(ids):
             upstream = getattr(context, "task", {}).get("deps", ())
             assignment_deps = tuple(x for x in upstream if x == "S3.assign")
+            kind = CONDITION_KINDS[number]
+            previous_judge = (
+                (f"S8.condition_judge-{slot['id']}-{CONDITION_KINDS[number - 1]}",)
+                if check_conditions and number >= 2 else ()
+            )
             additions.append(TaskSpec(task_id, "S7.condition",
-                deps=(parent_task_id, *assignment_deps, *ids[:number]),
-                index=(slot["id"], task_id.rsplit("-", 1)[1])))
+                deps=(parent_task_id, *assignment_deps, *ids[:number], *previous_judge),
+                index=(slot["id"], kind)))
+            if not check_conditions or number == 0:
+                continue
+            check_id = f"S8.condition_check-{slot['id']}-{kind}"
+            judge_id = f"S8.condition_judge-{slot['id']}-{kind}"
+            additions.append(TaskSpec(check_id, "S8.condition_check",
+                deps=(parent_task_id, task_id, *ids[:number]),
+                index=(slot["id"], kind)))
+            additions.append(TaskSpec(judge_id, "S8.condition_judge",
+                deps=(parent_task_id, check_id),
+                index=(slot["id"], kind)))
+            final_judge_by_thread[slot["thread"]] = (judge_id,)
 
     for slot in slots:
         event_id = slot["id"]
@@ -749,7 +773,7 @@ def _build_downstream_tasks(
         )
         additions.extend(event_tasks(
             parent_task_id, event_id, deps, previous_event, conditions_by_thread[thread_id],
-            candidate_count=candidate_count,
+            candidate_count=candidate_count, checks=final_judge_by_thread[thread_id],
         ))
         s7_ids_in_time_order.append(s7_id)
         previous_by_thread[thread_id] = f"S8.judge-{event_id}"
@@ -758,7 +782,8 @@ def _build_downstream_tasks(
             TaskSpec(
                 f"S8.plan-{event_id}",
                 "S8.plan",
-                deps=_unique((parent_task_id, s7_id, *s7_ids_in_time_order[:-1], *conditions_by_thread[thread_id])),
+                deps=_unique((parent_task_id, s7_id, *s7_ids_in_time_order[:-1], *conditions_by_thread[thread_id],
+                              *final_judge_by_thread[thread_id])),
                 index=(event_id,),
             )
         )
