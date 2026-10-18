@@ -7,9 +7,9 @@
 | フェーズ | 名前 | 計画書 | 状態 |
 |---|---|---|---|
 | 0 | 基盤 | [phase-0.md](phase-0.md) | 完了 |
-| 1 | 最小の物語生成 | [phase-1.md](phase-1.md) | 進行中 |
-| 2 | ナラティブと多様性 | [phase-2.md](phase-2.md) | 未着手 |
-| 3 | 様式化 | [phase-3.md](phase-3.md) | 未着手 |
+| 1 | 最小の物語生成 | [phase-1.md](phase-1.md) | 完了 |
+| 2 | ナラティブと多様性 | [phase-2.md](phase-2.md) | 進行中 |
+| 3 | 様式化 | [phase-3.md](phase-3.md) | 完了 |
 | 4 | 並列・無人運転 | [phase-4.md](phase-4.md) | 未着手 |
 | 5 | 拡張 | [phase-5.md](phase-5.md) | 未着手 |
 
