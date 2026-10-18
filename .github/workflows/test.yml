@@ -1,7 +1,8 @@
 name: Test
 
-# プルリクエストでは ubuntu-latest / Python 3.11 の1ジョブだけを実行する。
-# main への push と毎日1回の定時実行（と手動の実行）では 3 OS × 2 版の全ジョブを実行し、
+# ハーネスの完成までは、1つの環境で動くものを先に仕上げる。
+# プルリクエスト・main への push・毎日の定時実行では ubuntu-latest / Python 3.11 の1ジョブだけを実行する。
+# 3 OS × 2 版の全ジョブは手動の実行（workflow_dispatch）だけで行い、完成判定のときに流す。
 # main で失敗したジョブがあれば Issue を起票する。
 on:
   push:
@@ -28,12 +29,12 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
-            echo 'python=["3.11"]' >> "$GITHUB_OUTPUT"
-          else
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo 'os=["macos-latest","ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
             echo 'python=["3.11","3.13"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            echo 'python=["3.11"]' >> "$GITHUB_OUTPUT"
           fi
 
   test:
@@ -82,8 +83,8 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           gh issue create --repo "$REPO" \
-            --title "CI 失敗：main の全ジョブ（$EVENT_NAME、${SHA:0:7}）" \
-            --body "main の全ジョブ（3 OS × Python 3.11 / 3.13）で失敗したジョブがあります。
+            --title "CI 失敗：main（$EVENT_NAME、${SHA:0:7}）" \
+            --body "main の CI で失敗したジョブがあります。
 
           - きっかけ：$EVENT_NAME
           - コミット：$SHA
