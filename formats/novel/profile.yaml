@@ -5,6 +5,8 @@ chars_per_event: [1500, 3000]
 max_chars_per_task: 6000
 template: template.md
 continuation: true
+submit_checks:
+  - no_repeated_sentence: {exclude_quoted: true, excerpt: true}
 
 rules:
   - 地の文と会話で書く。説明的な要約で済ませない。

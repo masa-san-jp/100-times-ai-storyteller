@@ -972,6 +972,7 @@ class Orchestrator:
                 "JSON出力に --truncated を指定できません"
             )
 
+        discard_joined = False
         if truncated:
             validation = ValidationResult(
                 None,
@@ -985,7 +986,17 @@ class Orchestrator:
                     submission_output = raw_output
                 else:
                     submission_output, continuation_warnings = join_continuation(partial, raw_output)
-            validation_definition = definition
+                    # format-pipeline §4.5: F2.write v4 discards the joined
+                    # partial on any failure and starts the next card afresh.
+                    discard_joined = (
+                        task["type"] == "F2.write" and int(definition.get("version", 1)) >= 4
+                    )
+            validation_definition = _with_submit_checks(
+                definition,
+                _f2_submit_checks(
+                    definition, task, lambda: _read_dependency_outputs(run_dir, manifest, task)
+                ),
+            )
             minimum = _minimum_text_chars(definition) if extend_to_min else 0
             short = (
                 isinstance(submission_output, str)
@@ -997,7 +1008,7 @@ class Orchestrator:
                     reason="字数が目標に満たないため継続",
                 )
             if short:
-                validation_definition = deepcopy(definition)
+                validation_definition = deepcopy(validation_definition)
                 for check in validation_definition.get("validate", {}).get("checks", []):
                     if (
                         isinstance(check, dict)
@@ -1045,7 +1056,7 @@ class Orchestrator:
             submission_output,
             validation,
             inputs,
-            discard_partial=bool(extend_to_min),
+            discard_partial=bool(extend_to_min) or discard_joined,
         )
 
     # Names used by internal callers and by the future CLI layer.
@@ -1744,6 +1755,10 @@ class Orchestrator:
                     {check: {"n": part[check]}} if check in {"min_chars", "max_chars"} else check
                     for check in plan["code_checks"] if check in {"min_chars", "max_chars", "ends_complete"}
                 ]}
+                # format-pipeline §4.5: F2 v4 lists the submit checks after them.
+                definition = _with_submit_checks(
+                    definition, _f2_submit_checks(definition, task, lambda: context.dependency_outputs)
+                )
             return (
                 generate_repair_card(
                     definition,
@@ -2295,6 +2310,33 @@ class Orchestrator:
                     from .event_subject import subject_errors
                     if not isinstance(output, str) or subject_errors(output, card_inputs):
                         # A cache rejection consumes no inference attempt.
+                        changed = True
+                        continue
+                submit_checks = _f2_submit_checks(
+                    context.definition, task, lambda: context.dependency_outputs
+                )
+                if submit_checks:
+                    # format-pipeline §4.5: a cached F2 v4 body is checked again
+                    # with the submit checks; a failure is a cache miss and
+                    # consumes no inference attempt.
+                    try:
+                        recheck = validate_output(
+                            _with_submit_checks(context.definition, submit_checks),
+                            output,
+                            inputs=card_inputs,
+                            harness_root=self.definition_root,
+                            common_words_path=self.repository_root / "tables" / "common_words.yaml",
+                            index=task["index"],
+                            run_values={**manifest, **card_inputs},
+                        )
+                    except Exception as error:
+                        _fail_task(
+                            manifest, task_id, self._now(), _error_text(error),
+                            run_dir=self.run_dir(run_id),
+                        )
+                        changed = True
+                        continue
+                    if not recheck.passed:
                         changed = True
                         continue
                 output = _postprocess_accepted_output(task, output)
@@ -2998,6 +3040,41 @@ def _minimum_text_chars(definition: Mapping[str, Any]) -> int:
         ),
         default=0,
     )
+
+
+_F2_TYPES: Final = frozenset({"F2.write", "F2.write_once"})
+
+
+def _f2_submit_checks(
+    definition: Mapping[str, Any],
+    task: Mapping[str, Any],
+    dependency_outputs: Callable[[], Mapping[str, Any]],
+) -> list[Any]:
+    """The F1 plan's ``submit_checks`` for an F2 v4 task (format-pipeline §4.5).
+
+    Other task types, older F2 versions and plans written by F1.split before
+    v5 (no ``submit_checks``) get none.
+    """
+
+    if task["type"] not in _F2_TYPES or int(definition.get("version", 1)) < 4:
+        return []
+    plan = dependency_outputs().get(f"F1.split-{task['index'][-1]}")
+    checks = plan.get("submit_checks") if isinstance(plan, Mapping) else None
+    return deepcopy(checks) if isinstance(checks, list) else []
+
+
+def _with_submit_checks(
+    definition: Mapping[str, Any], submit_checks: Sequence[Any]
+) -> Mapping[str, Any]:
+    """*definition* with *submit_checks* after its own ``validate.checks``."""
+
+    if not submit_checks:
+        return definition
+    extended = deepcopy(dict(definition))
+    validate = dict(extended.get("validate") or {})
+    validate["checks"] = [*validate.get("checks", []), *submit_checks]
+    extended["validate"] = validate
+    return extended
 
 
 def _continuation_enabled(definition: Mapping[str, Any]) -> bool:
