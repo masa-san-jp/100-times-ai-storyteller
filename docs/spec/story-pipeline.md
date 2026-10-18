@@ -141,7 +141,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 | `S1.analysis-conflict` | 入力の全体から読み取れる、自己矛盾と葛藤 | 同上 | 300〜400字 |
 
 - heros-journey の分析（設計仕様書 §8.1〜§8.3）を、1回の推論で1件に分けて取り込む。断定や診断をしない（S1 の規則を維持）。入力の文言を引用せず、抽象化して書く（world-building の抽象解釈）。
-- 入力の全体：ナラティブの全回答（問いと回答の組を項目の順に）、または自由入力の全段落を、順に改行でつないだ1つの文字列のスロット `whole_input`（`required: true`、`none`。文字列なので行頭の記号は付かない）。改行を含めた文字列の長さが 5000字を超える場合は、各行を先頭から「(5000 − 行数) ÷ 行数」字（小数点以下切り捨て）に切り詰める。この値が20字未満になる場合（行数が238を超える場合）は、各行を20字に切り詰めたうえで、先頭の行から、改行を含めて 5000字を超えない行までだけを渡し、manifest の `warnings` に「入力の全体を分析に渡しきれない」を記録する。
+- 入力の全体：ナラティブの全回答（問いと回答の組を項目の順に）、または自由入力の全段落を、順に改行でつないだ1つの文字列のスロット `whole_input`（`required: true`、`none`。文字列なので行頭の記号は付かない）。改行を含めた文字列の長さ（NFC 正規化後の文字列のコードポイント数。空白・改行も数える。task-model §3.3 の字数ではなく、この配分だけに使う）が 5000字を超える場合は、各行を先頭から「(5000 − 行数) ÷ 行数」字（小数点以下切り捨て）に切り詰める。この値が20字未満になる場合（行数が238を超える場合）は、各行を20字に切り詰めたうえで、先頭の行から、改行を含めて 5000字を超えない行までだけを渡し、manifest の `warnings` に「入力の全体を分析に渡しきれない」を記録する。
 - タスク種別と版：`S1.analysis`（添字 `[<観点>]`、観点は `desire`・`suppression`・`conflict`、タスクID `S1.analysis-<観点>`、`kind: llm`、version 1）。観点ごとの要素の文は、タスク定義の `card.steps` に `desire：`・`suppression：`・`conflict：` のキーつきで置き、CODE は添字の観点の1文だけを表示する（S7.condition の `condition_kind` と同じ仕組み）。
 - タスク定義：`element: text`、`output: text`、`max_input_chars: 7000`（入力の全体は 5000字以内なので、見出しを含めて収まる）、検証は `min_chars: 300`・`max_chars: 400`・`ends_complete`、`on_exhausted: skip`（省略した分析は台帳で「（未定）」）、`share_across_runs: true`。依存は S0 だけ。S6.expand v6 のグラフでは、S0 がこの3タスクを作る。
 - 分析の受け渡し（heros-journey §1.3「人物と物語に投影する」、§8.4「分析からナラティブ要素を抽出する」）：S6.expand v6 のグラフでは、次のタスクの入力の末尾に、入力の台帳のうち分析3件だけを `analysis`（label「入力の全体の分析」、`required: false`、`truncate: head`）として加え、3件の分析タスクへの依存を加える。S1.extract v6 は、role を「与えられた段落を、入力の全体の分析が示す願望・抑圧・葛藤と照らし合わせて読み、物語に使える素材を抽出する。」とする（素材は段落から抽出し、分析は読み方の手がかりにする）。対象と版：S1.extract v6、S4.section v13、S5.profile v15、S5.motive v13、S5.inner_conflict v14。それ以外のグラフでは、このスロットに値を渡さない（任意スロットなので表示されない）。
@@ -169,7 +169,7 @@ heros-journey の骨子（§13）と、プロットの型の必須の転換点�
 - 検証：字数の上限、`ends_complete`、`no_new_proper_nouns`（`mode: warn`）。`on_exhausted: skip`。省略した要素は、台帳で「（未定）」と表示し、manifest の `warnings` に記録する。
 - 出力は S9 が `story.json` の `skeleton`（`analysis`（`{"desire", "suppression", "conflict"}` の文字列。省略は `null`）・`lack`・`climax`・`resolution`・`turns[]`（`thread`・`n`・`slot`・`text`））に記録し、`story.md` の冒頭に「骨子」の節として並べる。S9.assemble は version 4 とし、S6.expand v6 以上のグラフでだけ `skeleton` を記録する（それ以外は従来どおり）。
 - モデルの文脈長：16000字の入力に、手順・再試行の理由・出力（`max_tokens`）を加えても収まるよう、`config/models.yaml` の 20B のモデル（`gpt-oss:20b`、`openai/gpt-oss-20b`）の `context_length` を 32768 にする。
-- 受け入れの予算確認：最大の規模（`saga`）で、骨子と出来事のカードの `required: true` のスロットだけで `max_input_chars` を超えないことをテストで確かめる。超える場合は仕様の質問とする。加えて、`saga` の最大の出来事のカードを1回、`gpt-oss:20b` で推論し、Ollama が返す入力のトークン数（`prompt_eval_count`）に `max_tokens`（8192）を加えた値が `context_length` 以下であることを確かめる。対象は、`saga` で入力が最大になる骨子の転換・出来事・場面（S7.detail）・様式化（F2）のカードを各1枚、修正カード（前回の不合格理由つき）を1枚とする。Ollama のアダプタは `context_length` を `num_ctx` として送る。OpenAI 互換のサーバーは文脈長をサーバー側で設定するため、README の手順に「サーバーの文脈長を 32768 以上にする」を加える。
+- 受け入れの予算確認：最大の規模（`saga`）で、骨子と出来事のカードの `required: true` のスロットだけで `max_input_chars` を超えないことをテストで確かめる。超える場合は仕様の質問とする。加えて、`saga` の最大の出来事のカードを1回、`gpt-oss:20b` で推論し、Ollama が返す入力のトークン数（`prompt_eval_count`）に `max_tokens`（8192）を加えた値が `context_length` 以下であることを確かめる。対象は、`saga` で入力が最大になる骨子の転換・出来事・場面（S7.detail）のカードを各1枚、修正カード（前回の不合格理由つき）を1枚とする（様式化の F2 は P3-12 で確かめる）。Ollama のアダプタは `context_length` を `num_ctx` として送る。OpenAI 互換のサーバーは文脈長をサーバー側で設定するため、README の手順に「サーバーの文脈長を 32768 以上にする」を加える。
 
 ### S7 出来事生成 [L]
 #### 全版に共通の規定
