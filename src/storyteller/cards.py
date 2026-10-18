@@ -15,6 +15,9 @@ from storyteller.plot_quality import selected_condition_steps
 from storyteller.story_quality import split_card_inputs
 
 
+MOTIVES_SLOT = "motives"
+
+
 class TaskCardError(ValueError):
     """The task definition cannot be rendered as a task card."""
 
@@ -173,6 +176,9 @@ def prepare_task_inputs(
     else:
         slot_values = dict(inputs)
     slot_values = _without_sources(slot_values)
+    if slot_values.get(MOTIVES_SLOT) == [] and MOTIVES_SLOT in task_definition.get("inputs", {}):
+        # format-pipeline §3 F2: an empty motives array is not shown.
+        del slot_values[MOTIVES_SLOT]
     if task_definition.get("id") in {
         f"S5.{name}" for name in (
             "profile", "intro", "appearance", "personality", "values", "voice",
@@ -360,12 +366,27 @@ def _render_input_body(
             level = "####" if grouped else "###"
             lines.append(f"{level} {slot['label']}")
             lines.append(
+                _render_motives(group[name]) if name == MOTIVES_SLOT else
                 _render_value(
                     group[name],
                     context_only=name in {"role_definition", "plot_requirements"},
                 )
             )
     return "\n".join(lines)
+
+
+def _render_motives(value: Any) -> str:
+    """One ``<name>：<motive>`` line per character, in array order (F2 v3)."""
+
+    if not isinstance(value, list) or not all(
+        isinstance(item, Mapping) and isinstance(item.get("name"), str)
+        and isinstance(item.get("motive"), str)
+        for item in value
+    ):
+        raise TaskCardError("motives must be an array of name and motive")
+    return "\n".join(
+        unicodedata.normalize("NFC", f"{item['name']}：{item['motive']}") for item in value
+    )
 
 
 def _render_value(value: Any, *, context_only: bool = False) -> str:

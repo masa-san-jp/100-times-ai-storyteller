@@ -29,6 +29,8 @@ PROFILE_SCHEMA = "schemas/format-profile.schema.json"
 STORY_SCHEMA = "schemas/story.schema.json"
 FORMAT_NAME = re.compile(r"^[a-z][a-z0-9-]*$")
 BUILTIN_CODE_CHECKS = ("min_chars", "max_chars", "ends_complete")
+# Formats that tell the events; only their parts carry ``motives`` (F1.split v4).
+MOTIVE_MAPPINGS = frozenset({"structure", "scene", "per_event"})
 PREVIOUS_TAIL_CHARS = 600
 
 # Task types whose single dependency is read directly, not as an
@@ -202,7 +204,9 @@ def make_handlers(
         name = context.task["index"][0]
         profile = context.inputs["selection"]["profile"]
         story = read_story(context.run_dir, root)
-        plan = build_plan(story, profile, root)
+        plan = build_plan(
+            story, profile, root, motives=context.definition.get("version", 1) >= 4
+        )
         checks = profile["checks"].get("llm", [])
         if context.definition.get("version", 1) >= 3 and checks and isinstance(checks[0], Mapping):
             for part in plan["parts"]:
@@ -369,10 +373,34 @@ def _placeholder_body(plan: Mapping[str, Any]) -> str:
     return _UNDECIDED
 
 
+def part_motives(
+    person_ids: Sequence[str], people: Mapping[str, Mapping[str, Any]]
+) -> list[dict[str, str]]:
+    """F1.split v4: the canonical motives of a part's characters, verbatim.
+
+    Same people and order as the part's ``characters``; a motive that is
+    exactly （未定） is left out (format-pipeline.md §3 F1).
+    """
+
+    return [
+        {"name": people[person]["name"], "motive": people[person]["motive"]}
+        for person in person_ids
+        if people[person]["motive"] != _UNDECIDED
+    ]
+
+
 def build_plan(
-    story: Mapping[str, Any], profile: Mapping[str, Any], repository_root: Path
+    story: Mapping[str, Any],
+    profile: Mapping[str, Any],
+    repository_root: Path,
+    *,
+    motives: bool = False,
 ) -> dict[str, Any]:
-    """F1: units, parts, and the per-part range of characters."""
+    """F1: units, parts, and the per-part range of characters.
+
+    With *motives* (F1.split v4 and later), each part of a format that tells
+    the events (``MOTIVE_MAPPINGS``) also carries ``motives``.
+    """
 
     if profile["unit_mapping"] == reference_book.UNIT_MAPPING:
         return reference_book.build_reference_plan(story, profile, _role_names(repository_root))
@@ -397,6 +425,7 @@ def build_plan(
     parts: list[dict[str, Any]] = []
     visual = format_visual.is_visual(profile)
     describe = format_visual.visual_character_text if visual else character_text
+    with_motives = motives and profile["unit_mapping"] in MOTIVE_MAPPINGS
     for unit in units:
         if unit.person_id is not None:
             part = format_visual.person_part(
@@ -420,7 +449,7 @@ def build_plan(
                 key=list(people).index,
             )
             part_ids.append(part_id)
-            parts.append({
+            record: dict[str, Any] = {
                 "id": part_id,
                 "unit": unit.id,
                 "event_ids": chunk,
@@ -430,7 +459,10 @@ def build_plan(
                 "min_chars": low * len(chunk),
                 "max_chars": high * len(chunk),
                 "range": f"{low * len(chunk)}〜{high * len(chunk)}字",
-            })
+            }
+            if with_motives:
+                record["motives"] = part_motives(who, people)
+            parts.append(record)
         unit_records.append({
             "id": unit.id, "title": unit.title, "part": unit.part,
             "event_ids": ordered, "part_ids": part_ids,

@@ -1,5 +1,5 @@
 id: F2.write_once
-version: 2
+version: 3
 kind: llm
 element: text
 output: text
@@ -15,6 +15,12 @@ inputs:
     select: parts[{slot}].characters
     required: true
     truncate: head
+  motives:
+    label: 登場人物の動機
+    from: F1.split
+    select: parts[{slot}].motives
+    required: false
+    truncate: none
   rules:
     label: 書き方の規則
     from: F1.split
