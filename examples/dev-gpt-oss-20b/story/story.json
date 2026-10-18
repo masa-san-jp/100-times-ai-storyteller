@@ -1,0 +1,532 @@
+{
+  "meta": {
+    "run_id": "20261018-015039-836c67",
+    "seed": 2204919607,
+    "scale": {
+      "preset": "dev",
+      "axes": {
+        "time": "hours",
+        "space": "spot",
+        "cast": "1-2",
+        "threads": "single",
+        "change": "inner"
+      },
+      "overrides": {},
+      "derived": {
+        "events": 3,
+        "part_events": null,
+        "threads": 1,
+        "cast": 2,
+        "parts": null,
+        "world_sections": [
+          "place",
+          "people"
+        ],
+        "expansion_axes": [
+          "want"
+        ],
+        "pool_need": {
+          "want": 2,
+          "ability": 2,
+          "duty": 2,
+          "taboo": 1,
+          "place": 1,
+          "era": 1,
+          "object": 1,
+          "age": 2,
+          "gender": 2,
+          "species": 2
+        },
+        "volume": {
+          "multiplier": 0,
+          "world": {
+            "target_chars": 0,
+            "sections": [
+              {
+                "id": "place",
+                "kind": "single",
+                "viewpoints": [
+                  {
+                    "viewpoint": "地形・気候・光・音・匂いなど、人物が感じる環境",
+                    "facet_count": 1,
+                    "facet_chars": 40,
+                    "target_chars": 40
+                  }
+                ]
+              },
+              {
+                "id": "people",
+                "kind": "list",
+                "item_count": 1,
+                "item_chars": 40,
+                "target_chars": 40
+              }
+            ],
+            "total_chars": 80
+          },
+          "story": {
+            "target_chars": 0,
+            "scene_chars": 40,
+            "scene_counts": [
+              1,
+              1,
+              1
+            ],
+            "total_chars": 120
+          },
+          "characters": [
+            {
+              "id": "c1",
+              "role": "protagonist",
+              "weight": 3,
+              "target_chars": 430,
+              "item_counts": {
+                "appearance": 1,
+                "catchphrase": 1,
+                "inner_conflict": 1,
+                "intro": 1,
+                "motive": 1,
+                "personality": 1,
+                "profile": 1,
+                "values": 1,
+                "voice": 1,
+                "relationship": 1,
+                "backstory": 2
+              },
+              "item_chars": {
+                "profile": 40,
+                "backstory": 40,
+                "relationship": 40,
+                "appearance": 40,
+                "personality": 40,
+                "values": 40,
+                "voice": 40,
+                "inner_conflict": 40,
+                "motive": 40,
+                "intro": 15,
+                "catchphrase": 15
+              }
+            },
+            {
+              "id": "c2",
+              "role": "supporter",
+              "weight": 1,
+              "target_chars": 430,
+              "item_counts": {
+                "appearance": 1,
+                "catchphrase": 1,
+                "inner_conflict": 1,
+                "intro": 1,
+                "motive": 1,
+                "personality": 1,
+                "profile": 1,
+                "values": 1,
+                "voice": 1,
+                "relationship": 1,
+                "backstory": 2
+              },
+              "item_chars": {
+                "profile": 40,
+                "backstory": 40,
+                "relationship": 40,
+                "appearance": 40,
+                "personality": 40,
+                "values": 40,
+                "voice": 40,
+                "inner_conflict": 40,
+                "motive": 40,
+                "intro": 15,
+                "catchphrase": 15
+              }
+            }
+          ]
+        }
+      }
+    },
+    "input_ratio": 0.5432951252965775,
+    "input_type": "free",
+    "plot_types": [
+      {
+        "thread": "t001",
+        "id": "documentary-essay",
+        "name": "ドキュメンタリー／エッセイ"
+      }
+    ],
+    "structures": [
+      {
+        "thread": "t001",
+        "id": "documentary-essay"
+      }
+    ],
+    "theme": {
+      "id": "m006",
+      "text": "境界を守る仕組みが暮らしを揺さぶる",
+      "kind": "conflict"
+    },
+    "volume": {
+      "characters": {
+        "chars": 2181,
+        "floor_chars": 0
+      },
+      "world": {
+        "chars": 749,
+        "floor_chars": 0
+      },
+      "story": {
+        "chars": 727,
+        "floor_chars": 0
+      }
+    }
+  },
+  "world": {
+    "place": {
+      "id": "place:t65",
+      "text": "一度に一人しか渡れない長い足場"
+    },
+    "era": {
+      "id": "era:t50",
+      "text": "人々の体験を公的な記録へ移す方法が争われる時代"
+    },
+    "object": {
+      "id": "object:t52",
+      "text": "通った人の数で幅が変わる仮設橋"
+    },
+    "theme": {
+      "id": "m006",
+      "text": "境界を守る仕組みが暮らしを揺さぶる",
+      "kind": "conflict"
+    },
+    "sections": [
+      {
+        "id": "place",
+        "name": "場の描写",
+        "kind": "single",
+        "body": "### 地形・気候・光・音・匂いなど、人物が感じる環境\n#### 面 1\nオリョトーの長い足場は、足場の支柱が揺らぐ音とともに、薄い朝の光が縦に差し込み、歩く者の呼吸とともに静かな水面のような音が響く。",
+        "items": [],
+        "sources": [
+          "era:t50",
+          "era:t96",
+          "g328dc5",
+          "gc60ff6",
+          "place",
+          "place:t65"
+        ]
+      },
+      {
+        "id": "people",
+        "name": "人々",
+        "kind": "list",
+        "body": null,
+        "items": [
+          {
+            "name": "イメノ",
+            "body": "30歳のイメノはミエノに住み、ゼオサ367年の記録官。境界回廊で刻む時間を公記に移す方法を争い、静かな水面の足場を歩きながら、歩む者の呼吸とともに記録を紡ぐ。",
+            "sources": [
+              "era:t50",
+              "g328dc5",
+              "g447436",
+              "g859d25",
+              "place:t47",
+              "place:t65"
+            ]
+          }
+        ],
+        "sources": [
+          "era:t50",
+          "g328dc5",
+          "g447436",
+          "g859d25",
+          "place:t47",
+          "place:t65"
+        ]
+      }
+    ]
+  },
+  "cast": [
+    {
+      "id": "c1",
+      "role": "protagonist",
+      "name": "ヨア",
+      "reading": "ヨア",
+      "intro": "ヨアは68歳の九尾狐、橋のトロール料金経済学者。",
+      "profile": "ヨアは九尾の狐で、橋のトロール料金経済学者。鏡面から門を開き、町の図書館に残る消えた祭りの写真を探し、子どもたちに歌を再び届けたい。",
+      "motive": "橋のトロール料金を現代化しつつ、図書館に残る消えた祭りの写真を探し、子どもたちに歌を再び届けたい。",
+      "appearance": "ヨアは68歳、九尾の狐で、標準体型筋肉質。オリョトー出身・居住。鏡面門を開く術で橋のトロール料金を研究。兄イペと共に図書館で消えた祭り写真を探す。",
+      "personality": "ヨアは68歳九尾狐、170cm、オリョトー出身。橋のトロール料金経済学者として、町図書館で消えた祭りの写真を探し、子どもたちへ歌を届けようと願う。",
+      "values": "ヨアは68歳の九尾狐、オリョトー出身・居住し、橋のトロール料金経済学者として正義と透明性を重んじ、子どもたちに歌を再び届けることを許せない。",
+      "voice": "話す速さはゆっくりで、語尾は「～でございます」を使い、敬語を多用します。自分の限界を見せずに、相手に安心感を与えるように話します。",
+      "inner_conflict": "ヨアは九尾の狐で橋のトロール料金経済学者。鏡面で門を開け、消えた祭り写真を探す願望と禁忌が衝突。自己を隠しつつ子どもへ歌を届けようと苦悩する。",
+      "backstory": [
+        "ヨアは68歳で、312年生まれのオリョトー出身。兄イペと同居し、橋のトロール料金経済学者として鏡面門を開く術を磨いた。",
+        "ヨアは68歳、標準体型・筋肉質。オリョトー同居。橋のトロール料金経済学者が鏡面門で図書館に潜入し、消えた祭り写真を見つけ、子どもに歌を届け笑顔を戻した。"
+      ],
+      "relationship": [
+        "ヨアはセズゼの雷精霊としての知恵と変身術を頼り、敬意を抱きつつ距離を保ちながら図書館の隠された祭り写真を探す旅で共に歩む仲間だ。"
+      ],
+      "catchphrase": "私、ヨアは橋のトロール料金を改め、図書館に残る祭りの写真を見つけて子どもたちに歌を届ける。",
+      "elements": {
+        "want": {
+          "id": "want:i02",
+          "text": "町の図書館に残る、消えた祭りの写真を見つけ、子どもたちに再び歌わせたい。",
+          "source": "m001"
+        },
+        "ability": {
+          "id": "ability:t43",
+          "text": "鏡の中だけに通じる門を開けられる",
+          "source": "Can open portals, but only inside mirrors"
+        },
+        "duty": {
+          "id": "duty:t66",
+          "text": "橋のトロール料金経済学者。魔法の橋の通行料を現代化する",
+          "source": "Bridge Troll Toll Economist. Modernizes toll pricing for magical bridges"
+        },
+        "age": {
+          "id": "age:t10",
+          "text": "六十代",
+          "source": "In their sixties"
+        },
+        "gender": {
+          "id": "gender:t1",
+          "text": "男性",
+          "source": "Male"
+        },
+        "species": {
+          "id": "species:t10",
+          "text": "九尾の狐",
+          "source": "Kitsune"
+        },
+        "taboo": {
+          "id": "taboo:t33",
+          "text": "自分の限界を他者に知られないよう無理をする"
+        }
+      },
+      "name_sound": {
+        "set_id": "sound-02",
+        "description": "柔らかな音が連なり、母音の余韻が残る響き",
+        "sounds": [
+          "ヨ",
+          "ナ",
+          "ア",
+          "イ",
+          "オ",
+          "ノ"
+        ]
+      },
+      "sources": [
+        "ability:t43",
+        "age:t10",
+        "c1",
+        "duty:t66",
+        "g328dc5",
+        "g723829",
+        "g772b9b",
+        "gc60ff6",
+        "gender:t1",
+        "species:t10",
+        "taboo:t33",
+        "want:i02",
+        "c2",
+        "g2a479f",
+        "gf8e391"
+      ]
+    },
+    {
+      "id": "c2",
+      "role": "supporter",
+      "name": "セズゼ",
+      "reading": "セズゼ",
+      "intro": "セズゼは45歳、170cmの雷精霊。動物へ瞬時変身し、退役英雄の世話人として老人ホームを運営。",
+      "profile": "セズゼは四十代の両性具有雷の精霊で、最後に触れた動物へ変身でき、引退英雄の世話人として老人ホームを運営しながら、最初の記憶の味がするレシピを探す。",
+      "motive": "セズゼは、引退英雄の世話人として老人ホームを運営しつつ、初めて味した記憶のレシピを探すことで、過去の自分と向き合い、未完成の使命感を完了させようとする。",
+      "appearance": "セズゼは45歳、オリョトー出身170cmの肩幅広い筋肉質。雷の精霊として両性具有で、触れた動物へ瞬時変身し、引退英雄の世話人として老人ホームを経営。",
+      "personality": "セズゼは45歳、オリョトー生まれの肩幅広く筋肉質。動物に瞬時変身し、退役英雄の世話人として老人ホームを運営。",
+      "values": "セズゼはオリョトー出身の45歳、身長170cmの雷の精霊で、最後に触れた動物へ変身できる。引退英雄の世話人として老人ホームを運営し、最初の記憶の味を求める。",
+      "voice": "セズゼは常に静かに観察し、必要なときに助言を投げる。彼の口調は落ち着きと温かさを兼ね備えており、言葉は短くても心に残る。  \n「いつも頼りになる存在だね、セズゼ」",
+      "inner_conflict": "セズゼは45歳、身長170cm、オリョトー出身で引退英雄の世話人だが、最初の記憶の味を探す願望と老人ホームを守る責務が衝突し、心の中で揺れ動く。",
+      "backstory": [
+        "セズゼは45歳で身長170cm、オリョトーで生まれ住み、380年にオリョトーの老英雄養護施設を開設した。",
+        "セズゼは45歳、オリョトー出身。380年にオリョトーの老英雄養護施設を開設し、最後に触れた動物へ瞬時に変身しながら、引退英雄の世話人として日々を過ごした。"
+      ],
+      "relationship": [
+        "ヨアは九尾狐の橋トロール料金経済学者。私はセズゼとして、彼の調査を支援し、雷の精霊の変身力で必要な場面で助ける。"
+      ],
+      "catchphrase": "私は最後に触れた動物に変身し、記憶の味を探す手助けをする。",
+      "elements": {
+        "want": {
+          "id": "want:t59",
+          "text": "最初の記憶の味がするレシピを見つけたい",
+          "source": "I want to find the recipe that tastes like my first memory."
+        },
+        "ability": {
+          "id": "ability:t98",
+          "text": "最後に触れた動物へ変身できる",
+          "source": "Can transform into the last animal they touched"
+        },
+        "duty": {
+          "id": "duty:t15",
+          "text": "引退英雄の世話人。年老いたスーパーヒーローの老人ホームを運営する",
+          "source": "Retired Hero Caretaker. Runs a nursing home for aging superheroes"
+        },
+        "age": {
+          "id": "age:t8",
+          "text": "四十代",
+          "source": "In their forties"
+        },
+        "gender": {
+          "id": "gender:t6",
+          "text": "両性具有的",
+          "source": "Androgynous"
+        },
+        "species": {
+          "id": "species:t40",
+          "text": "送電線に住む雷の精霊",
+          "source": "Lightning elemental living in a power line"
+        }
+      },
+      "name_sound": {
+        "set_id": "sound-08",
+        "description": "摩擦のある音と短い音節が交差する、緊張を含む響き",
+        "sounds": [
+          "セ",
+          "ツ",
+          "ザ",
+          "ズ",
+          "ゾ",
+          "ゼ"
+        ]
+      },
+      "sources": [
+        "ability:t98",
+        "age:t8",
+        "c2",
+        "duty:t15",
+        "g2a479f",
+        "g328dc5",
+        "g723829",
+        "gc60ff6",
+        "gender:t6",
+        "gf8e391",
+        "species:t40",
+        "want:t59",
+        "c1"
+      ]
+    }
+  ],
+  "threads": [
+    {
+      "id": "t001",
+      "kind": "main",
+      "part": null,
+      "plot_type": "documentary-essay",
+      "plot_type_name": "ドキュメンタリー／エッセイ",
+      "events": 3,
+      "structure": "documentary-essay"
+    }
+  ],
+  "events": [
+    {
+      "when": "2026年10月18日の朝。",
+      "where": "オリョトーの長い足場で。",
+      "who": [
+        "c1",
+        "c2"
+      ],
+      "why": "橋幅が歩く者の数に応じて拡張する仕組みを確認するため。",
+      "intent": "橋幅自動拡張の仕組みを確認したい。",
+      "what": "ヨアは2026年10月18日、オリョトーの長い足場で歩く者が増えると橋幅が自動で拡張し、通行者が安全に渡れる様子を観察し、記録した。",
+      "result": "ヨアは橋幅が自動で拡張し、通行者が安全に渡れるようになったことを記録した。",
+      "emotion": "安心感と好奇心が混じる。",
+      "foreshadowing": "ヨアはオリョトーの長い足場で、橋幅が自動で拡張する機構を観察し、記録した。",
+      "sources": [
+        "c1",
+        "c2",
+        "g2a479f",
+        "g723829",
+        "gc60ff6",
+        "gf8e391",
+        "m006",
+        "place"
+      ],
+      "id": "e001",
+      "stage": {
+        "id": "record-opening",
+        "name": "記録の開始"
+      },
+      "thread": "t001",
+      "conditions": [
+        "限界を他者に露呈することは禁じられ、露呈した者は橋を渡る者全員に対し、彼に対する信頼を失い、強制的に橋の外へ退去させられる。",
+        "橋を見渡す人が増えると、橋幅が自動で拡張し、通行者が安全に渡れるようになる。",
+        "歩く人の数が増えると橋幅が広がり、より多くの人が安全に渡れるようになる。"
+      ]
+    },
+    {
+      "when": "ミエノの夕暮れ時に。",
+      "where": "ミエノの境界回廊に架かる橋の上。",
+      "who": [
+        "c2",
+        "c1"
+      ],
+      "why": "人々の歩行者数が増えたため。",
+      "intent": "ヨアは橋幅が自動で拡張する仕組みを調べたい。",
+      "what": "セズゼは橋幅が自動で拡張し、通行者が安全に渡れるようになった様子を観察し、ヨアはその事実を記録した。",
+      "result": "セズゼは橋幅が自動で拡張し、通行者が安全に渡れるようになった様子を観察した。ヨアはその事実を記録した。",
+      "emotion": "セズゼは安堵と誇り、ヨアは喜びと好奇心を抱く。",
+      "foreshadowing": "橋の隙間に残る微かな足跡が、次の拡張の兆候かを示す。",
+      "sources": [
+        "c1",
+        "c2",
+        "g2a479f",
+        "g447436",
+        "g723829",
+        "g859d25",
+        "gf8e391",
+        "m006",
+        "object:t52",
+        "people"
+      ],
+      "id": "e002",
+      "stage": {
+        "id": "record-observation",
+        "name": "観察の積み重ね"
+      },
+      "thread": "t001",
+      "conditions": [
+        "限界を他者に露呈することは禁じられ、露呈した者は橋を渡る者全員に対し、彼に対する信頼を失い、強制的に橋の外へ退去させられる。",
+        "橋を見渡す人が増えると、橋幅が自動で拡張し、通行者が安全に渡れるようになる。",
+        "歩く人の数が増えると橋幅が広がり、より多くの人が安全に渡れるようになる。"
+      ]
+    },
+    {
+      "when": "薄い朝の光が差し込む頃。",
+      "where": "オリョトーの長い足場上。",
+      "who": [
+        "c1"
+      ],
+      "why": "歩く者の数が増えたため。",
+      "intent": "歩く者の数に応じて橋幅が自動で拡張する仕組みを解析したい。",
+      "what": "ヨアは、歩く者の数が増えると橋幅が自動で拡張し、通行者が安全に渡れるようになった様子を観察した。",
+      "result": "ヨアは歩く者の数が増えると橋幅が自動で拡張し、通行者が安全に渡れる状態になった。",
+      "emotion": "安堵と好奇心が混じる。",
+      "foreshadowing": "",
+      "sources": [
+        "c1",
+        "g723829",
+        "gc60ff6",
+        "m006",
+        "object:t52",
+        "place"
+      ],
+      "id": "e003",
+      "stage": {
+        "id": "record-reflection",
+        "name": "考察の結び"
+      },
+      "thread": "t001",
+      "conditions": [
+        "限界を他者に露呈することは禁じられ、露呈した者は橋を渡る者全員に対し、彼に対する信頼を失い、強制的に橋の外へ退去させられる。",
+        "橋を見渡す人が増えると、橋幅が自動で拡張し、通行者が安全に渡れるようになる。",
+        "歩く人の数が増えると橋幅が広がり、より多くの人が安全に渡れるようになる。"
+      ]
+    }
+  ]
+}
