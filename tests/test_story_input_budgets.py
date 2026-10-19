@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
+
 from pathlib import Path
 
 import json
@@ -22,7 +24,7 @@ ROOT = Path(__file__).parents[1]
 
 def _definition(task_type):
     return yaml.safe_load(
-        (ROOT / "harness/story/tasks" / f"{task_type}.yaml").read_text(encoding="utf-8")
+        (task_path(task_type)).read_text(encoding="utf-8")
     )
 
 

@@ -9,6 +9,7 @@ from .input_data import read_free_input
 from .orchestrator import Orchestrator, TaskSpec
 from .scale import derive_scale
 from .seed import generated_seed
+from .story_ledger import ANALYSIS_KINDS, WHOLE_INPUT_WARNING, whole_input_text
 from .story_s2 import story_s2_merge, story_s2_plan
 from .story_s3 import story_s3_assign
 from .story_s4 import story_s4_diversity, story_s4_consistency_judge
@@ -28,6 +29,7 @@ from .volume import apply_volume_update, compute_initial_volume
 
 
 _TASK_DEFINITION_SCHEMA = "schemas/task-definition.schema.json"
+STAGED_S6_VERSION = 6
 
 
 def create_free_run(
@@ -95,17 +97,32 @@ def create_run_from_paragraphs(
     material_count = (load_table("scales", repository_root=repository_root)["dev"]["materials_per_paragraph"]
                       if preset == "dev" else 5)
 
+    task_definitions = _load_story_task_definitions(repository_root)
+    # ADR-0011: S6.expand v6 and later is the staged graph.  S0 creates the three
+    # analyses of the whole input and every S1.extract waits for them.
+    staged = task_definitions["S6.expand"]["version"] >= STAGED_S6_VERSION
+    analysis_specs = [
+        TaskSpec(task_id=f"S1.analysis-{kind}", type="S1.analysis", index=(kind,))
+        for kind in ANALYSIS_KINDS
+    ] if staged else []
+    analysis_ids = tuple(spec.task_id for spec in analysis_specs)
     task_specs = [
-        TaskSpec(
-            task_id=f"S1.extract-{paragraph['id']}-{number}",
-            type="S1.extract",
-            deps=tuple(f"S1.extract-{paragraph['id']}-{earlier}" for earlier in range(1, number)),
-            index=(paragraph["id"], str(number)),
-        )
-        for paragraph in paragraphs
-        for number in range(1, material_count + 1)
+        *analysis_specs,
+        *(
+            TaskSpec(
+                task_id=f"S1.extract-{paragraph['id']}-{number}",
+                type="S1.extract",
+                deps=(
+                    *analysis_ids,
+                    *(f"S1.extract-{paragraph['id']}-{earlier}" for earlier in range(1, number)),
+                ),
+                index=(paragraph["id"], str(number)),
+            )
+            for paragraph in paragraphs
+            for number in range(1, material_count + 1)
+        ),
     ]
-    s1_task_ids = tuple(spec.task_id for spec in task_specs)
+    s1_task_ids = tuple(spec.task_id for spec in task_specs if spec.type == "S1.extract")
     task_specs.append(
         TaskSpec(
             task_id="S2.plan",
@@ -113,7 +130,6 @@ def create_run_from_paragraphs(
             deps=s1_task_ids,
         )
     )
-    task_definitions = _load_story_task_definitions(repository_root)
     orchestrator = Orchestrator(
         data_dir,
         task_definitions,
@@ -132,9 +148,12 @@ def create_run_from_paragraphs(
         batch_id=batch_id,
         seed_source=seed_source,
     )
-    if scale.warnings:
+    warnings = list(scale.warnings)
+    if staged and whole_input_text(input_document)[1]:
+        warnings.append(WHOLE_INPUT_WARNING)
+    if warnings:
         manifest = orchestrator.load_run(run_id)
-        manifest["warnings"].extend(scale.warnings)
+        manifest["warnings"].extend(warnings)
         from .manifest import write_manifest
 
         write_manifest(orchestrator.run_dir(run_id) / "manifest.json", manifest)

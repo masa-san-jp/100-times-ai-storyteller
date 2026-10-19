@@ -299,7 +299,7 @@ def test_model_config_reads_repository_defaults() -> None:
     assert config.json_mode == "schema"
     assert config.think == "low"
     assert config.max_tokens == 8192
-    assert config.context_length == 16384
+    assert config.context_length == 32768
     assert config.timeout_seconds == 600
 
 

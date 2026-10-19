@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
+
 import random
 from datetime import datetime, timezone
 from pathlib import Path
@@ -107,7 +109,7 @@ def test_s8_plan_keeps_same_thread_predecessor_and_then_nearest_who_match() -> N
 
 def test_s8_compare_inputs_are_only_the_two_event_descriptions() -> None:
     definition = load_and_validate_yaml(
-        ROOT / "harness/story/tasks/S8.compare.yaml",
+        task_path("S8.compare"),
         ROOT / "schemas/task-definition.schema.json",
     )
     plan_output = {
@@ -154,7 +156,7 @@ def test_s8_compare_inputs_are_only_the_two_event_descriptions() -> None:
 
 def test_s8_compare_input_assembly_selects_the_numbered_target() -> None:
     definition = load_and_validate_yaml(
-        ROOT / "harness/story/tasks/S8.compare.yaml",
+        task_path("S8.compare"),
         ROOT / "schemas/task-definition.schema.json",
     )
     plan_output = {
@@ -185,7 +187,7 @@ def test_s8_compare_input_assembly_selects_the_numbered_target() -> None:
 
 def test_indexed_source_is_an_index_to_output_object_of_done_dependencies() -> None:
     definition = load_and_validate_yaml(
-        ROOT / "harness/story/tasks/S5.profile.yaml",
+        task_path("S5.profile"),
         ROOT / "schemas/task-definition.schema.json",
     )
     manifest = {

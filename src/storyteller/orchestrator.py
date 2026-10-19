@@ -2128,6 +2128,10 @@ class Orchestrator:
         )
         from .story_materials import sequential_sources
         source_outputs = sequential_sources(task, manifest, dependency_outputs, source_outputs)
+        from .story_ledger import augment_sources
+        source_outputs = augment_sources(
+            run_dir, manifest, task_id, task, source_outputs, dependency_outputs
+        )
         run_input = _read_run_input(run_dir) if reads is None else reads.run_input()
         try:
             # Slots whose source tasks were all skipped are shown as 未定 (§6.7).
@@ -2167,6 +2171,15 @@ class Orchestrator:
                 }
             if task["type"] == "S7.select" and "candidates" in undecided:
                 inputs["candidates"] = {}
+            if task["type"] == "S1.analysis":
+                # story-pipeline S6.plot §2: the whole input as one string, and
+                # the aspect to analyse (also part of the cache key).
+                from .story_ledger import ANALYSIS_LABELS, whole_input_text
+                inputs = {
+                    **inputs,
+                    "whole_input": whole_input_text(run_input)[0],
+                    "analysis_kind": ANALYSIS_LABELS[task["index"][0]],
+                }
         except (KeyError, SelectorError, TypeError) as error:
             raise TaskCardError(f"入力の生成に失敗しました: {error}") from error
         from .world_facts import specialize_fact_definition
@@ -3947,6 +3960,20 @@ def _source_outputs(
                     dependency_outputs.get(dependency, "（未定）")
                     for dependency in expected
                 }
+            continue
+        if slot == "S1.analysis":
+            # The three analyses of the whole input, one line each; a skipped
+            # one is （未定） (story-pipeline S6.plot §1-2).
+            analyses = [
+                dependency for dependency in dependencies
+                if manifest["tasks"][dependency]["type"] == slot
+            ]
+            if analyses:
+                from .story_ledger import analysis_lines
+                result[slot] = analysis_lines({
+                    manifest["tasks"][dependency]["index"][0]: dependency_outputs.get(dependency)
+                    for dependency in analyses
+                })
             continue
         matching = [
             dependency

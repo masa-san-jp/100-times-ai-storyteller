@@ -1,4 +1,5 @@
 """P1-42: code-owned comparison kinds and unchanged judgement contracts."""
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -18,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def definition(task):
-    return yaml.safe_load((ROOT / f'harness/story/tasks/{task}.yaml').read_text(encoding='utf-8'))
+    return yaml.safe_load((task_path(task)).read_text(encoding='utf-8'))
 
 
 def code(task, handler):

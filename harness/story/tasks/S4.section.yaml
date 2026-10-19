@@ -1,5 +1,5 @@
 id: S4.section
-version: 12
+version: 13
 kind: llm
 element: text
 inputs:
@@ -65,6 +65,12 @@ inputs:
     from: S3.assign
     select: calendar.current_year
     required: true
+  analysis:
+    label: 入力の全体の分析
+    from: S1.analysis
+    select: output
+    required: false
+    truncate: head
 output: text
 extend_to_min: true
 card:

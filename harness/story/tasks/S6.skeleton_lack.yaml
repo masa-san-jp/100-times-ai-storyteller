@@ -1,0 +1,53 @@
+id: S6.skeleton_lack
+version: 1
+kind: llm
+element: text
+inputs:
+  plot_items:
+    label: プロットの型
+    from: S6.expand
+    select: plot_items
+    required: true
+    truncate: none
+  theme:
+    label: 解決すべき主題
+    from: S6.expand
+    select: theme
+    required: false
+    truncate: none
+  input_ledger:
+    label: 入力の台帳
+    from: S6.expand
+    select: ledgers.input_ledger
+    required: false
+    truncate: head
+  cast_ledger:
+    label: 人物の台帳
+    from: S6.expand
+    select: ledgers.cast_ledger
+    required: false
+    truncate: head
+  world_ledger:
+    label: 世界の台帳
+    from: S6.expand
+    select: ledgers.world_ledger
+    required: false
+    truncate: head
+output: text
+card:
+  role: 物語の骨子として、主人公が欠落させているものを書く。
+  material_rule: 入力の台帳・人物・世界を参照し、この物語に固有の内容を書く。
+  steps:
+  - 主人公が欠落させているものを、入力の台帳・人物・世界を参照して、この物語に固有の具体的な人物・物・出来事で書く。
+  - プロットの型の葛藤の種類と緩急の原則に従って書く。
+  - 1〜2文、150字以内で書く。
+validate:
+  checks:
+  - max_chars:
+      n: 150
+  - ends_complete
+  - no_new_proper_nouns:
+      mode: warn
+max_input_chars: 16000
+on_exhausted: skip
+continuation: false

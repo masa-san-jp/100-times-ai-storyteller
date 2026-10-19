@@ -1,4 +1,5 @@
 """P1-58: concrete action/outcome instructions, unchanged legacy cards."""
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
 from copy import deepcopy
 from hashlib import sha256
 from pathlib import Path
