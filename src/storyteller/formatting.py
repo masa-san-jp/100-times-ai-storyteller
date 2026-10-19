@@ -206,7 +206,9 @@ def make_handlers(
         profile = context.inputs["selection"]["profile"]
         story = read_story(context.run_dir, root)
         plan = build_plan(
-            story, profile, root, motives=context.definition.get("version", 1) >= 4
+            story, profile, root,
+            motives=context.definition.get("version", 1) >= 4,
+            skeleton=context.definition.get("version", 1) >= 6,
         )
         checks = profile["checks"].get("llm", [])
         if context.definition.get("version", 1) >= 3 and checks and isinstance(checks[0], Mapping):
@@ -399,6 +401,7 @@ def build_plan(
     repository_root: Path,
     *,
     motives: bool = False,
+    skeleton: bool = False,
 ) -> dict[str, Any]:
     """F1: units, parts, and the per-part range of characters.
 
@@ -430,6 +433,8 @@ def build_plan(
     visual = format_visual.is_visual(profile)
     describe = format_visual.visual_character_text if visual else character_text
     with_motives = motives and profile["unit_mapping"] in MOTIVE_MAPPINGS
+    # F1.split v6: a story without plot conditions gives its parts no `conditions`.
+    no_conditions = skeleton and not any(event.get("conditions") for event in events.values())
     for unit in units:
         if unit.person_id is not None:
             part = format_visual.person_part(
@@ -457,7 +462,7 @@ def build_plan(
                 "id": part_id,
                 "unit": unit.id,
                 "event_ids": chunk,
-                "conditions": list(dict.fromkeys(condition for event_id in chunk for condition in events[event_id].get("conditions", []))),
+                **({} if no_conditions else {"conditions": list(dict.fromkeys(condition for event_id in chunk for condition in events[event_id].get("conditions", [])))}),
                 "events": [{"id": event_id, "text": event_text(events[event_id], names)} for event_id in chunk],
                 "characters": [{"id": person, "text": describe(people[person], roles)} for person in who],
                 "min_chars": low * len(chunk),
@@ -471,7 +476,7 @@ def build_plan(
             "id": unit.id, "title": unit.title, "part": unit.part,
             "event_ids": ordered, "part_ids": part_ids,
         })
-    return {
+    plan: dict[str, Any] = {
         "format": profile["name"],
         "unit": profile["unit"],
         "continuation": profile["continuation"],
@@ -482,6 +487,36 @@ def build_plan(
         "units": unit_records,
         "parts": parts,
     }
+    if skeleton and profile["unit_mapping"] in MOTIVE_MAPPINGS and story.get("skeleton"):
+        plan["skeleton"] = skeleton_ledger(story["skeleton"], story["threads"])
+    return plan
+
+
+def skeleton_ledger(skeleton: Mapping[str, Any], threads: Sequence[Mapping[str, Any]]) -> str:
+    """F1.split v6: the story's skeleton, one element per line.
+
+    Order: lack, climax, after the ending, then the turns by thread (in the
+    story's thread order) and by ``n``.  A missing value is （未定）.  Each
+    line starts with the element's name and, for a turn, its slot's event ID.
+    """
+
+    def value(text: Any) -> str:
+        return text if isinstance(text, str) and text else _UNDECIDED
+
+    lines = [
+        f"欠落：{value(skeleton.get('lack'))}",
+        f"決定的な瞬間：{value(skeleton.get('climax'))}",
+        f"結末の後：{value(skeleton.get('resolution'))}",
+    ]
+    thread_order = {thread["id"]: position for position, thread in enumerate(threads)}
+    turns = sorted(
+        skeleton.get("turns") or [],
+        key=lambda turn: (thread_order.get(turn["thread"], len(thread_order)), turn["n"]),
+    )
+    for turn in turns:
+        slot = f"・{turn['slot']}" if turn.get("slot") else ""
+        lines.append(f"転換（{turn['thread']}・{turn['n']}{slot}）：{value(turn.get('text'))}")
+    return "\n".join(lines)
 
 
 def check_body(
