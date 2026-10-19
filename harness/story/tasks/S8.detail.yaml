@@ -1,5 +1,5 @@
 id: S8.detail
-version: 6
+version: 7
 kind: llm
 element: judgement
 output: json
@@ -15,21 +15,18 @@ inputs:
     select: body
     required: false
   previous:
-    label: 直前の場面（再演しない）
+    label: 直前の場面の末尾
     from: S7.detail
     select: previous
     required: false
     truncate: tail
 card:
-  role: 本文を検査。
+  role: 場面の本文が出来事と事実として両立するかを検査する。
   steps:
-  - 確定事項の追加・反転・置換を検査。同じ前後関係を逆転と判定しない。未定は対象外。
-  - 条件適合でなく直前の行動・結果の進展ない再演を検査。
-  - 非言及は否定ではなく矛盾でない。前提→帰結から逆や唯一の必要条件を導かない。必要条件・前後関係の追加・反転・置換は yes。
-  - 禁止は実施した行為だけを検査。能力・可能性・意思・条件引用だけを実施としない。実施の併記は検査し、帰結の非言及でも違反は yes。
-  - 構造説明・内部 ID も検査。
-  - 例：「押すと灯る」に「灯った」だけ／「押した」だけは no。押さなかった・灯らなかったと補わない。
-  - 違反なら answer=yes、他は no。reason は具体的な食い違いか再演を1文。入力外は禁止。
+  - 出来事の行動・結果と本文、直前の場面の末尾が、事実として両立しないかだけを検査する。未定は対象外。
+  - 矛盾とは事実として両立しないことだけを指す（同じ人物が同時に別の場所にいる、確定した結果を理由なく覆す、存在しないはずの人物・物が現れる、など）。心情・関係・状況の変化や展開は矛盾でない。非言及は否定ではなく、それだけを矛盾にしない。
+  - 構造説明・内部 ID が本文にあれば検査する。
+  - 矛盾なら answer=yes、他は no。reason は食い違いを具体的に1文で示す。入力外は補わない。
   output_example: '{"answer": "...", "reason": "..."}'
 validate:
   schema: schemas/tasks/S8.compare.schema.json

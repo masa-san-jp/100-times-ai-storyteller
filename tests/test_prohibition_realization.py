@@ -1,4 +1,5 @@
 """P1-53 public fixtures, never submitted model outputs."""
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
 from copy import deepcopy
 import json
 import pytest

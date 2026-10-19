@@ -1,5 +1,5 @@
 id: S7.detail
-version: 14
+version: 15
 kind: llm
 element: text
 inputs:
@@ -72,18 +72,25 @@ inputs:
     select: glossary
     required: false
     truncate: head
-  conditions:
-    label: 確定した筋の条件（変更・追加しない）
-    from: S7.condition
-    select: output
+  skeleton_ledger:
+    label: 骨子の台帳
+    from: S6.expand
+    select: skeleton_ledger
+    required: true
+    truncate: none
+  event_ledger:
+    label: これまでの出来事の台帳（この出来事を含む）
+    from: S6.expand
+    select: event_ledger
     required: false
+    truncate: tail
 output: text
 extend_to_min: true
 continuation: true
 card:
   role: 出来事の一つの場面を、正本として説明的に詳述する。
   steps:
-  - 確定した発動・禁止・解決条件を守る。禁止行為を実施しない。条件を追加・反転・置換せず、内部ID・構造説明を書かない。
+  - 骨子と、これまでの出来事に続く場面を書く。確定した人物・世界・出来事と矛盾させない。
   - 場面の働きが担当する部分だけを書く。発端は開始まで、展開は行動の過程、転換は変化、余波は結果の後だけとする。他の場面の行動と結果を最初から語り直さない。直前の場面に書かれたことは再演しない。
   - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
   - 出来事の when・where・who・why・intent・what・result・emotion を、入力された内容から正確に引き継ぐ。
@@ -107,4 +114,4 @@ validate:
   - max_chars:
       n: 2500
       fix: trim
-max_input_chars: 2750
+max_input_chars: 16000

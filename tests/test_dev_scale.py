@@ -99,6 +99,8 @@ def test_dev_run_reaches_completed_with_every_llm_task_kind(tmp_path: Path) -> N
     }
     used_types = {task["type"] for task in tasks.values()}
     # F* (formatting) tasks are created by `st format`, not by a story run.
+    # The condition tasks belong to the S6.expand v5 and older graphs only (ADR-0011).
+    llm_types -= {"S7.condition", "S8.condition_check"}
     assert llm_types <= used_types, sorted(llm_types - used_types)
     s2_plan = json.loads((harness.task_dir(run_id, "S2.plan") / "output.json").read_text(encoding="utf-8"))
     assert {entry["axis"]["key"] for entry in s2_plan["plans"].values()} == {"want"}

@@ -1,0 +1,44 @@
+id: S8.detail
+version: 6
+kind: llm
+element: judgement
+output: json
+inputs:
+  event:
+    label: この出来事の確定事項
+    from: S7.assemble
+    select: '[{slot}]'
+    required: true
+  body:
+    label: 検査する本文
+    from: S7.detail
+    select: body
+    required: false
+  previous:
+    label: 直前の場面（再演しない）
+    from: S7.detail
+    select: previous
+    required: false
+    truncate: tail
+card:
+  role: 本文を検査。
+  steps:
+  - 確定事項の追加・反転・置換を検査。同じ前後関係を逆転と判定しない。未定は対象外。
+  - 条件適合でなく直前の行動・結果の進展ない再演を検査。
+  - 非言及は否定ではなく矛盾でない。前提→帰結から逆や唯一の必要条件を導かない。必要条件・前後関係の追加・反転・置換は yes。
+  - 禁止は実施した行為だけを検査。能力・可能性・意思・条件引用だけを実施としない。実施の併記は検査し、帰結の非言及でも違反は yes。
+  - 構造説明・内部 ID も検査。
+  - 例：「押すと灯る」に「灯った」だけ／「押した」だけは no。押さなかった・灯らなかったと補わない。
+  - 違反なら answer=yes、他は no。reason は具体的な食い違いか再演を1文。入力外は禁止。
+  output_example: '{"answer": "...", "reason": "..."}'
+validate:
+  schema: schemas/tasks/S8.compare.schema.json
+  checks:
+  - no_copy_from_inputs
+  - avoid_listed:
+      table: tables/meta_terms.yaml
+  - min_chars:
+      field: reason
+      n: 1
+max_input_chars: 3500
+max_output_tokens: 2048

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.analysis import submit_analyses
 from storyteller.new_run import create_free_run, create_story_orchestrator
 from storyteller.task_outputs import task_sources
 from storyteller.validation import load_and_validate_yaml
@@ -21,6 +22,7 @@ def _complete_s1(tmp_path: Path):
     run_id = create_free_run(data_dir, source, preset="vignette", axis_overrides={},
                              seed=123, parts=None, plot_type=None, repository_root=ROOT)
     harness = create_story_orchestrator(data_dir)
+    submit_analyses(harness, run_id)
     for number in range(1, 6):
         claim = harness.claim_task(run_id, f"S1.extract-p001-{number}", executor_id="dummy")
         assert harness.submit(claim["ticket"], json.dumps({

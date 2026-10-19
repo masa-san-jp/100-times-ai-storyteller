@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
+
 from pathlib import Path
 
 from storyteller.cards import generate_task_card
@@ -13,7 +15,7 @@ TASK_SCHEMA = ROOT / "schemas" / "task-definition.schema.json"
 
 def _load_definition() -> dict[str, object]:
     return load_and_validate_yaml(
-        ROOT / "harness" / "story" / "tasks" / "S7.event.yaml",
+        task_path("S7.event"),
         TASK_SCHEMA,
     )
 

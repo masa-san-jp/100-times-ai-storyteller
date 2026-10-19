@@ -96,7 +96,7 @@ def test_create_narrative_run_makes_s1_task_per_filled_item(tmp_path: Path) -> N
     assert document["kind"] == "narrative"
     assert manifest["input"]["type"] == "narrative"
     keys = list(NARRATIVE_ITEMS)[:3]
-    assert set(manifest["tasks"]) == {f"S1.extract-{k}-{n}" for k in keys for n in range(1, 6)} | {"S2.plan"}
+    assert set(manifest["tasks"]) == {f"S1.extract-{k}-{n}" for k in keys for n in range(1, 6)} | {"S2.plan", "S1.analysis-desire", "S1.analysis-suppression", "S1.analysis-conflict"}
 
 
 def test_cli_new_narrative(tmp_path: Path, monkeypatch, capsys) -> None:

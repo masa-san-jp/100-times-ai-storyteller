@@ -1,4 +1,5 @@
 """P1-61: fact consistency does not require listing the entire sheet."""
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
 from copy import deepcopy
 from pathlib import Path
 
@@ -21,9 +22,11 @@ def definitions():
 
 def test_only_profile_fact_scope_changes_and_required_eight_elements_remain():
     new, old = definitions()
-    assert new['version'] == 14 and old['version'] == 13
+    assert new['version'] == 15 and old['version'] == 13
     expected = deepcopy(old)
-    expected['version'] = 14
+    expected['version'] = 15
+    # ADR-0011 (S5.profile v15) adds the analysis of the whole input as the last, optional slot.
+    expected['inputs']['analysis'] = new['inputs']['analysis']
     expected['card']['steps'][1] = new['card']['steps'][1]
     assert expected == new
     assert old['card']['steps'][1] == OLD_FACT_STEP

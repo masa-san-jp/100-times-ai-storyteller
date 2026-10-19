@@ -69,7 +69,7 @@ def test_story_harness_rejection_status_and_retry(tmp_path: Path, monkeypatch) -
     assert task["failure_report"] == f"tasks/{task['task_id']}/failure.md"
     report = report_path.read_text(encoding="utf-8")
     assert secret not in report
-    assert "### 段落" in report and "HTTP status 400" in report
+    assert "ユーザーの入力の全体" in report and "HTTP status 400" in report
     assert "ollama.test-model" in report
     human = _cli(data_dir, "status", "--run", run_id)
     assert human.returncode == 0, human.stderr
@@ -91,7 +91,10 @@ def test_story_harness_rejection_status_and_retry(tmp_path: Path, monkeypatch) -
     inputs = _task_input(data_dir, run_id, task["task_id"])
     record = harness.load_run(run_id)["tasks"][task["task_id"]]
     output = _fake_output(task["task_id"], record, inputs, send_comparison_yes=False)
-    submitted = _cli(data_dir, "submit", claim["ticket"], input_text=json.dumps(output, ensure_ascii=False))
+    submitted = _cli(
+        data_dir, "submit", claim["ticket"],
+        input_text=output if isinstance(output, str) else json.dumps(output, ensure_ascii=False),
+    )
     assert submitted.returncode == 0, submitted.stderr
     assert all(task["failure_report"] is None for task in status()["tasks"])
 
@@ -317,6 +320,12 @@ def _fake_output(
         opening = f"{inputs['facts']['name']}は" if field in subject_fields else ""
         return opening + _filler_text(task_id, field, target_length - len(opening))
 
+    if task_type == "S1.analysis":
+        return _filler_text(task_id, "分析", 350).rstrip("。") + "。"
+
+    if task_type.startswith("S6.skeleton_"):
+        return _filler_text(task_id, "骨子", 120)
+
     if task_type == "S7.condition":
         return {"trigger": "仕組みを動かすと道が現れる。", "prohibition": "灯を消すことは禁じられ、消すと道を失う。", "resolution": "開いた道を進むと問題が解決する。"}[task["index"][1]]
 
@@ -424,7 +433,10 @@ def test_story_harness_cli_runs_to_s9_with_schema_outputs_and_regeneration(
         assert input_char_count(definition, inputs) <= definition.get("max_input_chars", 3000)
         # Conservative Japanese estimate: 2 tokens per card character, plus
         # the model's full output allowance. Includes retries and scene tails.
-        assert 2 * len(claimed["card"]) + model["max_tokens"] <= model["context_length"], task_id
+        # The cumulative-context cards (max_input_chars 16000, ADR-0011) are
+        # instead checked against the real token count (P1-69 test 9).
+        if definition.get("max_input_chars", 3000) < 16000:
+            assert 2 * len(claimed["card"]) + model["max_tokens"] <= model["context_length"], task_id
         assert "### 物語の素材" in claimed["card"] or "### 作り方の指示" in claimed["card"]
         assert "作り方の指示は本文に書かず" in claimed["card"]
         if task["type"] == "S5.intro" and noun_warning_task is None:

@@ -1,0 +1,67 @@
+id: S6.skeleton_resolution
+version: 1
+kind: llm
+element: text
+inputs:
+  skeleton_ledger:
+    label: 骨子の台帳
+    from: S6.expand
+    select: skeleton_ledger
+    required: true
+    truncate: none
+  plot_items:
+    label: プロットの型
+    from: S6.expand
+    select: plot_items
+    required: true
+    truncate: none
+  slot_characters:
+    label: 割り当てた人物（名前・役）
+    from: S6.expand
+    select: slot_characters
+    required: true
+    truncate: none
+  theme:
+    label: 解決すべき主題
+    from: S6.expand
+    select: theme
+    required: false
+    truncate: none
+  input_ledger:
+    label: 入力の台帳
+    from: S6.expand
+    select: ledgers.input_ledger
+    required: false
+    truncate: head
+  cast_ledger:
+    label: 人物の台帳
+    from: S6.expand
+    select: ledgers.cast_ledger
+    required: false
+    truncate: head
+  world_ledger:
+    label: 世界の台帳
+    from: S6.expand
+    select: ledgers.world_ledger
+    required: false
+    truncate: head
+output: text
+card:
+  role: 物語の骨子として、結末の後を書く。
+  material_rule: 入力の台帳・人物・世界を参照し、この物語に固有の内容を書く。
+  steps:
+  - 決定的な瞬間を経て、主人公と周囲がどうなったか（変わったもの、失ったもの、得たもの、または変わらなかったもの）を、プロットの型の中核構造に沿って、入力の台帳・人物・世界を参照して、この物語に固有の具体的な人物・物・出来事で書く。
+  - 骨子の台帳にある、すでに決まっている要素と、因果でつながるように書く。
+  - プロットの型の葛藤の種類と緩急の原則に従って書く。
+  - 割り当てた人物が行う行動として書く。
+  - 2〜3文、200字以内で書く。
+validate:
+  checks:
+  - max_chars:
+      n: 200
+  - ends_complete
+  - no_new_proper_nouns:
+      mode: warn
+max_input_chars: 16000
+on_exhausted: skip
+continuation: false

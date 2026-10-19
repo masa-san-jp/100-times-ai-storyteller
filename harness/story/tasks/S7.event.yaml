@@ -1,72 +1,56 @@
 id: S7.event
-version: 21
+version: 22
 kind: llm
 element: text
 inputs:
+  skeleton_ledger:
+    label: 骨子の台帳
+    from: S6.expand
+    select: skeleton_ledger
+    required: true
+    truncate: none
+  realizing_skeleton:
+    label: この出来事で実現する骨子
+    from: S6.expand
+    select: realizing_skeleton
+    required: false
+    truncate: none
+  next_skeleton:
+    label: 次に向かう骨子
+    from: S6.expand
+    select: next_skeleton
+    required: false
+    truncate: none
   stage_definition:
     label: 段階の定義
     from: S6.expand
     select: slots[{slot}].stage.definition
     required: true
+    truncate: none
   stage_guidance:
     label: 段階の指針
     from: S6.expand
     select: slots[{slot}].stage.guidance
     required: true
-  required_events:
-    label: 必須の出来事
+    truncate: none
+  time_design:
+    label: プロットの型の時間の設計
     from: S6.expand
-    select: slots[{slot}].required_events
+    select: slots[{slot}].plot.time_design
     required: true
-    truncate: head
-  absent_role_note:
-    label: 不在の役の注記
+    truncate: none
+  pacing:
+    label: プロットの型の緩急の原則
     from: S6.expand
-    select: slots[{slot}].absent_role_note
+    select: slots[{slot}].plot.pacing
     required: true
-  object:
-    label: 象徴的な事物
-    from: S6.expand
-    select: slots[{slot}].object
-    required: true
+    truncate: none
   characters:
     label: 割り当て人物
     from: S6.expand
     select: slots[{slot}].characters
     required: true
-    truncate: head
-  world_sections:
-    label: 選択された世界セクション
-    from: S6.expand
-    select: slots[{slot}].world_sections
-    required: true
-    truncate: head
-  previous_result:
-    label: 同じ筋の直前の出来事の結果
-    from: S7.assemble
-    select: output
-    required: false
-  conflict:
-    label: 筋の葛藤
-    from: S6.expand
-    select: slots[{slot}].plot.conflict
-    required: true
-  climax:
-    label: 筋のクライマックス
-    from: S6.expand
-    select: slots[{slot}].plot.climax
-    required: false
-  theme:
-    label: 解決すべき主題
-    from: S6.expand
-    select: slots[{slot}].theme
-    required: true
-  glossary:
-    label: 関係する用語集
-    from: S3.assign
-    select: glossary
-    required: false
-    truncate: head
+    truncate: none
   event_field:
     label: 生成する項目
     from: S6.expand
@@ -77,48 +61,48 @@ inputs:
     from: S7.event
     select: output
     required: false
-  conditions:
-    label: 確定した筋の条件（変更・追加しない）
-    from: S7.condition
-    select: output
+    truncate: none
+  event_ledger:
+    label: これまでの出来事の台帳
+    from: S6.expand
+    select: event_ledger
     required: false
+    truncate: tail
+  cast_ledger:
+    label: 人物の台帳
+    from: S6.expand
+    select: ledgers.cast_ledger
+    required: false
+    truncate: head
+  world_sections:
+    label: 選択された世界セクション
+    from: S6.expand
+    select: slots[{slot}].world_sections
+    required: false
+    truncate: head
+  world_ledger:
+    label: 世界の台帳
+    from: S6.expand
+    select: ledgers.world_ledger
+    required: false
+    truncate: head
 output: text
 candidates: 3
 select_candidate: least_similar
 card:
-  input_order:
-  - conditions
-  - previous_result
-  - object
-  - characters
-  - world_sections
-  - conflict
-  - climax
-  - theme
-  - glossary
-  - event_field
-  - decided_fields
-  - stage_definition
-  - stage_guidance
-  - required_events
-  - absent_role_note
-  material_rule: 入力にない人物・物・設定・事実を加えない。入力の素材から、手順が求める当段階の局所行動・変化を具体化してよい。
-  role: 局所文脈から指定された出来事の項目1つだけを書く。
+  material_rule: 骨子・これまでの出来事・人物・世界を参照し、この出来事を具体的に書く。
+  role: 骨子とこれまでの出来事から、指定された出来事の項目1つだけを書く。
   steps:
-  - what：誰が入力素材をどう扱うか、当段階の具体的行動を書く。段階の達成宣言だけにしない。既存素材への観察・扱い・照合・選択などを構成できる。固定条件の発動を毎回再実行しない。冒頭を割り当て人物名＋は・がの主語にする。共同主語は割り当て人物名をと・、でつなぐ。ほかの人物への言及はできるが主語を置き換えない。 書式例「甲は箱の留め金を外す。」今の行動だけを書く。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
+  - 骨子と、これまでの出来事に続く、この出来事を書く。確定した人物・世界・出来事と矛盾させない。
+  - what：誰が入力素材をどう扱うか、当段階の具体的行動を書く。段階の達成宣言だけにしない。既存素材への観察・扱い・照合・選択などを構成できる。実現する骨子が示されていれば、それをこの出来事の行動と結果として起こす。次に向かう骨子が示されていれば、そこへ因果でつながる行動と結果にする。冒頭を割り当て人物名＋は・がの主語にする。共同主語は割り当て人物名をと・、でつなぐ。ほかの人物への言及はできるが主語を置き換えない。 書式例「甲は箱の留め金を外す。」今の行動だけを書く。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
   - where：この出来事が起きる場所・位置だけを書く。完了した行動と結果全体を再述しない。 書式例「作業台の右端。」のように、場所を示す短い句を書く。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
   - when：この出来事の時点・時間的な関係だけを書く。完了した行動と結果全体を再述しない。 書式例「夕方の鐘が鳴った直後。」のように、時点を示す短い句を書く。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
   - why：先に決まった行動を引き起こす原因だけを書く。人物の動機をそのまま写さず、完了した行動と結果全体を再述しない。 書式例「留め金が引っかかっていたため。」のように、その行動の直接の原因だけを書く。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
   - intent：行動前に人物が目指すことだけを書く。達成済みの変化にせず、完了した行動と結果全体を再述しない。 書式例「箱の内側を確かめたい。」のように、まだ達成していない目標を書く。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
-  - result：既決行動の後、入力のどれがどう変わったか具体的に書く。段階の達成宣言だけにしない。冒頭を割り当て人物名＋は・がの主語にする。共同主語は割り当て人物名をと・、でつなぐ。ほかの人物への言及はできるが主語を置き換えない。 書式例「甲は箱の内側が見える状態になった。」変化だけを書き、行動を再述しない。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
+  - result：既決行動の後、入力のどれがどう変わったか具体的に書く。段階の達成宣言だけにしない。実現する骨子が示されていれば、それをこの出来事の行動と結果として起こす。次に向かう骨子が示されていれば、そこへ因果でつながる行動と結果にする。冒頭を割り当て人物名＋は・がの主語にする。共同主語は割り当て人物名をと・、でつなぐ。ほかの人物への言及はできるが主語を置き換えない。 書式例「甲は箱の内側が見える状態になった。」変化だけを書き、行動を再述しない。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
   - emotion：この出来事を受けた人物の感情状態だけを書く。完了した行動と結果全体を再述しない。 書式例「安堵と戸惑いが混じる。」のように、感情状態を短く書く。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
   - foreshadowing：入力の物・言葉・状態に基づく未解消の手がかりだけを書く。入力にない将来の出来事を断定せず、完了した行動と結果全体を再述しない。 書式例「留め金の裏に残る小さな傷。」のように、今ある未解消の手がかりを書く。将来の人物の行動や発見を書かない。書式だけの例であり、例の素材を本文に持ち込まず、入力内の素材だけを使う。
-  - 発動・禁止・解決条件は不変の因果制約。禁止行為を実施しない。今すべて発動・解決する命令ではない。条件を追加・反転・置換せず、内部ID・構造説明を書かない。
-  - 入力・用語集にある固有名詞だけを使い、新しい名前・呼称を作らない。
-  - 段階の定義・指針・必須出来事は文脈。行動・変化は当段階の働きを満たし、他項目は矛盾させず専用範囲だけ書く。解決行動は当段階の要求時のみ。
-  - 割り当て人物・入力の物・状態・世界セクション・直前の結果に基づき、当段階の局所行動・変化を具体化する。根拠のない人物・物・設定・外部の出来事を加えず、条件を変更せず、前後の段階・全体を計画しない。
-  - 不在の役・象徴的事物・葛藤・主題は文脈。全項目での再述は不要。クライマックス条件は入力がある場合のみ。
-  - 指定項目の回答範囲だけを書く。既決項目・直前結果は矛盾防止の前提であり、全文の再述指示ではない。
+  - 指定項目の回答範囲だけを書く。先に決まった項目は矛盾防止の前提であり、全文の再述指示ではない。
   - 「生成する項目」の本文だけを1〜120字で書く。他項目・項目名・説明は出力しない。
 validate:
   checks:
@@ -134,6 +118,6 @@ validate:
       n: 120
   - no_new_proper_nouns:
       mode: warn
-max_input_chars: 2800
+max_input_chars: 16000
 max_invalidations: 2
 continuation: false

@@ -22,9 +22,44 @@
       "type": "array",
       "minItems": 1,
       "items": {"$ref": "#/$defs/event"}
-    }
+    },
+    "skeleton": {"$ref": "#/$defs/skeleton"}
   },
   "$defs": {
+    "skeleton": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analysis", "lack", "climax", "resolution", "turns"],
+      "properties": {
+        "analysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["desire", "suppression", "conflict"],
+          "properties": {
+            "desire": {"type": ["string", "null"]},
+            "suppression": {"type": ["string", "null"]},
+            "conflict": {"type": ["string", "null"]}
+          }
+        },
+        "lack": {"type": "string", "minLength": 1},
+        "climax": {"type": "string", "minLength": 1},
+        "resolution": {"type": "string", "minLength": 1},
+        "turns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["thread", "n", "slot", "text"],
+            "properties": {
+              "thread": {"type": "string", "pattern": "^t[0-9]{3}$"},
+              "n": {"type": "integer", "minimum": 1},
+              "slot": {"type": "string", "pattern": "^e[0-9]{3}$"},
+              "text": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
     "id": {"type": "string", "minLength": 1},
     "sources": {
       "type": "array",

@@ -1,0 +1,36 @@
+id: S1.analysis
+version: 1
+kind: llm
+element: text
+inputs:
+  whole_input:
+    label: ユーザーの入力の全体
+    from: input
+    select: input
+    required: true
+    truncate: none
+  analysis_kind:
+    label: 分析の観点
+    from: input
+    select: input
+    required: true
+output: text
+card:
+  role: 入力の全体から、書き手の内面の傾向を分析する。
+  steps:
+  - desire：入力の全体から読み取れる、切望していること、手に入れたいと渇望していることを書く。
+  - suppression：入力の全体から読み取れる、抑圧している根源的な感情を書く。
+  - conflict：入力の全体から読み取れる、自己矛盾と葛藤を書く。
+  - 入力の文言を引用せず、抽象化して書く。断定や診断をしない。
+  - 300〜400字で、完結した文章にする。
+validate:
+  checks:
+  - min_chars:
+      n: 300
+  - max_chars:
+      n: 400
+  - ends_complete
+max_input_chars: 7000
+share_across_runs: true
+on_exhausted: skip
+continuation: false
