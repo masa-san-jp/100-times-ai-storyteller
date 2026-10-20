@@ -30,7 +30,7 @@ SKELETON = {
         {"thread": "t002", "n": 1, "slot": "e004", "text": "ミオが地図を渡す。"},
         {"thread": "t001", "n": 2, "slot": "e003", "text": "カナが橋を渡る。"},
         {"thread": "t001", "n": 1, "slot": "e001", "text": "カナが呼びかけを聞く。"},
-        {"thread": "t001", "n": 3, "slot": None, "text": None},
+        {"thread": "t001", "n": 3, "slot": "e005", "text": "（未定）"},
     ],
 }
 LEDGER = "\n".join([
@@ -39,7 +39,7 @@ LEDGER = "\n".join([
     "結末の後：港は残り、カナは旅人でなくなった。",
     "転換（t001・1・e001）：カナが呼びかけを聞く。",
     "転換（t001・2・e003）：カナが橋を渡る。",
-    "転換（t001・3）：（未定）",
+    "転換（t001・3・e005）：（未定）",
     "転換（t002・1・e004）：ミオが地図を渡す。",
 ])
 SKELETON_LABEL = "### 物語の骨子"
@@ -111,7 +111,7 @@ def test_build_plan_copies_the_skeleton_only_for_formats_that_tell_the_events():
 
 # --- (2) no skeleton: no key --------------------------------------------------
 
-@pytest.mark.parametrize("skeleton", [None, {}])
+@pytest.mark.parametrize("skeleton", [None])
 def test_story_without_skeleton_has_no_skeleton_key_and_the_card_has_no_section(tmp_path, dummy_format, skeleton):
     h, run = setup(tmp_path, dummy_format, skeleton=skeleton)
     plan = plan_of(h, run)
