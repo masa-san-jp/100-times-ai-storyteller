@@ -1,9 +1,4 @@
-"""P3-12: the story's skeleton is passed from F1.split v6 to F2 v5 (ADR-0011).
-
-The canonical ``skeleton`` itself is recorded by P1-69; the story schema does
-not know it yet, so these tests read the story without the schema's check of
-that one key.
-"""
+"""P3-12: the story's skeleton is passed from F1.split v6 to F2 v5 (ADR-0011)."""
 
 from __future__ import annotations
 
@@ -17,6 +12,7 @@ import pytest
 import yaml
 
 import storyteller.formatting as formatting
+
 from storyteller.cache import lookup_cache
 from storyteller.cards import F2_CONDITION_STEP, generate_task_card, prepare_task_inputs
 from storyteller.new_run import create_story_orchestrator
@@ -49,25 +45,6 @@ LEDGER = "\n".join([
 SKELETON_LABEL = "### 物語の骨子"
 EVENTS_LABEL = "### 書く対象の出来事"
 SKELETON_STEP = "物語の骨子の中で、この部分が担う位置を踏まえて書く。"
-
-
-@pytest.fixture(autouse=True)
-def story_with_skeleton_is_readable(monkeypatch):
-    """P1-69 adds ``skeleton`` to the schema; until then, validate the rest."""
-
-    original = formatting.read_story
-
-    def read(run_dir, repository_root=formatting.REPOSITORY_ROOT):
-        path = Path(run_dir) / "story" / "story.json"
-        story = json.loads(path.read_text(encoding="utf-8"))
-        skeleton = story.pop("skeleton", None)
-        formatting.validate_document(story, Path(repository_root) / formatting.STORY_SCHEMA)
-        if skeleton is not None:
-            story["skeleton"] = skeleton
-        return story
-
-    monkeypatch.setattr(formatting, "read_story", read)
-    return original
 
 
 def setup(tmp_path, dummy_format, *, skeleton=SKELETON, conditions=False, version=6, continuation=True):
