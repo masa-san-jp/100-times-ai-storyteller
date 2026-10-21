@@ -216,7 +216,9 @@ def _assemble_skeleton(plan: Mapping[str, Any], outputs: Mapping[str, Any]) -> d
         "analysis": analysis,
         "lack": text("S6.skeleton_lack"),
         "climax": text("S6.skeleton_climax"),
+        "climax_slot": elements["S6.skeleton_climax"]["slot"],
         "resolution": text("S6.skeleton_resolution"),
+        "resolution_slot": elements["S6.skeleton_resolution"]["slot"],
         "turns": [
             {
                 "thread": element["thread"], "n": element["n"], "slot": element["slot"],
@@ -629,8 +631,8 @@ def _skeleton_lines(skeleton: Mapping[str, Any]) -> list[str]:
     lines.extend(
         [
             f"- 欠落：{skeleton['lack']}",
-            f"- 決定的な瞬間：{skeleton['climax']}",
-            f"- 結末の後：{skeleton['resolution']}",
+            f"- 決定的な瞬間（{skeleton['climax_slot']}）：{skeleton['climax']}",
+            f"- 結末の後（{skeleton['resolution_slot']}）：{skeleton['resolution']}",
         ]
     )
     lines.extend(
