@@ -8,6 +8,7 @@ produce one text or one judgement each (P1, P2).
 
 from __future__ import annotations
 
+import unicodedata
 import json
 import math
 import re
@@ -501,7 +502,10 @@ def skeleton_ledger(skeleton: Mapping[str, Any], threads: Sequence[Mapping[str, 
     """
 
     def value(text: Any) -> str:
-        return text if isinstance(text, str) and text else _UNDECIDED
+        # 1要素1行。生成側の骨子の台帳（story_ledger.skeleton_row）と同じく、NFC 正規化して空白をまとめる。
+        if isinstance(text, str) and text.strip():
+            return " ".join(unicodedata.normalize("NFC", text).split())
+        return _UNDECIDED
 
     lines = [
         f"欠落：{value(skeleton.get('lack'))}",
