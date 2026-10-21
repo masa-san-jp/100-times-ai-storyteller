@@ -75,6 +75,8 @@ def whole_input_text(run_input: Any) -> tuple[str, bool]:
     joined = "\n".join(lines)
     if len(joined) <= WHOLE_INPUT_LIMIT:
         return joined, False
+    # 「各行」は、つないだ文字列の行（段落の中の改行も行を分ける）。
+    lines = joined.split("\n")
     count = len(lines)
     allowance = (WHOLE_INPUT_LIMIT - count) // count
     if allowance >= WHOLE_INPUT_MIN_LINE:

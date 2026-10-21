@@ -78,14 +78,19 @@ def _saga_cards() -> dict[str, str]:
         definition = _definition(task_type)
         task = {"type": task_type, "index": index, "deps": [
             e["task"] for e in output["skeleton"]["elements"] if e["task"] != task_id]}
-        expand = {**output, "event_field": "何が起きたか"}
+        field = index[1] if task_type == "S7.event" else "what"
+        expand = {**output, "event_field": EVENT_LABELS[field]}
         sources = augment_sources(None, None, task_id, task, {"S6.expand": expand}, outputs)
         sources = {**sources, "S7.assemble": {
             slot["id"]: outputs[f"S7.assemble-{slot['id']}"] for slot in slots}}
         inputs = resolve_inputs(definition, sources, None, index=index)
         inputs.update(extra or {})
         fitted = prepare_task_inputs(definition, inputs=inputs)
-        return generate_task_card(definition, "tk", inputs=fitted, retry_reason=retry)
+        card = generate_task_card(definition, "tk", inputs=fitted, retry_reason=retry)
+        if task_type == "S7.event":
+            # The card asks for this field with its own steps (not the default "what" steps).
+            assert "未解消の手がかり" in card and "当段階の具体的行動" not in card
+        return card
 
     first = output["skeleton"]["elements"]
     first_turn = next(e for e in first if e["kind"] == "turn" and e["thread"] == "t001" and e["n"] == 1)
