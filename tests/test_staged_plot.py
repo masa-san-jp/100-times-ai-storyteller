@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 from copy import deepcopy
 from pathlib import Path
@@ -10,8 +11,10 @@ from typing import Any
 
 import pytest
 import yaml
+from jsonschema import Draft202012Validator
 
 from storyteller.cards import generate_task_card, prepare_task_inputs
+from storyteller.event_fields import EVENT_FIELDS, EVENT_LABELS
 from storyteller.selectors import resolve_inputs
 from storyteller.story_ledger import (
     UNDECIDED, augment_sources, skeleton_row, whole_input_text,
@@ -78,6 +81,20 @@ def test_whole_input_is_one_newline_joined_string_when_it_fits() -> None:
     text, warned = whole_input_text(_paragraphs(3, 100))
     assert text == "\n".join(["あ" * 100] * 3)
     assert not warned
+
+
+def test_whole_input_keeps_spaces_and_newlines_and_counts_them() -> None:
+    # S6.plot §2: the text is NFC-normalized, but spaces and newlines are kept and counted.
+    paragraphs = {"paragraphs": [
+        {"id": "p001", "text": "甲  乙\n丙。", "question": "問い "},
+        {"id": "p002", "text": "\u30ab\u3099 x"},
+    ]}
+    text, warned = whole_input_text(paragraphs)
+    assert text == "問い ：甲  乙\n丙。\nガ x" and not warned
+    long = {"paragraphs": [{"id": "p001", "text": "あ " * 2600}, {"id": "p002", "text": "い"}]}
+    text, _ = whole_input_text(long)
+    # 5201 characters with the spaces, so the line allowance applies; without them it would fit.
+    assert len(text) <= 5000 and text.split("\n")[0] == ("あ " * 2600)[: (5000 - 2) // 2]
 
 
 def test_whole_input_over_5000_cuts_each_line_to_the_allowance() -> None:
@@ -240,8 +257,11 @@ def test_s7_event_card_carries_ledgers_and_the_realizing_skeleton() -> None:
     assert "#### 次に向かう骨子" not in card
     ledger = inputs["skeleton_ledger"]
     assert len(ledger) == len(plan["elements"])
-    assert ledger[0].startswith("欠落：") and ledger[1].startswith("決定的な瞬間：")
-    assert ledger[2].startswith("結末の後：")
+    slot_of = {e["kind"]: e["slot"] for e in plan["elements"] if e["kind"] != "turn"}
+    assert slot_of["climax"] and slot_of["resolution"]
+    assert ledger[0].startswith("欠落：")
+    assert ledger[1].startswith(f"決定的な瞬間（{slot_of['climax']}）：")
+    assert ledger[2].startswith(f"結末の後（{slot_of['resolution']}）：")
     assert [row.split("：")[0] for row in ledger[3:]] == [
         f"転換（t001・{n}・{e['slot']}）"
         for n, e in enumerate(
@@ -351,14 +371,17 @@ def test_saga_largest_cards_fit_with_required_slots_only() -> None:
              "intro": "紹" * 50, "voice": "声" * 800}
             for n in range(1, 5)
         ]
-    # S7.event with every earlier event row at its longest (optional, so only the required slots are counted).
+    # S7.event for the last field (foreshadowing), so all seven other fields are decided at
+    # their longest (120 chars each); earlier event rows are optional and not counted.
     slot = slots[-1]
-    task = {"type": "S7.event", "index": [slot["id"], "what"], "deps": []}
+    task = {"type": "S7.event", "index": [slot["id"], "foreshadowing"], "deps": []}
     definition = _definition("S7.event")
-    expand = {**output, "event_field": "何が起きたか"}
+    expand = {**output, "event_field": EVENT_LABELS["foreshadowing"]}
     sources = augment_sources(None, None, "x", task, {"S6.expand": expand}, outputs)
-    inputs = resolve_inputs(definition, sources, None, index=[slot["id"], "what"])
-    inputs["decided_fields"] = {"何が起きたか": "文" * 120, "どこで起きたか": "場" * 120}
+    inputs = resolve_inputs(definition, sources, None, index=[slot["id"], "foreshadowing"])
+    inputs["decided_fields"] = {
+        EVENT_LABELS[field]: "文" * 120 for field in EVENT_FIELDS if field != "foreshadowing"}
+    assert len(inputs["decided_fields"]) == 7
     only_required = {
         name: value for name, value in inputs.items()
         if definition["inputs"].get(name, {}).get("required")
@@ -414,6 +437,30 @@ def test_a_skipped_element_is_shown_as_undecided() -> None:
     assert skeleton_row({**turn, "slot": None}, "本文") == "転換（t001・1）：本文"
     for name in ("S6.skeleton_lack", "S6.skeleton_climax", "S6.skeleton_resolution", "S6.skeleton_turn"):
         assert _definition(name)["on_exhausted"] == "skip"
+
+
+def test_climax_and_resolution_rows_carry_their_event_ids() -> None:
+    climax = {"name": "決定的な瞬間", "slot": "e007", "kind": "climax"}
+    assert skeleton_row(climax, "決着。") == "決定的な瞬間（e007）：決着。"
+    resolution = {"name": "結末の後", "slot": "e008", "kind": "resolution"}
+    assert skeleton_row(resolution, "前文。\n  後文。") == "結末の後（e008）：前文。 後文。"
+
+
+def test_story_skeleton_records_the_climax_and_resolution_slots() -> None:
+    from storyteller.story_s9 import _assemble_skeleton, _skeleton_lines
+
+    result = _expand([_thread(1)])
+    plan = result.output["skeleton"]
+    outputs = {element["task"]: "本文。" for element in plan["elements"]}
+    skeleton = _assemble_skeleton(plan, outputs)
+    slot_of = {e["kind"]: e["slot"] for e in plan["elements"] if e["kind"] != "turn"}
+    assert skeleton["climax_slot"] == slot_of["climax"]
+    assert skeleton["resolution_slot"] == slot_of["resolution"]
+    schema = json.loads((ROOT / "schemas" / "story.schema.json").read_text(encoding="utf-8"))
+    jsonschema_errors = list(Draft202012Validator(schema["$defs"]["skeleton"]).iter_errors(skeleton))
+    assert not jsonschema_errors
+    section = "\n".join(_skeleton_lines(skeleton))
+    assert f"- 決定的な瞬間（{slot_of['climax']}）：本文。" in section
 
 
 def test_skeleton_card_budget_and_checks_follow_the_specification() -> None:

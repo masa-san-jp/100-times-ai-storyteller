@@ -66,10 +66,11 @@ def whole_input_text(run_input: Any) -> tuple[str, bool]:
     for paragraph in paragraphs:
         if not isinstance(paragraph, Mapping):
             continue
-        text = _oneline(paragraph.get("text", ""))
+        # 空白・改行は変えない（字数は NFC 正規化後の文字列で数える。S6.plot §2）。
+        text = _nfc(str(paragraph.get("text", "")))
         question = paragraph.get("question")
         if isinstance(question, str) and question:
-            text = f"{_oneline(question)}：{text}"
+            text = f"{_nfc(question)}：{text}"
         lines.append(text)
     joined = "\n".join(lines)
     if len(joined) <= WHOLE_INPUT_LIMIT:
@@ -347,15 +348,14 @@ def static_ledgers(
 def skeleton_row(element: Mapping[str, Any], text: Any) -> str:
     """One skeleton-ledger line: the element's name, its event ID, then the text."""
 
-    # Shared with the formatting stage (P3-12): 「欠落」「決定的な瞬間」「結末の後」、
-    # 転換は「転換（<筋>・<n>・<出来事ID>）」（スロットがなければ出来事IDを省く）。
-    if element.get("kind") == "turn":
-        parts = [element["thread"], str(element["n"])]
-        if element.get("slot"):
-            parts.append(element["slot"])
-        head = f"転換（{'・'.join(parts)}）"
-    else:
-        head = element["name"]
+    # Shared with the formatting stage (P3-12): 「欠落」「決定的な瞬間（<出来事ID>）」
+    # 「結末の後（<出来事ID>）」、転換は「転換（<筋>・<n>・<出来事ID>）」
+    # （スロットがなければ出来事IDを省く）。
+    parts = [element["thread"], str(element["n"])] if element.get("kind") == "turn" else []
+    if element.get("slot"):
+        parts.append(element["slot"])
+    name = "転換" if element.get("kind") == "turn" else element["name"]
+    head = f"{name}（{'・'.join(parts)}）" if parts else name
     body = _oneline(text) if isinstance(text, str) and text.strip() else UNDECIDED
     return f"{head}：{body}"
 

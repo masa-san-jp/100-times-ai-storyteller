@@ -29,7 +29,7 @@
     "skeleton": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["analysis", "lack", "climax", "resolution", "turns"],
+      "required": ["analysis", "lack", "climax", "climax_slot", "resolution", "resolution_slot", "turns"],
       "properties": {
         "analysis": {
           "type": "object",
@@ -43,7 +43,9 @@
         },
         "lack": {"type": "string", "minLength": 1},
         "climax": {"type": "string", "minLength": 1},
+        "climax_slot": {"type": "string", "pattern": "^e[0-9]{3}$"},
         "resolution": {"type": "string", "minLength": 1},
+        "resolution_slot": {"type": "string", "pattern": "^e[0-9]{3}$"},
         "turns": {
           "type": "array",
           "items": {

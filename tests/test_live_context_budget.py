@@ -19,6 +19,7 @@ import pytest
 
 from storyteller.adapter import load_model_config
 from storyteller.cards import generate_task_card, prepare_task_inputs
+from storyteller.event_fields import EVENT_FIELDS, EVENT_LABELS
 from storyteller.selectors import resolve_inputs
 from storyteller.story_ledger import augment_sources
 from storyteller.tables import load_table
@@ -92,12 +93,15 @@ def _saga_cards() -> dict[str, str]:
         "S6.skeleton_turn", first_turn["task"], [first_turn["thread"], str(first_turn["n"])],
         extra={"absent_role_note": "不" * 80})
     last = slots[-1]["id"]
-    event_extra = {"decided_fields": {"何が起きたか": "文" * 120, "どこで起きたか": "場" * 120}}
-    cards["event"] = render("S7.event", f"S7.event-{last}-what", [last, "what"], extra=event_extra)
+    # The last field (foreshadowing) has all seven other fields decided, each at 120 chars.
+    event_extra = {"decided_fields": {
+        EVENT_LABELS[field]: "文" * 120 for field in EVENT_FIELDS if field != "foreshadowing"}}
+    cards["event"] = render(
+        "S7.event", f"S7.event-{last}-foreshadowing", [last, "foreshadowing"], extra=event_extra)
     cards["detail"] = render(
         "S7.detail", f"S7.detail-{last}-b1", [last, "1"], extra={"previous_scene": "前" * 600})
     cards["repair"] = render(
-        "S7.event", f"S7.event-{last}-what", [last, "what"], extra=event_extra,
+        "S7.event", f"S7.event-{last}-foreshadowing", [last, "foreshadowing"], extra=event_extra,
         retry="前回の出力は次の理由で不合格でした。" + "理" * 300)
     return cards
 
