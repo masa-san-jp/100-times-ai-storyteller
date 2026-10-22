@@ -8,10 +8,10 @@ produce one text or one judgement each (P1, P2).
 
 from __future__ import annotations
 
-import unicodedata
 import json
 import math
 import re
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
@@ -498,7 +498,8 @@ def skeleton_ledger(skeleton: Mapping[str, Any], threads: Sequence[Mapping[str, 
 
     Order: lack, climax, after the ending, then the turns by thread (in the
     story's thread order) and by ``n``.  A missing value is （未定）.  Each
-    line starts with the element's name and, for a turn, its slot's event ID.
+    line starts with the element's name and its slot's event ID, as in the
+    generation stage's ledger (story_ledger.skeleton_row).
     """
 
     def value(text: Any) -> str:
@@ -507,10 +508,14 @@ def skeleton_ledger(skeleton: Mapping[str, Any], threads: Sequence[Mapping[str, 
             return " ".join(unicodedata.normalize("NFC", text).split())
         return _UNDECIDED
 
+    def slot(key: str) -> str:
+        event_id = skeleton.get(key)
+        return f"（{event_id}）" if isinstance(event_id, str) and event_id else ""
+
     lines = [
         f"欠落：{value(skeleton.get('lack'))}",
-        f"決定的な瞬間：{value(skeleton.get('climax'))}",
-        f"結末の後：{value(skeleton.get('resolution'))}",
+        f"決定的な瞬間{slot('climax_slot')}：{value(skeleton.get('climax'))}",
+        f"結末の後{slot('resolution_slot')}：{value(skeleton.get('resolution'))}",
     ]
     thread_order = {thread["id"]: position for position, thread in enumerate(threads)}
     turns = sorted(

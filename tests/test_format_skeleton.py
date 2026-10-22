@@ -25,7 +25,9 @@ SKELETON = {
     "analysis": {"desire": "認められたい。", "suppression": None, "conflict": "守りたいが逃げたい。"},
     "lack": "居場所を失ったこと。",
     "climax": "カナが鐘を鳴らし、港の行く末を決める。",
+    "climax_slot": "e005",
     "resolution": "港は残り、カナは旅人でなくなった。",
+    "resolution_slot": "e005",
     "turns": [
         {"thread": "t002", "n": 1, "slot": "e004", "text": "ミオが地図を渡す。"},
         {"thread": "t001", "n": 2, "slot": "e003", "text": "カナが橋を渡る。"},
@@ -35,8 +37,8 @@ SKELETON = {
 }
 LEDGER = "\n".join([
     "欠落：居場所を失ったこと。",
-    "決定的な瞬間：カナが鐘を鳴らし、港の行く末を決める。",
-    "結末の後：港は残り、カナは旅人でなくなった。",
+    "決定的な瞬間（e005）：カナが鐘を鳴らし、港の行く末を決める。",
+    "結末の後（e005）：港は残り、カナは旅人でなくなった。",
     "転換（t001・1・e001）：カナが呼びかけを聞く。",
     "転換（t001・2・e003）：カナが橋を渡る。",
     "転換（t001・3・e005）：（未定）",
@@ -98,13 +100,37 @@ def test_ledger_order_is_lack_climax_resolution_then_turns_by_thread_and_n():
     assert formatting.skeleton_ledger(empty, threads) == "欠落：（未定）\n決定的な瞬間：（未定）\n結末の後：（未定）"
 
 
+def test_ledger_matches_the_generation_stage_row_for_row():
+    # The same ledger as story_ledger.skeleton_ledger: event IDs on 決定的な瞬間・結末の後,
+    # and each element on one line (NFC, whitespace collapsed).
+    from storyteller.story_ledger import skeleton_row
+
+    threads = [{"id": "t001"}]
+    skeleton = {
+        "lack": "前文。\n  後文。", "climax": "決着。", "climax_slot": "e007",
+        "resolution": "\u30ab\u3099 後。", "resolution_slot": "e008",
+        "turns": [{"thread": "t001", "n": 1, "slot": "e002", "text": "転じる。\n次。"}],
+    }
+    elements = [
+        ({"kind": "lack", "name": "欠落", "slot": None, "thread": "t001", "n": None}, skeleton["lack"]),
+        ({"kind": "climax", "name": "決定的な瞬間", "slot": "e007", "thread": "t001", "n": None},
+         skeleton["climax"]),
+        ({"kind": "resolution", "name": "結末の後", "slot": "e008", "thread": "t001", "n": None},
+         skeleton["resolution"]),
+        ({"kind": "turn", "name": "転換", "slot": "e002", "thread": "t001", "n": 1}, "転じる。\n次。"),
+    ]
+    expected = [skeleton_row(element, text) for element, text in elements]
+    assert formatting.skeleton_ledger(skeleton, threads).split("\n") == expected
+    assert expected[1] == "決定的な瞬間（e007）：決着。" and expected[0] == "欠落：前文。 後文。"
+
+
 def test_build_plan_copies_the_skeleton_only_for_formats_that_tell_the_events():
     events = [_novel_event(n, "t001", "setup" if n == 1 else "turn") for n in range(1, 4)]
     story = _novel_story([_thread(1, "main", "three-beat")], events)
     story["skeleton"] = {**SKELETON, "turns": [SKELETON["turns"][2]]}
     for name in ("novel", "screenplay", "slides"):
         plan = formatting.build_plan(story, formatting.load_profile(name), ROOT, skeleton=True)
-        assert plan["skeleton"].startswith("欠落：居場所を失ったこと。\n決定的な瞬間：")
+        assert plan["skeleton"].startswith("欠落：居場所を失ったこと。\n決定的な瞬間（e005）：")
         assert plan["skeleton"].endswith("転換（t001・1・e001）：カナが呼びかけを聞く。")
     assert "skeleton" not in formatting.build_plan(story, formatting.load_profile("novel"), ROOT)
 
@@ -224,7 +250,10 @@ def _largest_saga_f2_inputs() -> dict:
         {"thread": f"t{(n % 8) + 1:03d}", "n": n // 8 + 1, "slot": f"e{n + 1:03d}", "text": "転" * 200}
         for n in range(40)
     ]
-    skeleton = {"lack": "欠" * 150, "climax": "極" * 200, "resolution": "結" * 200, "turns": turns}
+    skeleton = {
+        "lack": "欠" * 150, "climax": "極" * 200, "climax_slot": "e040",
+        "resolution": "結" * 200, "resolution_slot": "e040", "turns": turns,
+    }
     threads = [{"id": f"t{n:03d}"} for n in range(1, 9)]
     field = "あ" * 120
     event = (
