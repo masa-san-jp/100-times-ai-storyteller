@@ -97,6 +97,16 @@ def test_whole_input_keeps_spaces_and_newlines_and_counts_them() -> None:
     assert len(text) <= 5000 and text.split("\n")[0] == ("あ " * 2600)[: (5000 - 2) // 2]
 
 
+def test_whole_input_allowance_counts_the_newlines_inside_a_paragraph() -> None:
+    # One paragraph with an inner newline is two lines of the joined string.
+    text, warned = whole_input_text({"paragraphs": [{"id": "p001", "text": "あ" * 3000 + "\n" + "い" * 3000}]})
+    assert not warned
+    assert text.split("\n") == ["あ" * 2499, "い" * 2499]
+    # 239 lines inside a single paragraph still trigger the warning.
+    text, warned = whole_input_text({"paragraphs": [{"id": "p001", "text": "\n".join(["う" * 30] * 239)}]})
+    assert warned and all(len(line) == 20 for line in text.split("\n"))
+
+
 def test_whole_input_over_5000_cuts_each_line_to_the_allowance() -> None:
     text, warned = whole_input_text(_paragraphs(10, 1000))
     lines = text.split("\n")
