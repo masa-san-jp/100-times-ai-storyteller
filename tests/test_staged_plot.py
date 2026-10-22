@@ -476,7 +476,7 @@ def test_story_skeleton_records_the_climax_and_resolution_slots() -> None:
 def test_skeleton_card_budget_and_checks_follow_the_specification() -> None:
     for name, limit in (("lack", 150), ("climax", 200), ("resolution", 200), ("turn", 200)):
         definition = _definition(f"S6.skeleton_{name}")
-        assert definition["max_input_chars"] == 16000 and definition["version"] == 1
+        assert definition["max_input_chars"] == 16000 and definition["version"] == 2
         assert {"max_chars": {"n": limit}} in definition["validate"]["checks"]
         assert "ends_complete" in definition["validate"]["checks"]
         assert {"no_new_proper_nouns": {"mode": "warn"}} in definition["validate"]["checks"]

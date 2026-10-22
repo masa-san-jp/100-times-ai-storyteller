@@ -390,6 +390,42 @@ def skeleton_texts(
     return texts
 
 
+def part_mains(slots: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The main thread of each part of a saga, in part order (empty otherwise)."""
+
+    parts: dict[int, str] = {}
+    for slot in slots:
+        context = slot.get("thread_context") or {}
+        if context.get("kind") == "main" and isinstance(context.get("part"), int):
+            parts[context["part"]] = slot["thread"]
+    return [parts[part] for part in sorted(parts)]
+
+
+def following_element(
+    plan: Mapping[str, Any], element: Mapping[str, Any], mains: Sequence[str] = (),
+) -> Mapping[str, Any]:
+    """The skeleton element right after a turn (story-pipeline S6.plot §3, 直後の骨子).
+
+    The same thread's turn n+1; after a thread's last turn, element 2 (決定的な瞬間),
+    except that in a saga a part's main thread (``mains``, in part order) hands
+    over to the next part's turn 1.
+    """
+
+    elements = plan["elements"]
+    by_turn = {(e["thread"], e["n"]): e for e in elements if e["kind"] == "turn"}
+    following = by_turn.get((element["thread"], element["n"] + 1))
+    if following is not None:
+        return following
+    part_mains = list(mains)
+    if element["thread"] in part_mains:
+        position = part_mains.index(element["thread"])
+        if position + 1 < len(part_mains):
+            first = by_turn.get((part_mains[position + 1], 1))
+            if first is not None:
+                return first
+    return next(e for e in elements if e["kind"] == "climax")
+
+
 def assigned_elements(plan: Mapping[str, Any], slot_id: str) -> list[Mapping[str, Any]]:
     """The elements assigned to a slot: 転換（主筋 → 副筋、n の小さい順）→ 決定的な瞬間 → 結末の後."""
 
@@ -492,7 +528,8 @@ __all__ = [
     "ANALYSIS_KINDS", "ANALYSIS_LABELS", "SKELETON_CLIMAX", "augment_sources", "SKELETON_LACK",
     "SKELETON_RESOLUTION", "SKELETON_TURN", "SKELETON_TYPES", "UNDECIDED",
     "WHOLE_INPUT_WARNING", "analysis_lines", "assigned_elements", "cast_ledger",
-    "collect_outputs", "done_output", "event_ledger", "focus_skeleton", "input_ledger",
+    "collect_outputs", "done_output", "event_ledger", "focus_skeleton", "following_element",
+    "input_ledger", "part_mains",
     "plot_items", "skeleton_ledger", "skeleton_row", "skeleton_texts", "static_ledgers",
     "whole_input_text", "world_ledger",
 ]
@@ -586,6 +623,8 @@ def augment_sources(
             extra["stage_guidance"] = slot["stage"]["guidance"]
             if element["kind"] == "turn":
                 extra["required_event"] = plot["required_events"][element["n"] - 1]["description"]
+                following = following_element(plan, element, part_mains(slots))
+                extra["following_skeleton"] = [skeleton_row(following, texts.get(following["task"]))]
                 if slot.get("absent_role_note"):
                     extra["absent_role_note"] = slot["absent_role_note"]
     else:
