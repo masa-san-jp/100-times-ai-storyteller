@@ -104,6 +104,8 @@ def test_saved_legacy_dev_run_reopens_with_all_axes(tmp_path):
     manifest['scale']['derived'].pop('expansion_axes')
     atomic_write_json(data_dir / 'runs' / run / 'manifest.json', manifest)
     resumed = create_story_orchestrator(data_dir)
+    from tests.support.analysis import submit_analyses
+    submit_analyses(resumed, run)
     for number in range(2):
         claim = resumed.claim_next(run, executor_id='test')
         assert claim is not None

@@ -10,6 +10,10 @@ from typing import Any
 
 from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
+from .story_ledger import (
+    SKELETON_CLIMAX, SKELETON_LACK, SKELETON_RESOLUTION, SKELETON_TURN,
+    assigned_elements, static_ledgers,
+)
 from .story_s7 import event_tasks
 from .tables import load_table
 from .validation import validate_document
@@ -21,11 +25,23 @@ _REQUIRED_ROLES = frozenset(
     {"protagonist", "messenger", "supporter", "adversary", "bystander"}
 )
 _CONDITION_CHECK_VERSION = 5
+# ADR-0011: S6.expand v6 and later build the staged graph (skeleton, cumulative
+# context, no plot conditions).
+_STAGED_VERSION = 6
+
+
+def _is_staged(context: CodeTaskContext) -> bool:
+    """Only S6.expand's own definition version decides the graph (story-pipeline S6.plot)."""
+
+    definition = getattr(context, "definition", None)
+    version = definition.get("version", 0) if isinstance(definition, Mapping) else 0
+    return isinstance(version, int) and version >= _STAGED_VERSION
 
 
 def story_s6_expand(context: CodeTaskContext) -> CodeTaskResult:
     """Expand the S3 assignment into chronological slots and the S7-S9 DAG."""
 
+    staged = _is_staged(context)
     assignment = _assignment_from_context(context)
     structures = load_table("structures", repository_root=_REPOSITORY_ROOT)["templates"]
     plots = load_table("plot_types", repository_root=_REPOSITORY_ROOT)["types"]
@@ -58,17 +74,43 @@ def story_s6_expand(context: CodeTaskContext) -> CodeTaskResult:
                 world,
                 world_by_id,
                 generated_world,
+                staged=staged,
             )
         )
 
     chronological = _interleave_threads(context, threads, per_thread)
+    plan: dict[str, Any] | None = None
+    if staged:
+        plan = _plan_skeleton(threads, chronological, plot_by_id)
+        _assign_protagonist(chronological, plan, cast, character_outputs)
     scene_counts = _scene_counts(context, len(chronological))
     slots = _finalise_slots(chronological, scene_counts)
-    output = {"slots": slots}
+    output: dict[str, Any] = {"slots": slots}
+    if plan is not None:
+        for slot in slots:
+            slot["skeleton"] = [
+                element["task"] for element in assigned_elements(plan, slot["id"])
+            ]
+        output["skeleton"] = plan
+        output["ledgers"] = _static_ledgers(context, assignment)
     validate_document(output, _REPOSITORY_ROOT / "schemas" / "story" / "slots.schema.json")
 
-    additions = _build_downstream_tasks(context, slots)
+    additions = _build_downstream_tasks(context, slots, plan)
     return CodeTaskResult(output=output, add_tasks=additions)
+
+
+def _static_ledgers(
+    context: CodeTaskContext, assignment: Mapping[str, Any]
+) -> dict[str, list[str]]:
+    """The input, cast and world ledgers (story-pipeline S6.plot §1), built once."""
+
+    run_dir = getattr(context, "run_dir", None)
+    manifest = None
+    if isinstance(run_dir, Path) and (run_dir / "manifest.json").is_file():
+        manifest = load_manifest(run_dir / "manifest.json")
+    else:
+        run_dir = None
+    return static_ledgers(assignment, context.dependency_outputs, run_dir, manifest)
 
 
 def _assignment_from_context(context: CodeTaskContext) -> Mapping[str, Any]:
@@ -155,6 +197,8 @@ def _build_thread_slots(
     world: Mapping[str, Any],
     world_by_id: Mapping[str, Mapping[str, Any]],
     generated_world: Mapping[str, list[Mapping[str, Any]]],
+    *,
+    staged: bool = False,
 ) -> list[dict[str, Any]]:
     thread_id = thread.get("id")
     structure_id = thread.get("structure")
@@ -181,6 +225,10 @@ def _build_thread_slots(
         "name": plot["name"],
         "conflict": plot["conflict"],
     }
+    if staged:
+        # S7.event v22 shows the plot type's time design and pacing.
+        plot_context["time_design"] = plot["time_design"]
+        plot_context["pacing"] = plot["pacing"]
     thread_context = {
         "id": thread_id,
         "kind": thread.get("kind"),
@@ -227,11 +275,13 @@ def _build_thread_slots(
                 "theme": deepcopy(world.get("theme")),
                 "world_sections": selected_world,
                 "_stage_id": stage_id,
+                "_turns": [],
             }
             stage_slots.append(slot)
             slots.append(slot)
         thread_stage_slots[stage_id] = stage_slots
 
+    numbers = _required_event_numbers(plot, structure_id)
     for stage_id, required_events in required_by_stage.items():
         stage_slots = thread_stage_slots.get(stage_id)
         if not stage_slots:
@@ -239,10 +289,22 @@ def _build_thread_slots(
                 f"必須の出来事の割当先段階にスロットがありません: {thread_id}/{stage_id}"
             )
         for index, required_event in enumerate(required_events):
-            stage_slots[index % len(stage_slots)]["required_events"].append(
-                required_event
-            )
+            target = stage_slots[index % len(stage_slots)]
+            target["required_events"].append(required_event)
+            # The plot type's n-th required event, for the skeleton's turn n.
+            target["_turns"].append(numbers[stage_id][index])
     return slots
+
+
+def _required_event_numbers(
+    plot: Mapping[str, Any], structure_id: str
+) -> dict[str, list[int]]:
+    """1-based positions of the plot type's required events, by stage."""
+
+    result: dict[str, list[int]] = {}
+    for number, event in enumerate(plot["required_events"], start=1):
+        result.setdefault(event["stages"][structure_id], []).append(number)
+    return result
 
 
 def _required_events_by_stage(
@@ -318,33 +380,39 @@ def _assign_characters(
     if extra_count:
         selected.extend(context.random.sample(remaining, extra_count))
 
-    characters: list[dict[str, Any]] = []
-    for person in selected:
-        person_id = person.get("id")
-        if not isinstance(person_id, str):
-            raise ValueError("人物IDが不正です")
-        output = character_outputs.get(person_id)
-        if not isinstance(output, Mapping):
-            raise ValueError(f"S5 の人物出力がありません: {person_id}")
-        name = output.get("name")
-        motive = output.get("motive")
-        if not isinstance(name, str) or not name or not isinstance(motive, str) or not motive:
-            raise ValueError(f"S5 の人物出力が不正です: {person_id}")
-        character = {
-            "id": person_id,
-            "name": name,
-            "role": person["role"],
-            "motive": motive,
-        }
-        for field in ("intro", "voice"):
-            value = output.get(field)
-            if isinstance(value, str) and value:
-                character[field] = value
-        characters.append(character)
+    characters: list[dict[str, Any]] = [
+        _character_record(person, character_outputs) for person in selected
+    ]
     absent_note = stage.get("absent_role_note") if absent else None
     if absent_note is not None and not isinstance(absent_note, str):
         raise ValueError("段階の absent_role_note が不正です")
     return characters, absent_note
+
+
+def _character_record(
+    person: Mapping[str, Any], character_outputs: Mapping[str, Mapping[str, Any]]
+) -> dict[str, Any]:
+    person_id = person.get("id")
+    if not isinstance(person_id, str):
+        raise ValueError("人物IDが不正です")
+    output = character_outputs.get(person_id)
+    if not isinstance(output, Mapping):
+        raise ValueError(f"S5 の人物出力がありません: {person_id}")
+    name = output.get("name")
+    motive = output.get("motive")
+    if not isinstance(name, str) or not name or not isinstance(motive, str) or not motive:
+        raise ValueError(f"S5 の人物出力が不正です: {person_id}")
+    character = {
+        "id": person_id,
+        "name": name,
+        "role": person["role"],
+        "motive": motive,
+    }
+    for field in ("intro", "voice"):
+        value = output.get(field)
+        if isinstance(value, str) and value:
+            character[field] = value
+    return character
 
 
 def _world_outputs(
@@ -709,9 +777,107 @@ def _assign_beats(scene_count: int) -> list[dict[str, str]]:
     return result
 
 
+def _plan_skeleton(
+    threads: Sequence[Any],
+    chronological: Sequence[Mapping[str, Any]],
+    plot_by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Decide the skeleton's elements and the slots they are assigned to.
+
+    Element 2 (決定的な瞬間) goes to the first slot of the main thread whose stage
+    is a climax stage, element 3 (結末の後) to the main thread's last slot, and
+    each turn n to the slot that holds the plot type's n-th required event.  In
+    a saga (parts, each with its own main thread) the skeleton's main thread is
+    the last part's.
+    """
+
+    thread_ids = [thread["id"] for thread in threads]
+    mains = [thread for thread in threads if thread.get("kind") == "main"]
+    parts = [thread for thread in mains if thread.get("part") is not None]
+    if parts:
+        main = max(parts, key=lambda thread: thread["part"])
+    else:
+        main = mains[0] if mains else threads[0]
+    main_id = main["id"]
+    slot_ids = [f"e{index:03d}" for index in range(1, len(chronological) + 1)]
+    main_positions = [
+        index for index, slot in enumerate(chronological) if slot["thread"] == main_id
+    ]
+    if not main_positions:
+        raise ValueError("主筋のスロットがありません")
+    climax_position = next(
+        (index for index in main_positions if chronological[index]["stage"].get("climax") is True),
+        main_positions[-1],
+    )
+    main_plot = main["plot_type"]
+
+    def element(task: str, kind: str, name: str, position: int | None, **extra: Any) -> dict[str, Any]:
+        return {
+            "task": task, "kind": kind, "name": name, "thread": main_id, "n": None,
+            "slot": None if position is None else slot_ids[position],
+            "plot_type": main_plot, **extra,
+        }
+
+    elements = [
+        element(SKELETON_LACK, "lack", "欠落", None),
+        element(SKELETON_CLIMAX, "climax", "決定的な瞬間", climax_position),
+        element(SKELETON_RESOLUTION, "resolution", "結末の後", main_positions[-1]),
+    ]
+    for thread in threads:
+        # Ledger order within a thread is ascending n (P3-12 shares this order).
+        turns = sorted(
+            ((index, number)
+             for index, slot in enumerate(chronological)
+             if slot["thread"] == thread["id"]
+             for number in slot["_turns"]),
+            key=lambda item: item[1],
+        )
+        expected = len(plot_by_id[thread["plot_type"]]["required_events"])
+        if sorted(number for _index, number in turns) != list(range(1, expected + 1)):
+            raise ValueError(f"必須の出来事を割り当てたスロットが不足しています: {thread['id']}")
+        for index, number in turns:
+            elements.append(
+                {
+                    "task": f"{SKELETON_TURN}-{thread['id']}-{number}", "kind": "turn",
+                    "name": "転換", "thread": thread["id"],
+                    "n": number, "slot": slot_ids[index], "plot_type": thread["plot_type"],
+                }
+            )
+    return {
+        "main_thread": main_id, "thread_order": thread_ids, "saga": bool(parts),
+        "elements": elements,
+    }
+
+
+def _assign_protagonist(
+    chronological: Sequence[Mapping[str, Any]],
+    plan: Mapping[str, Any],
+    cast: Sequence[Any],
+    character_outputs: Mapping[str, Mapping[str, Any]],
+) -> None:
+    """Put the protagonist in the slots of elements 2 and 3 (the journey's resolution)."""
+
+    protagonist = next(
+        (person for person in cast if isinstance(person, Mapping) and person.get("role") == "protagonist"),
+        None,
+    )
+    if protagonist is None:
+        raise ValueError("主人公がいません")
+    for element in plan["elements"]:
+        if element["kind"] not in {"climax", "resolution"}:
+            continue
+        slot = chronological[int(element["slot"][1:]) - 1]
+        if any(person["id"] == protagonist["id"] for person in slot["characters"]):
+            continue
+        slot["characters"].insert(0, _character_record(protagonist, character_outputs))
+
+
 def _build_downstream_tasks(
-    context: CodeTaskContext, slots: Sequence[Mapping[str, Any]]
+    context: CodeTaskContext,
+    slots: Sequence[Mapping[str, Any]],
+    plan: Mapping[str, Any] | None = None,
 ) -> list[TaskSpec]:
+    staged = plan is not None
     parent_task_id = context.task_id
     scale = getattr(context, "scale", None)
     run_dir = getattr(context, "run_dir", None)
@@ -730,8 +896,19 @@ def _build_downstream_tasks(
     check_conditions = isinstance(own_version, int) and own_version >= _CONDITION_CHECK_VERSION
     conditions_by_thread: dict[str, tuple[str, ...]] = {}
     final_judge_by_thread: dict[str, tuple[str, ...]] = {}
+    skeleton_ids: tuple[str, ...] = ()
+    if plan is not None:
+        # ADR-0011: the skeleton replaces the plot conditions; no S7.condition,
+        # S8.condition_check or S8.condition_judge is created.
+        skeleton_specs = _skeleton_tasks(parent_task_id, plan)
+        additions.extend(skeleton_specs)
+        skeleton_ids = tuple(spec.task_id for spec in skeleton_specs)
     for slot in slots:
         if slot["thread"] in conditions_by_thread:
+            continue
+        if staged:
+            conditions_by_thread[slot["thread"]] = ()
+            final_judge_by_thread[slot["thread"]] = ()
             continue
         ids = condition_ids(slot["id"])
         conditions_by_thread[slot["thread"]] = ids
@@ -759,7 +936,7 @@ def _build_downstream_tasks(
                 index=(slot["id"], kind)))
             final_judge_by_thread[slot["thread"]] = (judge_id,)
 
-    for slot in slots:
+    for position, slot in enumerate(slots):
         event_id = slot["id"]
         thread_id = slot["thread"]
         s7_id = f"S7.assemble-{event_id}"
@@ -771,6 +948,11 @@ def _build_downstream_tasks(
             previous_judge.replace("S8.judge-", "S7.assemble-", 1)
             if previous_judge is not None else None
         )
+        if staged:
+            # The event ledger needs every earlier event confirmed (in time
+            # order, across threads) and the whole skeleton decided.
+            deps = [parent_task_id, *skeleton_ids, *(f"S8.judge-{earlier['id']}" for earlier in slots[:position])]
+            previous_event = None
         additions.extend(event_tasks(
             parent_task_id, event_id, deps, previous_event, conditions_by_thread[thread_id],
             candidate_count=candidate_count, checks=final_judge_by_thread[thread_id],
@@ -790,7 +972,7 @@ def _build_downstream_tasks(
 
     detail_ids: list[str] = []
     detail_judges: list[str] = []
-    for slot in slots:
+    for position, slot in enumerate(slots):
         event_id = slot["id"]
         beat_definitions = slot.get("beats")
         if not isinstance(beat_definitions, list) or not beat_definitions:
@@ -799,6 +981,9 @@ def _build_downstream_tasks(
         for number, _beat in enumerate(beat_definitions, start=1):
             detail_id = f"S7.detail-{event_id}-b{number}"
             deps = [parent_task_id, f"S7.assemble-{event_id}", f"S8.judge-{event_id}", *conditions_by_thread[slot["thread"]]]
+            if staged:
+                # Cumulative context: every earlier event is confirmed first.
+                deps.extend(f"S8.judge-{earlier['id']}" for earlier in slots[:position])
             if previous_detail is not None:
                 deps.extend((previous_detail, previous_detail.replace("S7.detail-", "S8.detail_judge-", 1)))
             additions.append(
@@ -839,6 +1024,7 @@ def _build_downstream_tasks(
                 (
                     parent_task_id,
                     *upstream_ids,
+                    *skeleton_ids,
                     *s7_ids_in_time_order,
                     *judge_ids,
                     *detail_ids,
@@ -848,6 +1034,42 @@ def _build_downstream_tasks(
         )
     )
     return additions
+
+
+def _skeleton_tasks(parent: str, plan: Mapping[str, Any]) -> list[TaskSpec]:
+    """The skeleton's tasks and their reverse-order dependencies (story-pipeline S6.plot §3).
+
+    Turn n depends on the later turns of its thread; in a saga it also depends on
+    every turn of the later parts, so that the back-calculation from the ending
+    continues across the parts.  Every turn depends on elements 1 to 3.
+    """
+
+    elements = plan["elements"]
+    turns = [element for element in elements if element["kind"] == "turn"]
+    order = {thread_id: position for position, thread_id in enumerate(plan["thread_order"])}
+    specs = [
+        TaskSpec(SKELETON_LACK, SKELETON_LACK, deps=(parent,)),
+        TaskSpec(SKELETON_CLIMAX, SKELETON_CLIMAX, deps=(parent, SKELETON_LACK)),
+        TaskSpec(
+            SKELETON_RESOLUTION, SKELETON_RESOLUTION,
+            deps=(parent, SKELETON_LACK, SKELETON_CLIMAX),
+        ),
+    ]
+    for element in turns:
+        later = [
+            other["task"]
+            for other in turns
+            if (other["thread"] == element["thread"] and other["n"] > element["n"])
+            or (plan.get("saga") and order[other["thread"]] > order[element["thread"]])
+        ]
+        specs.append(
+            TaskSpec(
+                element["task"], SKELETON_TURN,
+                deps=(parent, SKELETON_LACK, SKELETON_CLIMAX, SKELETON_RESOLUTION, *later),
+                index=(element["thread"], str(element["n"])),
+            )
+        )
+    return specs
 
 
 def _unique(values: Sequence[str]) -> tuple[str, ...]:

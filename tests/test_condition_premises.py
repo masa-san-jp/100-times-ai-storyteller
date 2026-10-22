@@ -3,6 +3,7 @@
 PROBE_CASES contains only synthetic public inputs for an independent real-model
 probe. Expected answers are fixture expectations, never submitted model outputs.
 """
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -34,7 +35,7 @@ PROBE_CASES = {
 
 
 def definition(task):
-    return yaml.safe_load((ROOT / f'harness/story/tasks/{task}.yaml').read_text(encoding='utf-8'))
+    return yaml.safe_load((task_path(task)).read_text(encoding='utf-8'))
 
 
 def probe_inputs(task, case):

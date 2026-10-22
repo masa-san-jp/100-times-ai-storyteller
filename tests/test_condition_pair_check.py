@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
+
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -173,7 +175,7 @@ def test_compatible_pairs_invalidate_nothing_and_card_matches_spec(tmp_path: Pat
 
 def test_card_fits_the_budget_with_maximum_conditions() -> None:
     """(6) Three 160-character conditions fit 2800 characters untruncated, retry included."""
-    definition = yaml.safe_load((ROOT / "harness/story/tasks/S8.condition_check.yaml").read_text(encoding="utf-8"))
+    definition = yaml.safe_load((task_path("S8.condition_check")).read_text(encoding="utf-8"))
     assert definition["version"] == 1 and definition["element"] == "judgement"
     assert definition["max_input_chars"] == 2800
     assert all("truncate" not in slot for slot in definition["inputs"].values())

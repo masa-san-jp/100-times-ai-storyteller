@@ -96,7 +96,9 @@ def test_meta_terms_are_rejected(term: str, output_kind: str):
 def test_real_task_definitions_enable_quality_checks():
     for path in (ROOT / "harness/story/tasks").glob("*.yaml"):
         definition = load_and_validate_yaml(path, ROOT / "schemas/task-definition.schema.json")
-        if definition["kind"] == "llm":
+        # S1.analysis and the S6.skeleton_* tasks have the validation fixed by
+        # story-pipeline S6.plot (ADR-0011): their text is derived from the inputs.
+        if definition["kind"] == "llm" and not definition["id"].startswith(("S1.analysis", "S6.skeleton")):
             assert "no_copy_from_inputs" in definition["validate"]["checks"]
             assert {"avoid_listed": {"table": "tables/meta_terms.yaml"}} in definition["validate"]["checks"]
 

@@ -130,7 +130,7 @@ S0 入力取り込み[C] → S1 素材抽出[L] → S2 要素プール拡張[L] 
 - **入力の台帳**（`input_ledger`）：入力の全体の分析3件（各1行）、S1 の素材（1件1行）。
 - **人物の台帳**（`cast_ledger`）：人物ごとに1行。「<名前>（<役>、<年齢>・<性別>・<種族>）願望：<want> 能力：<ability> 課題：<duty>」に続けて、S5 のすべての項目（紹介・プロフィール・動機・外見・性格・価値観・経歴（時期ごと）・関係（相手ごと）・口調・内面の葛藤・決め台詞）を、項目名つきで全文つなげ、最後に人物の事実シート（S5.fact。§9.4 の身長・職業・居住地・家族・年表・技能など）の各行を「事実：」に続けて「；」でつなぐ。主人公は「禁忌：<taboo> 抑圧されている自己像：<あれば>」を加える。S3 の要素は本文（`text`）を使う。
 - **世界の台帳**（`world_ledger`）：S4 のセクションごとに1行。「<セクション名>：事実：<確定した事実の行を「；」でつないだもの> 描写：<本文>」。一覧型の項目は項目ごとに1行（「<名前>：事実：<事実> 描写：<本文>」）。
-- **骨子の台帳**（`skeleton_ledger`）：そのカードのタスクが依存する骨子の要素（骨子の表の「入力」に挙げたもの。S7 以降では骨子のすべて）だけを、欠落 → 決定的な瞬間 → 結末の後 → 転換（筋ごと、時系列順）の順に1行ずつ。各行の先頭に要素の名前と、割り当てたスロットの出来事ID（あれば）を付ける。
+- **骨子の台帳**（`skeleton_ledger`）：そのカードのタスクが依存する骨子の要素（骨子の表の「入力」に挙げたもの。S7 以降では骨子のすべて）だけを、欠落 → 決定的な瞬間 → 結末の後 → 転換（筋ごと、時系列順）の順に1行ずつ。各行の先頭に要素の名前と、割り当てたスロットの出来事ID（あれば）を付ける（「決定的な瞬間（e007）：…」、転換は「転換（<筋>・<n>・<出来事ID>）：…」）。
 - **出来事の台帳**（`event_ledger`）：そのカードの出来事より時系列で前の、確定したすべての出来事を時系列順に1件1行。「<出来事ID>（<筋>・<段階の名前>）いつ：<when> どこで：<where> 誰が：<who の名前> なぜ：<why> 意思：<intent> 何が起きたか：<what> 結果：<result> 感情：<emotion> 伏線：<foreshadowing>」。
 
 #### 2. 入力の全体の分析（run に1組。新設）
@@ -168,7 +168,7 @@ heros-journey の骨子（§13）と、プロットの型の必須の転換点�
   3. プロットの型の葛藤の種類と緩急の原則に従って書く。
 - 入力の予算：`max_input_chars` は 16000。スロットは、骨子の台帳・プロットの型の7項目・必須の出来事とスロットの情報・解決すべき主題（`required: true`、`none`）、入力の台帳（`required: false`、`head`）、人物の台帳（`required: false`、`head`）、世界の台帳（`required: false`、`head`）の順に定義する。超過時は世界 → 人物 → 入力の台帳の順に、末尾の行から削る（task-model §3.2）。
 - 検証：字数の上限、`ends_complete`、`no_new_proper_nouns`（`mode: warn`）。`on_exhausted: skip`。省略した要素は、台帳で「（未定）」と表示し、manifest の `warnings` に記録する。
-- 出力は S9 が `story.json` の `skeleton`（`analysis`（`{"desire", "suppression", "conflict"}` の文字列。省略は `null`）・`lack`・`climax`・`resolution`・`turns[]`（`thread`・`n`・`slot`・`text`））に記録し、`story.md` の冒頭に「骨子」の節として並べる。S9.assemble は version 4 とし、S6.expand v6 以上のグラフでだけ `skeleton` を記録する（それ以外は従来どおり）。
+- 出力は S9 が `story.json` の `skeleton`（`analysis`（`{"desire", "suppression", "conflict"}` の文字列。省略は `null`）・`lack`・`climax`・`climax_slot`・`resolution`・`resolution_slot`・`turns[]`（`thread`・`n`・`slot`・`text`））に記録し（`*_slot` は割り当てたスロットの出来事ID。様式化が同じ骨子の台帳を組み立てるため）、`story.md` の冒頭に「骨子」の節として並べる。S9.assemble は version 4 とし、S6.expand v6 以上のグラフでだけ `skeleton` を記録する（それ以外は従来どおり）。
 - モデルの文脈長：16000字の入力に、手順・再試行の理由・出力（`max_tokens`）を加えても収まるよう、`config/models.yaml` の 20B のモデル（`gpt-oss:20b`、`openai/gpt-oss-20b`）の `context_length` を 32768 にする。
 - 受け入れの予算確認：最大の規模（`saga`）で、骨子と出来事のカードの `required: true` のスロットだけで `max_input_chars` を超えないことをテストで確かめる。超える場合は仕様の質問とする。加えて、`saga` の最大の出来事のカードを1回、`gpt-oss:20b` で推論し、Ollama が返す入力のトークン数（`prompt_eval_count`）に `max_tokens`（8192）を加えた値が `context_length` 以下であることを確かめる。対象は、`saga` で入力が最大になる骨子の転換・出来事・場面（S7.detail）のカードを各1枚、修正カード（前回の不合格理由つき）を1枚とする（様式化の F2 は P3-12 で確かめる）。Ollama のアダプタは `context_length` を `num_ctx` として送る。OpenAI 互換のサーバーは文脈長をサーバー側で設定するため、README の手順に「サーバーの文脈長を 32768 以上にする」を加える。
 

@@ -70,6 +70,10 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
 
     manifest = load_manifest(context.run_dir / "manifest.json")
     story = _assemble_story(context, manifest, assignment, slots, outputs)
+    # story-pipeline S6.plot §3: only the staged graph (S6.expand v6 and later)
+    # has a skeleton; every other graph is assembled as before.
+    if isinstance(slots_output.get("skeleton"), Mapping):
+        story["skeleton"] = _assemble_skeleton(slots_output["skeleton"], outputs)
     # Check referential integrity (who/sources exist) before rendering, so an
     # invalid story fails with that diagnosis instead of a KeyError while the
     # markdown templates look up a cast member that does not exist.
@@ -93,7 +97,7 @@ def story_s9_assemble(context: CodeTaskContext) -> CodeTaskResult:
             "characters": characters_markdown,
             "world": world_markdown + world_facts_markdown,
             # The 生成の記録 is not story text: count the story without it.
-            "story": render_story_markdown(story, details),
+            "story": render_story_markdown(story, details, include_skeleton=False),
         },
     )
     story["meta"]["volume"] = volume
@@ -194,6 +198,35 @@ def _assemble_story(
     if story["meta"]["input_ratio"] is None:
         raise ValueError("manifest の input_ratio が未確定です")
     return story
+
+
+def _assemble_skeleton(plan: Mapping[str, Any], outputs: Mapping[str, Any]) -> dict[str, Any]:
+    """The skeleton record: the analyses, 欠落, 決定的な瞬間, 結末の後 and the turns."""
+
+    def text(task_id: str) -> str:
+        value = outputs.get(task_id)
+        return value if isinstance(value, str) and value.strip() else UNDECIDED
+
+    analysis: dict[str, Any] = {}
+    for kind in ("desire", "suppression", "conflict"):
+        value = outputs.get(f"S1.analysis-{kind}")
+        analysis[kind] = value if isinstance(value, str) and value.strip() else None
+    elements = {element["task"]: element for element in plan["elements"]}
+    return {
+        "analysis": analysis,
+        "lack": text("S6.skeleton_lack"),
+        "climax": text("S6.skeleton_climax"),
+        "climax_slot": elements["S6.skeleton_climax"]["slot"],
+        "resolution": text("S6.skeleton_resolution"),
+        "resolution_slot": elements["S6.skeleton_resolution"]["slot"],
+        "turns": [
+            {
+                "thread": element["thread"], "n": element["n"], "slot": element["slot"],
+                "text": text(element["task"]),
+            }
+            for element in elements.values() if element["kind"] == "turn"
+        ],
+    }
 
 
 def _copy_threads(value: Any) -> list[dict[str, Any]]:
@@ -546,6 +579,8 @@ def render_story_markdown(
     story: Mapping[str, Any],
     details: Mapping[str, str] | None = None,
     record: Sequence[str] | None = None,
+    *,
+    include_skeleton: bool = True,
 ) -> str:
     """Render story.md: event summaries, each followed by its scene detail.
 
@@ -560,6 +595,9 @@ def render_story_markdown(
     cast_names = {person["id"]: person["name"] for person in story["cast"]}
 
     lines = [f"# {title_plot}：{protagonist['name']}", ""]
+    skeleton = story.get("skeleton")
+    if include_skeleton and isinstance(skeleton, Mapping):
+        lines.extend(_skeleton_lines(skeleton))
     for index, event in enumerate(story["events"], start=1):
         names = "、".join(cast_names[person_id] for person_id in event["who"])
         lines.extend(
@@ -581,6 +619,28 @@ def render_story_markdown(
     if record is not None:
         lines.extend(["## 生成の記録", "", *record, ""])
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _skeleton_lines(skeleton: Mapping[str, Any]) -> list[str]:
+    """The 「骨子」 section at the top of story.md."""
+
+    labels = {"desire": "切望", "suppression": "抑圧", "conflict": "葛藤"}
+    lines = ["## 骨子", ""]
+    for kind, label in labels.items():
+        lines.append(f"- 入力の分析（{label}）：{skeleton['analysis'].get(kind) or UNDECIDED}")
+    lines.extend(
+        [
+            f"- 欠落：{skeleton['lack']}",
+            f"- 決定的な瞬間（{skeleton['climax_slot']}）：{skeleton['climax']}",
+            f"- 結末の後（{skeleton['resolution_slot']}）：{skeleton['resolution']}",
+        ]
+    )
+    lines.extend(
+        f"- 転換{turn['n']}（筋{turn['thread']}・出来事{turn['slot']}）：{turn['text']}"
+        for turn in skeleton["turns"]
+    )
+    lines.append("")
+    return lines
 
 
 def render_characters_markdown(

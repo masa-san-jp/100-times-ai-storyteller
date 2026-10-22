@@ -756,6 +756,10 @@ def _build_downstream_tasks(
             raise ValueError("assignment の world task の ID または種別が不正です")
         tasks_by_section.setdefault(section_id, []).append(world_task)
 
+    analysis_ids = tuple(
+        task_id for task_id in ("S1.analysis-desire", "S1.analysis-suppression", "S1.analysis-conflict")
+        if task_id in manifest.get("tasks", {})
+    )
     world_task_ids: dict[str, list[str]] = {}
     additions: list[TaskSpec] = []
     section_specs: list[tuple[str, Mapping[str, Any], list[Mapping[str, Any]]]] = []
@@ -807,7 +811,10 @@ def _build_downstream_tasks(
                 TaskSpec(
                     f"{task_type}-{world_task['id']}",
                     task_type,
-                    deps=item_deps,
+                    # S4.section v13 reads the analysis of the whole input.
+                    deps=_unique_dependencies(
+                        (*item_deps, *(analysis_ids if task_type == "S4.section" else ()))
+                    ),
                     index=(world_task["id"],),
                 )
             )
@@ -924,7 +931,9 @@ def _build_downstream_tasks(
                 TaskSpec(
                     profile_id,
                     "S5.profile",
-                    deps=_unique_dependencies((parent_task_id, *protagonist_name_deps, name_id, *fact_ids)),
+                    deps=_unique_dependencies(
+                        (parent_task_id, *protagonist_name_deps, name_id, *fact_ids, *analysis_ids)
+                    ),
                     index=(person_id,),
                 ),
                 TaskSpec(intro_id, "S5.intro", deps=parallel_deps, index=(person_id,)),
@@ -933,13 +942,15 @@ def _build_downstream_tasks(
                 TaskSpec(values_id, "S5.values", deps=parallel_deps, index=(person_id,)),
                 TaskSpec(voice_id, "S5.voice", deps=parallel_deps, index=(person_id,)),
                 TaskSpec(
-                    inner_conflict_id, "S5.inner_conflict", deps=parallel_deps, index=(person_id,)
+                    inner_conflict_id, "S5.inner_conflict",
+                    deps=_unique_dependencies((*parallel_deps, *analysis_ids)), index=(person_id,),
                 ),
                 TaskSpec(
                     motive_id,
                     "S5.motive",
                     deps=_unique_dependencies(
-                        (parent_task_id, profile_id, *fact_ids, *name_task_ids, *protagonist_intro_deps)
+                        (parent_task_id, profile_id, *fact_ids, *name_task_ids, *protagonist_intro_deps,
+                         *analysis_ids)
                     ),
                     index=(person_id,),
                 ),
@@ -994,7 +1005,7 @@ def _build_downstream_tasks(
         TaskSpec(
             "S6.expand",
             "S6.expand",
-            deps=_unique_dependencies((parent_task_id, *s4_ids, *s5_ids)),
+            deps=_unique_dependencies((parent_task_id, *analysis_ids, *s4_ids, *s5_ids)),
         )
     )
     return additions

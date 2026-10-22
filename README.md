@@ -78,6 +78,7 @@ uv run st auto --provider openai-compatible --model openai/gpt-oss-20b --run RUN
 
 - 既定の接続先は `config/models.yaml` の `openai/gpt-oss-20b`（`http://127.0.0.1:1234`）です。モデル名はサーバー側の識別子に合わせ、`config/models.yaml` に項目を足してください。ポートが違う場合は `--endpoint http://127.0.0.1:PORT` で指定します。
 - 接続先は localhost に限ります。
+- OpenAI 互換のサーバーは、文脈長（コンテキストの長さ）をサーバー側で設定します。物語の骨子と累積的コンテクストを受けるカードは入力が長いため、**サーバーの文脈長を 32768 以上にしてください**（LM Studio ではモデルを読み込むときの「Context Length」、llama.cpp のサーバーでは `-c` / `--ctx-size`）。Ollama は `config/models.yaml` の `context_length`（32768）を `num_ctx` としてアダプタが送るため、設定は不要です。
 
 #### Claude Code・Codex（実行者ワークスペース）
 

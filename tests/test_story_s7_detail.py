@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
+
 from pathlib import Path
 
 from storyteller.cards import generate_task_card
@@ -14,7 +16,7 @@ TASK_SCHEMA = ROOT / "schemas" / "task-definition.schema.json"
 
 def _definition() -> dict[str, object]:
     value = load_and_validate_yaml(
-        ROOT / "harness" / "story" / "tasks" / "S7.detail.yaml", TASK_SCHEMA
+        task_path("S7.detail"), TASK_SCHEMA
     )
     assert isinstance(value, dict)
     return value

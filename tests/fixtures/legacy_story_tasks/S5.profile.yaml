@@ -1,0 +1,74 @@
+id: S5.profile
+version: 14
+kind: llm
+element: text
+inputs:
+  facts:
+    label: 人物の事実のシート
+    from: S5.fact
+    select: "[{slot}]"
+    required: true
+  character:
+    label: 割り当てられた人物
+    from: S3.assign
+    select: character
+    required: true
+  name:
+    label: 名前
+    from: S5.name
+    select: "[{slot}].name"
+    required: true
+    truncate: head
+  role_definition:
+    label: 役の定義
+    from: S3.assign
+    select: cast[{slot}].role_definition
+    required: true
+  plot_requirements:
+    label: プロット型の人物要件
+    from: S3.assign
+    select: cast[{slot}].plot_context
+    required: true
+  protagonist_name:
+    label: 主人公の名前
+    from: S5.name
+    select: "[c1].name"
+    required: false
+    truncate: head
+  protagonist_role:
+    label: 主人公の役
+    from: S3.assign
+    select: cast[c1].role
+    required: false
+  glossary:
+    label: 関係する用語集
+    from: S3.assign
+    select: glossary
+    required: false
+    truncate: head
+output: text
+extend_to_min: true
+card:
+  role: 与えられた人物の割り当てだけを統合し、プロフィールを書く。
+  steps:
+    - 本文の冒頭を事実のシートの対象人物の名前を主語にした「対象名は」または「対象名が」で始める。
+    - 事実のシートと矛盾させない。全項目の列挙は不要。用語集 ID は対応する名前で表記し、事実にない数値や固有名詞を加えない。
+    - 固有名詞は入力と用語集にあるものだけを使い、新しい名前や呼称を作らない。
+    - 名前、役の定義、年齢、性別、種族、能力、願望、役割・課題を具体的に統合する。
+    - 主人公には禁忌と抑圧されている自己像があれば反映し、他の人物には主人公の名前と役だけを文脈として反映する。
+    - 入力にない出来事、場所、過去、人間関係、診断を付け加えず、800〜1500字を目安に書く。
+validate:
+  checks:
+    - character_identity:
+        require_subject: true
+    - no_new_proper_nouns:
+        mode: warn
+    - no_copy_from_inputs
+    - avoid_listed:
+        table: tables/meta_terms.yaml
+    - min_chars:
+        n: 800
+    - max_chars:
+        n: 1500
+        fix: trim
+max_input_chars: 2800

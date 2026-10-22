@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.support.legacy_harness import legacy_story_harness, task_path  # noqa: F401
+
 import pytest
 
 from storyteller.cards import generate_task_card

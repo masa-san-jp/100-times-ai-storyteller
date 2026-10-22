@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tests.support.analysis import submit_analyses
 from storyteller.new_run import create_free_run, create_story_orchestrator
 from storyteller.task_outputs import task_sources
 from storyteller.validation import load_and_validate_yaml
@@ -45,6 +46,7 @@ def test_dummy_executor_submission_assigns_stable_material_ids_and_card_history(
     data_dir = tmp_path / "data"
     run_id = _new_run(data_dir, source)
     harness = create_story_orchestrator(data_dir)
+    submit_analyses(harness, run_id)
     for paragraph in ("p001", "p002"):
         for number in range(1, 6):
             task_dir = _submit(harness, run_id, paragraph, number)
@@ -63,6 +65,7 @@ def test_one_failed_material_preserves_others_and_continues_the_group(tmp_path: 
     source.write_text("見慣れた日常を守る。\n\n遠い場所に憧れる。", encoding="utf-8")
     harness = create_story_orchestrator(tmp_path / "data")
     run_id = _new_run(tmp_path / "data", source)
+    submit_analyses(harness, run_id)
     first = _submit(harness, run_id, "p001", 1)
     saved = (first / "output.json").read_text(encoding="utf-8")
     for _ in range(5):
@@ -91,10 +94,11 @@ def test_s1_cached_elements_keep_ids_and_history(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     harness = create_story_orchestrator(data_dir)
     run_id = _new_run(data_dir, source)
+    submit_analyses(harness, run_id)
     for number in range(1, 6):
         _submit(harness, run_id, "p001", number)
     cached_id = _new_run(data_dir, source, seed=456)
-    for _ in range(5):
+    for _ in range(10):
         manifest = harness.advance(cached_id)
     for number in range(1, 6):
         task_id = f"S1.extract-p001-{number}"

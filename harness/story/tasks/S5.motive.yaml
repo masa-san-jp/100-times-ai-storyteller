@@ -1,5 +1,5 @@
 id: S5.motive
-version: 12
+version: 13
 kind: llm
 element: text
 inputs:
@@ -68,6 +68,12 @@ inputs:
     label: 関係する用語集
     from: S3.assign
     select: glossary
+    required: false
+    truncate: head
+  analysis:
+    label: 入力の全体の分析
+    from: S1.analysis
+    select: output
     required: false
     truncate: head
 output: text
