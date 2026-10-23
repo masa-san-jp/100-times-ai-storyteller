@@ -171,6 +171,7 @@ def test_turns_are_assigned_to_slots_in_their_order() -> None:
     import yaml
 
     plots = yaml.safe_load((ROOT / "tables" / "plot_types.yaml").read_text(encoding="utf-8"))["types"]
+    templates = yaml.safe_load((ROOT / "tables" / "structures.yaml").read_text(encoding="utf-8"))["templates"]
     checked = 0
     combinations = [
         (plot["id"], structure, events)
@@ -180,12 +181,11 @@ def test_turns_are_assigned_to_slots_in_their_order() -> None:
             if plot["structure"] == "standard" else (plot["structure"],)
         )
         for events in (3, 4, 5, 6, 8, 12, 16)
+        # Every stage needs at least one event.
+        if events >= len(templates[structure]["stages"])
     ]
     for plot_id, structure, events in combinations:
-        try:
-            result = _expand([_thread(1, plot=plot_id, events=events, structure=structure)])
-        except ValueError:
-            continue  # sizes a structure does not accept
+        result = _expand([_thread(1, plot=plot_id, events=events, structure=structure)])
         turns = [e for e in result.output["skeleton"]["elements"] if e["kind"] == "turn"]
         slots = [e["slot"] for e in sorted(turns, key=lambda e: e["n"])]
         assert slots == sorted(slots), (plot_id, structure, events, slots)
