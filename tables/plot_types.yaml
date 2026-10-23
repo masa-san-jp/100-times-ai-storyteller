@@ -15,8 +15,8 @@ types:
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 旅の途中で目的を試す障害と仲間との関係が生じる。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
-      - description: 旅で得たものを帰還後の世界で活かす選択をする。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+      - description: 目的地で求めたものに手が届き、それを持ち帰るには代償が要ると分かる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: overcoming-the-monster
     name: モンスターを倒す
     core: 主人公が共同体を脅かす敵対的な力に立ち向かい、生存と変化を勝ち取る。
@@ -33,8 +33,8 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: call-to-adventure}
       - description: 主人公が脅威の中心へ近づき、最大の危険に直面する。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
-      - description: 脅威との対決の結果として新しい秩序を選ぶ。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+      - description: 敵対者の正体と弱点が明らかになり、対決の場と時が定まる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: rags-to-riches
     name: 成り上がり
     core: 欠落した立場にいる主人公が能力と関係を得て、社会での位置を変える。
@@ -50,9 +50,9 @@ types:
       - description: 主人公の低い立場と満たされない願望が示される。
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 主人公の努力が認められ、立場を変える機会が訪れる。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: reward}
-      - description: 得た立場を何のために使うかを選び直す。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials}
+      - description: 得た立場が試され、それを保つために失うものが明らかになる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: rebirth
     name: 再生
     core: 固着した生き方に囚われた主人公が試練を経て、別の価値観で生き直す。
@@ -68,9 +68,9 @@ types:
       - description: 主人公が変われない状態とその代償が示される。
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 古い生き方を守れない危機に直面する。
-        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal}
-      - description: 主人公が新しい理解を行動として選ぶ。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials}
+      - description: 古い生き方に頼った最後の試みが失敗し、それを続ける代償が目の前に現れる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: romance
     name: ラブストーリー
     core: 異なる願望を持つ二人が障害を越え、関係を結ぶか手放すかを選ぶ。
@@ -87,8 +87,8 @@ types:
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 関係を阻む規則や誤解が表面化する。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
-      - description: 二人が関係の形と代償を自分たちで選ぶ。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+      - description: 二人を引き離す力が最も強まり、関係を続けるには何かを手放さねばならないと分かる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: mystery-crime
     name: ミステリー／犯罪
     core: 隠された事実を追う主人公が手がかりと危険を積み重ね、真相に到達する。
@@ -105,8 +105,8 @@ types:
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 手がかりが既存の理解を反転させ、真相の危険が近づく。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
-      - description: 真相を示す証拠と、それを受け止める結果が現れる。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: reward}
+      - description: 真相を示す決定的な証拠の在りかが分かり、それが誰を傷つけるかが見えてくる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: tragedy
     name: 悲劇
     core: 主人公が自らの願望や選択に囚われ、回避できたはずの喪失へ進んでいく。
@@ -123,8 +123,8 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 警告や支援を退け、破局へ向かう選択をする。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: refusal}
-      - description: 選択の代償が決定的な喪失として現れる。
-        stages: {three-beat: resolution, kishotenketsu: ten, heros-journey-12: ordeal}
+      - description: 引き返す最後の機会が示されるが、主人公は自らの欠落のためにそれを見送る。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: voyage-and-return
     name: 帰還
     core: 主人公が異質な世界で試練を経験し、元の世界を新しい目で見直して帰る。
@@ -141,8 +141,8 @@ types:
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: threshold}
       - description: 異質な環境の規則と危険を知り、帰還の手段を探す。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
-      - description: 得た視点を持って日常へ戻り、周囲の意味を変える。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+      - description: 帰還の道が開き、異質な世界で得た視点が日常と相容れないことが分かる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: comedy
     name: コメディ
     core: 誤解と関係のもつれが連鎖し、固定された立場がほどけて新しい結びつきに至る。
@@ -159,8 +159,8 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 誤解が重なり、人物が自分の前提を疑う転換が起こる。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
-      - description: 誤解がほどけ、人物同士の関係が組み替えられる。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+      - description: 誤解が最大に膨らみ、関係する人物が一つの場に集まる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: survival-dystopia
     name: サバイバル／ディストピア
     core: 制約の強い社会で主人公が生存のために動き、支配の仕組みを問い直す。
@@ -177,8 +177,8 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 主人公が支配の中心へ近づき、生存と抵抗の代償を知る。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
-      - description: 生き残った者たちが新しい秩序の可能性を選ぶ。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+      - description: 生存の手段が尽きかけ、支配する側と生き残ろうとする側が正面からぶつかる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: revenge
     name: 復讐
     core: 喪失を受けた主人公が加害の構造を追い、報復の代償と自分の選択に向き合う。
@@ -195,8 +195,8 @@ types:
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 復讐の過程で、主人公自身が越えてはいけない線に近づく。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
-      - description: 報復の結果を受け、復讐を続けるか終えるかを選ぶ。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+      - description: 標的に手が届く位置に立ち、報復がもたらす犠牲が明らかになる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: conspiracy-political-drama
     name: 陰謀・政治劇
     core: 主人公が権力と情報の絡む陰謀を追い、誰に何を委ねるかを決める。
@@ -213,8 +213,8 @@ types:
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: call-to-adventure}
       - description: 同盟と裏切りの中で、権力の中心へ接近する。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
-      - description: 真相を公にするか利用するかの決断を下す。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+      - description: 陰謀の全体像を示す証拠を手にし、それを狙う勢力に追い詰められる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: human-drama
     name: 人間ドラマ
     core: 人物たちが身近な関係の中で異なる願望と責任を受け止め、共に変化する。
@@ -231,8 +231,8 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 課題を避けられない出来事が起こり、関係の真意が試される。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
-      - description: 人物たちが関係の形とこれからの責任を選ぶ。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir}
+      - description: 抱えてきた食い違いが表に出て、関係が壊れかける。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: philosophical-existential
     name: 哲学的／存在論的
     core: 主人公が世界の意味や自分の存在を問い直し、選んだ生き方とその責任を引き受ける。
@@ -248,9 +248,9 @@ types:
       - description: 主人公が自分の存在や世界の意味に疑問を抱く契機が示される。
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 既成の答えを失った主人公が、自由に選ぶこととその責任の重さに直面する。
-        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal}
-      - description: 主人公が唯一の答えに頼らず、自ら選んだ意味と生き方を引き受ける。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: resurrection}
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials}
+      - description: 頼ろうとした最後の答えも崩れ、主人公が意味の空白の前に立つ。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: time-loop
     name: タイムループ／時間改変
     core: 同じ時間が繰り返される、または書き換えられる中で、主人公が反復から学び、時間を終わらせる選択をする。
@@ -267,8 +267,8 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, time-loop: loop-onset}
       - description: 周回ごとの差分から、主人公が反復の規則を学ぶ。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, time-loop: loop-repeat}
-      - description: 反復を終える、または引き受ける選択をして時間が動き出す。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, time-loop: loop-release}
+      - description: 周回の仕組みと、反復を終えるための条件が明らかになる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, time-loop: loop-repeat}
   - id: surrealism
     name: シュルレアリスム／超現実
     core: 現実の論理が夢のように歪む世界で、主人公が連想と象徴に導かれ、説明されない変容を通過する。
@@ -284,9 +284,9 @@ types:
       - description: 日常の風景に、現実の論理から外れた最初の歪みが現れる。
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, surrealism: dream-threshold}
       - description: 連想で場面が飛び、主人公の持ち物や記憶が別の物に変容する。
-        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal, surrealism: dream-drift}
-      - description: 象徴が結びつき、主人公が説明できない変容を受け入れる。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, surrealism: dream-awakening}
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, surrealism: dream-drift}
+      - description: 変容した物や記憶が繰り返し現れ、主人公の中で結びつく寸前まで近づく。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, surrealism: dream-drift}
   - id: fragmentary
     name: 断片的構成（フラグメント／コラージュ）
     core: 時系列や視点が分断された断片を並べ、読者が断片の間の関係から全体像を組み立てる。
@@ -303,8 +303,8 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, fragmentary: fragment-scatter}
       - description: 断片の間に共通する物や言葉が現れ、隠れていた関係が見え始める。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, fragmentary: fragment-echo}
-      - description: 最後の断片が全体像を反転させ、断片の意味を結びつける。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, fragmentary: fragment-assembly}
+      - description: 断片どうしの食い違いが際立ち、欠けている最後の断片の存在が示される。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, fragmentary: fragment-echo}
   - id: metafiction
     name: メタフィクション／ポストモダン
     core: 物語が自分自身を語る行為を意識し、語り手・作者・読者・虚構の枠組みを揺さぶる。
@@ -320,9 +320,9 @@ types:
       - description: 物語が通常の語りとして始まり、語りの枠が意識される兆しが現れる。
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, metafiction: frame-opening}
       - description: 語りの枠が壊れ、人物が語られていることに気づく。
-        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal, metafiction: frame-breaking}
-      - description: 語りの枠を引き受けるか、枠の外へ出る選択をして物語が閉じる。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, metafiction: frame-closing}
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, metafiction: frame-breaking}
+      - description: 人物が語りの枠の外の気配に触れ、物語を続けるか枠を越えるかの岐路に立つ。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, metafiction: frame-breaking}
   - id: lyrical
     name: 詩的・抽象的（リリカル）
     core: 出来事の連なりよりも、イメージ、音、感情の流れで物語を運び、一つの情動へ収束させる。
@@ -338,9 +338,9 @@ types:
       - description: 感情の発端となるイメージが示される。
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, lyrical: image-seed}
       - description: 同じイメージが形を変えて反復し、感情が高まる。
-        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: ordeal, lyrical: image-swell}
-      - description: 感情が一つのイメージに結晶し、静けさが訪れる。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, lyrical: image-calm}
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, lyrical: image-swell}
+      - description: 感情が高まりきり、いくつものイメージが一つへ寄り集まっていく。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, lyrical: image-swell}
   - id: documentary-essay
     name: ドキュメンタリー／エッセイ
     core: 記録、観察、考察の形で出来事を語り、事実と解釈の間から主題を浮かび上がらせる。
@@ -357,8 +357,8 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, documentary-essay: record-opening}
       - description: 観察と証言が積み重なり、事実の間に矛盾や意味が見え始める。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, documentary-essay: record-observation}
-      - description: 集めた観察から考察が引き出され、結論を断定せずに記す。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, documentary-essay: record-reflection}
+      - description: 観察が出そろい、それらを貫く一つの問いが浮かび上がる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, documentary-essay: record-observation}
   - id: anticlimax
     name: アンチクライマックス／無為
     core: 期待された劇的な出来事が起こらず、待機、停滞、日常の持続の中で物語の意味を成立させる。
@@ -375,5 +375,5 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, anticlimax: expectation}
       - description: 期待された出来事が起こらないまま、日常と待機が続く。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, anticlimax: suspension}
-      - description: 何も起こらなかったことを主人公が受け止め、日常が続く。
-        stages: {three-beat: resolution, kishotenketsu: ketsu, heros-journey-12: return-with-elixir, anticlimax: remainder}
+      - description: 期待された出来事の時が迫り、周囲の期待が最も高まる。
+        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, anticlimax: suspension}

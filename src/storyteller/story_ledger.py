@@ -364,15 +364,24 @@ def skeleton_row(element: Mapping[str, Any], text: Any) -> str:
 
 def skeleton_ledger(
     plan: Mapping[str, Any], texts: Mapping[str, Any], *, only: Sequence[str] | None = None,
+    full: Sequence[str] | None = None,
 ) -> list[str]:
-    """Rows in order: 欠落 → 決定的な瞬間 → 結末の後 → 転換（筋ごと、時系列順）."""
+    """Rows in order: 欠落 → 決定的な瞬間 → 結末の後 → 転換（筋ごと、時系列順）.
+
+    With ``full``, only those elements keep their text; the others are shown by
+    name and event ID alone (the turn cards, story-pipeline S6.plot §3).
+    """
 
     selected = None if only is None else set(only)
-    return [
-        skeleton_row(element, texts.get(element["task"]))
-        for element in plan.get("elements", [])
-        if selected is None or element["task"] in selected
-    ]
+    rows = []
+    for element in plan.get("elements", []):
+        if selected is not None and element["task"] not in selected:
+            continue
+        row = skeleton_row(element, texts.get(element["task"]))
+        if full is not None and element["task"] not in full:
+            row = row.split("：", 1)[0]
+        rows.append(row)
+    return rows
 
 
 def skeleton_texts(
@@ -606,7 +615,11 @@ def augment_sources(
         element = next(item for item in plan["elements"] if item["task"] == task_id)
         needed = [item["task"] for item in plan["elements"] if item["task"] in task.get("deps", ())]
         if needed:
-            extra["skeleton_ledger"] = skeleton_ledger(plan, texts, only=needed)
+            full = None
+            if element["kind"] == "turn":
+                following = following_element(plan, element, part_mains(slots))
+                full = [SKELETON_LACK, following["task"]]
+            extra["skeleton_ledger"] = skeleton_ledger(plan, texts, only=needed, full=full)
         plot = plots[element["plot_type"]]
         extra["plot_items"] = plot_items(plot)
         theme = slots[0].get("theme") if slots else None

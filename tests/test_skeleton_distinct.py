@@ -36,6 +36,10 @@ def _following(result: Any, task_id: str) -> list[str]:
     following = inputs["following_skeleton"]
     # The line is the same as its row in the skeleton ledger, and its text is confirmed.
     assert following[0] in inputs["skeleton_ledger"]
+    # Every other later element is shown by name and event ID only (no text to copy).
+    for row in inputs["skeleton_ledger"]:
+        if row != following[0] and not row.startswith("欠落："):
+            assert "：" not in row and re.fullmatch(r"(決定的な瞬間|結末の後|転換)（[^）]+）", row), row
     assert not following[0].endswith("（未定）")
     return following
 
@@ -139,3 +143,25 @@ def test_v5_graph_is_unchanged() -> None:
     result = _expand([_thread(1)], version=5)
     assert not any(task.type.startswith("S6.skeleton") for task in result.add_tasks)
     assert "skeleton" not in result.output
+
+
+# The last required event leads up to the climax instead of being the climax (story-pipeline §4.1).
+
+def test_last_required_event_is_in_the_stage_right_before_the_climax() -> None:
+    import yaml
+
+    templates = yaml.safe_load((ROOT / "tables" / "structures.yaml").read_text(encoding="utf-8"))["templates"]
+    plots = yaml.safe_load((ROOT / "tables" / "plot_types.yaml").read_text(encoding="utf-8"))["types"]
+    order = {key: [stage["id"] for stage in t["stages"]] for key, t in templates.items()}
+    before_climax = {
+        key: order[key][next(i for i, s in enumerate(t["stages"]) if s["climax"]) - 1]
+        for key, t in templates.items()
+    }
+    for plot in plots:
+        events = plot["required_events"]
+        assert events[-1]["description"] != plot["climax"]
+        for template, stage in events[-1]["stages"].items():
+            assert stage == before_climax[template], (plot["id"], template)
+        for template in events[0]["stages"]:
+            positions = [order[template].index(event["stages"][template]) for event in events]
+            assert positions[-2] <= positions[-1], (plot["id"], template, positions)
