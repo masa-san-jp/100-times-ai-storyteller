@@ -289,7 +289,12 @@ def _build_thread_slots(
                 f"必須の出来事の割当先段階にスロットがありません: {thread_id}/{stage_id}"
             )
         for index, required_event in enumerate(required_events):
-            target = stage_slots[index % len(stage_slots)]
+            # More events than slots: fill the slots in order, so that a later required
+            # event never comes before an earlier one (the skeleton's turns follow n).
+            if len(required_events) > len(stage_slots):
+                target = stage_slots[index * len(stage_slots) // len(required_events)]
+            else:
+                target = stage_slots[index]
             target["required_events"].append(required_event)
             # The plot type's n-th required event, for the skeleton's turn n.
             target["_turns"].append(numbers[stage_id][index])

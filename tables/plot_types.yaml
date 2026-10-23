@@ -123,7 +123,7 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 警告や支援を退け、破局へ向かう選択をする。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: refusal}
-      - description: 引き返す最後の機会が示されるが、主人公は自らの欠落のためにそれを見送る。
+      - description: 破局の兆しが現実になり始め、主人公が守ろうとしたものが危うくなる。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: voyage-and-return
     name: 帰還
@@ -138,7 +138,7 @@ types:
     customization_notes: 入力の場所・時代・帰属感を異質な世界の規則に反映し、帰還後に具体的な意味の変化を残す。
     required_events:
       - description: 主人公が日常から離れ、異質な環境へ入る。
-        stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: threshold}
+        stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: threshold}
       - description: 異質な環境の規則と危険を知り、帰還の手段を探す。
         stages: {three-beat: turn, kishotenketsu: sho, heros-journey-12: trials}
       - description: 帰還の道が開き、異質な世界で得た視点が日常と相容れないことが分かる。
@@ -249,7 +249,7 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world}
       - description: 既成の答えを失った主人公が、自由に選ぶこととその責任の重さに直面する。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials}
-      - description: 頼ろうとした最後の答えも崩れ、主人公が意味の空白の前に立つ。
+      - description: 主人公が仮に頼った新しい答えも、現実の出来事の前で通用しないと分かる。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach}
   - id: time-loop
     name: タイムループ／時間改変
@@ -267,7 +267,7 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, time-loop: loop-onset}
       - description: 周回ごとの差分から、主人公が反復の規則を学ぶ。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, time-loop: loop-repeat}
-      - description: 周回の仕組みと、反復を終えるための条件が明らかになる。
+      - description: 反復を終えるための条件と、そのために失うものが明らかになる。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, time-loop: loop-repeat}
   - id: surrealism
     name: シュルレアリスム／超現実
@@ -321,7 +321,7 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, metafiction: frame-opening}
       - description: 語りの枠が壊れ、人物が語られていることに気づく。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, metafiction: frame-breaking}
-      - description: 人物が語りの枠の外の気配に触れ、物語を続けるか枠を越えるかの岐路に立つ。
+      - description: 語りの枠の継ぎ目がいくつも現れ、人物が語りの続きを予感する。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, metafiction: frame-breaking}
   - id: lyrical
     name: 詩的・抽象的（リリカル）
@@ -339,7 +339,7 @@ types:
         stages: {three-beat: setup, kishotenketsu: ki, heros-journey-12: ordinary-world, lyrical: image-seed}
       - description: 同じイメージが形を変えて反復し、感情が高まる。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: trials, lyrical: image-swell}
-      - description: 感情が高まりきり、いくつものイメージが一つへ寄り集まっていく。
+      - description: 感情が高まり、いくつものイメージが一つへ寄り集まっていく。
         stages: {three-beat: turn, kishotenketsu: ten, heros-journey-12: approach, lyrical: image-swell}
   - id: documentary-essay
     name: ドキュメンタリー／エッセイ

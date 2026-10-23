@@ -164,4 +164,31 @@ def test_last_required_event_is_in_the_stage_right_before_the_climax() -> None:
             assert stage == before_climax[template], (plot["id"], template)
         for template in events[0]["stages"]:
             positions = [order[template].index(event["stages"][template]) for event in events]
-            assert positions[-2] <= positions[-1], (plot["id"], template, positions)
+            assert positions == sorted(positions), (plot["id"], template, positions)
+
+
+def test_turns_are_assigned_to_slots_in_their_order() -> None:
+    import yaml
+
+    plots = yaml.safe_load((ROOT / "tables" / "plot_types.yaml").read_text(encoding="utf-8"))["types"]
+    checked = 0
+    combinations = [
+        (plot["id"], structure, events)
+        for plot in plots
+        for structure in (
+            ("three-beat", "kishotenketsu", "heros-journey-12")
+            if plot["structure"] == "standard" else (plot["structure"],)
+        )
+        for events in (3, 4, 5, 6, 8, 12, 16)
+    ]
+    for plot_id, structure, events in combinations:
+        try:
+            result = _expand([_thread(1, plot=plot_id, events=events, structure=structure)])
+        except ValueError:
+            continue  # sizes a structure does not accept
+        turns = [e for e in result.output["skeleton"]["elements"] if e["kind"] == "turn"]
+        slots = [e["slot"] for e in sorted(turns, key=lambda e: e["n"])]
+        assert slots == sorted(slots), (plot_id, structure, events, slots)
+        checked += 1
+    # The reported case (quest, three-beat, 4 events: e002 → e003 → e002 before the fix) is among them.
+    assert checked >= 100
