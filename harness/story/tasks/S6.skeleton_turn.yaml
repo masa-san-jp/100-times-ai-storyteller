@@ -1,5 +1,5 @@
 id: S6.skeleton_turn
-version: 1
+version: 2
 kind: llm
 element: text
 inputs:
@@ -7,6 +7,12 @@ inputs:
     label: 骨子の台帳
     from: S6.expand
     select: skeleton_ledger
+    required: true
+    truncate: none
+  following_skeleton:
+    label: この転換の直後に起きること
+    from: S6.expand
+    select: following_skeleton
     required: true
     truncate: none
   plot_items:
@@ -75,7 +81,8 @@ card:
   material_rule: 入力の台帳・人物・世界を参照し、この物語に固有の内容を書く。
   steps:
   - 必須の出来事を、割り当てた人物が何に直面し、何をして、何が変わるかとして、入力の台帳・人物・世界を参照して、この物語に固有の具体的な人物・物・出来事で書く。
-  - 骨子の台帳にある、後に決まっている転換と結末に、因果でつながるように書く。
+  - この転換は、この転換の直後に起きることより前の時点にある。この時点では、直後に起きることはまだ起きていない。直後に起きることの原因・条件を、この時点でつくる出来事として書く。
+  - 骨子の台帳にある、より後の転換と決定的な瞬間は、この転換が向かう先として参照する。
   - プロットの型の葛藤の種類と緩急の原則に従って書く。
   - 割り当てた人物が行う行動として書く。役が不在の場合は、不在の役の注記に従い、状況や内面の力として書く。
   - 2〜3文、200字以内で書く。
