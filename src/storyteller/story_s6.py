@@ -12,7 +12,7 @@ from .manifest import load_manifest
 from .orchestrator import CodeTaskContext, CodeTaskResult, TaskSpec
 from .story_ledger import (
     SKELETON_CLIMAX, SKELETON_LACK, SKELETON_RESOLUTION, SKELETON_TURN,
-    assigned_elements, static_ledgers,
+    assigned_elements, following_element, part_mains, static_ledgers,
 )
 from .story_s7 import event_tasks
 from .tables import load_table
@@ -900,7 +900,7 @@ def _build_downstream_tasks(
     if plan is not None:
         # ADR-0011: the skeleton replaces the plot conditions; no S7.condition,
         # S8.condition_check or S8.condition_judge is created.
-        skeleton_specs = _skeleton_tasks(parent_task_id, plan)
+        skeleton_specs = _skeleton_tasks(parent_task_id, plan, part_mains(slots))
         additions.extend(skeleton_specs)
         skeleton_ids = tuple(spec.task_id for spec in skeleton_specs)
     for slot in slots:
@@ -1036,17 +1036,21 @@ def _build_downstream_tasks(
     return additions
 
 
-def _skeleton_tasks(parent: str, plan: Mapping[str, Any]) -> list[TaskSpec]:
+def _skeleton_tasks(
+    parent: str, plan: Mapping[str, Any], mains: Sequence[str] = (),
+) -> list[TaskSpec]:
     """The skeleton's tasks and their reverse-order dependencies (story-pipeline S6.plot §3).
 
     Turn n depends on the later turns of its thread; in a saga it also depends on
     every turn of the later parts, so that the back-calculation from the ending
-    continues across the parts.  Every turn depends on elements 1 to 3.
+    continues across the parts.  Every turn depends on elements 1 to 3 and on the
+    element right after it (P1-70, ``mains`` are the parts' main threads in part order).
     """
 
     elements = plan["elements"]
     turns = [element for element in elements if element["kind"] == "turn"]
-    order = {thread_id: position for position, thread_id in enumerate(plan["thread_order"])}
+    # In a saga the parts are ordered by their numbers, not by the input order.
+    order = {thread_id: position for position, thread_id in enumerate(mains or plan["thread_order"])}
     specs = [
         TaskSpec(SKELETON_LACK, SKELETON_LACK, deps=(parent,)),
         TaskSpec(SKELETON_CLIMAX, SKELETON_CLIMAX, deps=(parent, SKELETON_LACK)),
@@ -1062,10 +1066,13 @@ def _skeleton_tasks(parent: str, plan: Mapping[str, Any]) -> list[TaskSpec]:
             if (other["thread"] == element["thread"] and other["n"] > element["n"])
             or (plan.get("saga") and order[other["thread"]] > order[element["thread"]])
         ]
+        following = following_element(plan, element, mains)["task"]
         specs.append(
             TaskSpec(
                 element["task"], SKELETON_TURN,
-                deps=(parent, SKELETON_LACK, SKELETON_CLIMAX, SKELETON_RESOLUTION, *later),
+                deps=_unique((
+                    parent, SKELETON_LACK, SKELETON_CLIMAX, SKELETON_RESOLUTION, *later, following,
+                )),
                 index=(element["thread"], str(element["n"])),
             )
         )

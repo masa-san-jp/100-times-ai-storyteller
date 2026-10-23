@@ -18,7 +18,11 @@ FOLLOWING_LABEL = "この転換の直後に起きること"
 def _card(result: Any, task_id: str) -> tuple[str, dict[str, Any]]:
     spec = next(task for task in result.add_tasks if task.task_id == task_id)
     output = {key: result.output[key] for key in ("slots", "skeleton", "ledgers")}
-    outputs = {element["task"]: f"{element['task']}の本文。" for element in output["skeleton"]["elements"]}
+    # Only the outputs of the task's own dependencies are available, as in a run.
+    outputs = {
+        element["task"]: f"{element['task']}の本文。"
+        for element in output["skeleton"]["elements"] if element["task"] in spec.deps
+    }
     task = {"type": spec.type, "index": list(spec.index), "deps": list(spec.deps)}
     definition = _definition(spec.type)
     sources = augment_sources(None, None, task_id, task, {"S6.expand": output}, outputs)
@@ -28,7 +32,12 @@ def _card(result: Any, task_id: str) -> tuple[str, dict[str, Any]]:
 
 
 def _following(result: Any, task_id: str) -> list[str]:
-    return _card(result, task_id)[1]["following_skeleton"]
+    _card_text, inputs = _card(result, task_id)
+    following = inputs["following_skeleton"]
+    # The line is the same as its row in the skeleton ledger, and its text is confirmed.
+    assert following[0] in inputs["skeleton_ledger"]
+    assert not following[0].endswith("（未定）")
+    return following
 
 
 def _turn_tasks(result: Any, thread: str) -> list[str]:
@@ -69,6 +78,16 @@ def test_saga_part_hands_over_to_the_next_parts_first_turn() -> None:
         assert following[0].startswith(f"転換（{next_thread}・1・")
         assert following[0].endswith(f"{first_of_next}の本文。")
     assert _following(result, _turn_tasks(result, "t003")[-1])[0].startswith(_climax_head(result))
+
+
+def test_saga_hand_over_follows_the_part_numbers_not_the_input_order() -> None:
+    # Parts given in reverse order: part 1 still hands over to part 2, and depends on it.
+    result = _expand([_thread(1, part=2, events=6), _thread(2, part=1, events=6)])
+    last_of_part1 = _turn_tasks(result, "t002")[-1]
+    first_of_part2 = _turn_tasks(result, "t001")[0]
+    spec = next(task for task in result.add_tasks if task.task_id == last_of_part1)
+    assert first_of_part2 in spec.deps
+    assert _following(result, last_of_part1)[0].startswith("転換（t001・1・")
 
 
 def test_following_skeleton_is_a_required_untruncated_input_of_the_turn() -> None:
