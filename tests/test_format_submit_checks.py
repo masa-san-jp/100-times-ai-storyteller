@@ -168,9 +168,9 @@ def _attempts(h, run, task_id):
 def test_definition_versions():
     from storyteller.formatting import load_format_task_definitions
     definitions = load_format_task_definitions(ROOT)
-    assert definitions["F1.split"]["version"] == 5
-    assert definitions["F2.write"]["version"] == 4
-    assert definitions["F2.write_once"]["version"] == 4
+    assert definitions["F1.split"]["version"] == 6
+    assert definitions["F2.write"]["version"] == 5
+    assert definitions["F2.write_once"]["version"] == 5
     for name in ("F2.write", "F2.write_once"):
         assert definitions[name]["validate"]["checks"] == ["no_story_metadata"]
 

@@ -108,7 +108,7 @@ def test_f2_card_shows_one_name_motive_line_per_person_and_hides_an_empty_array(
     h, run = setup(tmp_path, dummy_format, continuation=continuation)
     write = "F2.write" if continuation else "F2.write_once"
     assert h.task_definitions[write]["version"] >= 3
-    assert list(h.task_definitions[write]["inputs"])[:3] == ["events", "characters", "motives"]
+    assert list(h.task_definitions[write]["inputs"])[1:4] == ["events", "characters", "motives"]
     cards = cards_by_task(h, run)
     first = cards[f"{write}-u01p1-dummy"]
     block = f"{LABEL}\nカナ：{KANA}\nミオ：{MIO}\n### 書き方の規則"

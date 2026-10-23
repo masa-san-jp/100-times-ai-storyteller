@@ -16,6 +16,11 @@ from storyteller.story_quality import split_card_inputs
 
 
 MOTIVES_SLOT = "motives"
+# F2 v5: the step about confirmed plot conditions is shown only when the part has them.
+F2_CONDITION_STEP = (
+    "確定した筋の条件と出来事の因果関係を守る。"
+    "入力にない発動・禁止・解決条件を足さず、反転・置換しない。"
+)
 
 
 class TaskCardError(ValueError):
@@ -93,6 +98,12 @@ def generate_task_card(
         raise TaskCardError(str(exc)) from exc
     if not isinstance(steps, Sequence) or isinstance(steps, (str, bytes)):
         raise TaskCardError("card.steps must be a non-empty sequence")
+    if (
+        task_definition.get("id") in {"F2.write", "F2.write_once"}
+        and task_definition.get("version", 1) >= 5
+        and "conditions" not in rendered_slots
+    ):
+        steps = [step for step in steps if step != F2_CONDITION_STEP]
     for number, step in enumerate(steps, start=1):
         if not isinstance(step, str) or not step:
             raise TaskCardError("card.steps must contain non-empty strings")
