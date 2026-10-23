@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from storyteller.orchestrator import Orchestrator, TaskSpec
 from storyteller.manifest import write_manifest
 from storyteller.story_s9 import story_s9_assemble
@@ -276,3 +278,63 @@ def test_s9_aggregates_empty_name_sources_without_inventing_attribution(tmp_path
     story = json.loads((context.run_dir / "story/story.json").read_text(encoding="utf-8"))
     validate_document(story, ROOT / "schemas/story.schema.json")
     assert story["cast"][0]["sources"] == ["c1"]
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("source_id", ["era:t1", "unknown:source"])
+def test_s9_preserves_skipped_world_slots_and_saved_sources(tmp_path: Path, partial: bool, source_id: str) -> None:
+    """Partial single/list skips retain accepted siblings, names and provenance."""
+    from copy import deepcopy
+    from storyteller.manifest import load_manifest
+
+    outputs = _base_outputs({"e001": _event()})
+    assignment = outputs["S3.assign"]
+    assignment["world_sections"].append({
+        "id": "people", "name": "人々", "definition": "人々", "viewpoints": ["人々"],
+        "level": 0, "kind": "list", "max_chars": 400, "prerequisites": [],
+    })
+    assignment["world_tasks"] = [
+        {"id": "place-f1", "kind": "single", "section_id": "place"},
+        {"id": "place-f2", "kind": "single", "section_id": "place"},
+        {"id": "people-001", "kind": "list", "section_id": "people"},
+        {"id": "people-002", "kind": "list", "section_id": "people"},
+    ]
+    outputs["S4.section-place-f2"] = outputs.pop("S4.section-place")
+    outputs["S4.item_name-people-001"] = {"name": "水門守", "reading": "スイモンモリ"}
+    outputs["S4.item-people-001"] = {"name": "古い名前", "body": "無効化された本文", "sources": ["place:t1"]}
+    outputs["S4.item-people-002"] = {"name": "渡し守", "body": "舟を渡す。", "sources": ["place:t1"]}
+    if not partial:
+        del outputs["S4.section-place-f2"]
+        del outputs["S4.item-people-002"]
+    context = _context(tmp_path, outputs, {"kind": "free", "paragraphs": []})
+    path = context.run_dir / "manifest.json"
+    manifest = load_manifest(path)
+    for task_id, task_type in (("S4.section-place-f1", "S4.section"), ("S4.item-people-001", "S4.item")):
+        task = deepcopy(manifest["tasks"]["S9.assemble"])
+        task.update(type=task_type, state="skipped", tries=5)
+        manifest["tasks"][task_id] = task
+        task_dir = context.run_dir / "tasks" / task_id
+        task_dir.mkdir(parents=True)
+        (task_dir / "input.json").write_text(json.dumps({"element": {"id": source_id, "text": "素材"}}), encoding="utf-8")
+    write_manifest(path, manifest)
+    before = path.read_bytes()
+
+    if source_id == "unknown:source":
+        with pytest.raises(ValueError, match="存在しない世界 sources を参照しています: place"):
+            story_s9_assemble(context)
+        assert not (context.run_dir / "story/story.json").exists()
+        assert path.read_bytes() == before
+        return
+
+    story_s9_assemble(context)
+
+    story = json.loads((context.run_dir / "story/story.json").read_text(encoding="utf-8"))
+    sections = story["world"]["sections"]
+    assert sections[0]["body"] == ("（未定）\n\n水路の町の描写" if partial else "（未定）")
+    assert sections[0]["sources"] == (["era:t1", "place:t1"] if partial else ["era:t1"])
+    expected_items = [{"name": "水門守", "body": "（未定）", "sources": ["era:t1"]}]
+    if partial:
+        expected_items.append({"name": "渡し守", "body": "舟を渡す。", "sources": ["place:t1"]})
+    assert sections[1]["items"] == expected_items
+    assert path.read_bytes() == before
+    assert "無効化された本文" not in json.dumps(story, ensure_ascii=False)

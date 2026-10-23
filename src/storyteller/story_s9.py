@@ -16,7 +16,7 @@ from .orchestrator import CodeTaskContext, CodeTaskResult
 from .storage import atomic_write_json, atomic_write_text
 from .tables import load_table
 from .validation import validate_document
-from .task_outputs import read_task_output
+from .task_outputs import read_task_output, task_sources
 from .volume import multiplier_for_preset
 from .glossary import build_glossary, render_glossary_markdown
 from .world_facts import render_world_facts_markdown
@@ -149,6 +149,24 @@ def _all_outputs(context: CodeTaskContext) -> dict[str, Any]:
             # state が done なのに出力ファイルがないのは省略ではない異常であり、
             # （未定）に読み替えて進めてはならない。
             raise ValueError(f"完了したタスクの出力ファイルがありません: {task_id}")
+    # A skipped description still occupies its assigned slot. Attribute the
+    # placeholder to the same saved card inputs as an accepted description;
+    # never manufacture sources or reuse an invalidated output body.
+    for task_id, task in manifest.get("tasks", {}).items():
+        if not isinstance(task, Mapping) or task.get("state") != "skipped":
+            continue
+        if task.get("type") not in {"S4.section", "S4.item"}:
+            continue
+        placeholder: dict[str, Any] = {
+            "body": UNDECIDED,
+            "sources": task_sources(context.run_dir / "tasks" / task_id),
+        }
+        if task["type"] == "S4.item":
+            name_id = task_id.replace("S4.item-", "S4.item_name-", 1)
+            naming = outputs.get(name_id)
+            name = naming.get("name") if isinstance(naming, Mapping) else None
+            placeholder["name"] = name if isinstance(name, str) and name else UNDECIDED
+        outputs[task_id] = placeholder
     return outputs
 
 
