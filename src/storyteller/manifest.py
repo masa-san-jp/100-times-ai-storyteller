@@ -39,6 +39,10 @@ VALIDATED_STAMP_NAME = "manifest.validated"
 _KNOWN_VALID_LIMIT = 16
 # manifest path -> (schema hash, text of the last known-valid document).
 _known_valid: dict[str, tuple[str, str]] = {}
+# manifest path -> (that text, its top level and each task as compact JSON).
+# Comparing these strings is how a write finds what changed without walking
+# every task in Python; equal JSON text means an equal JSON value.
+_known_parts: dict[str, tuple[str, str, dict[str, str]]] = {}
 _fast_validators: dict[tuple[str, int, int], tuple[str, Any, Any, Any, bool]] = {}
 
 
@@ -119,9 +123,12 @@ def _stamp_text(data: bytes, schema_sha256: str) -> str:
 def _remember(path: Path, text: str, schema_sha256: str) -> None:
     key = str(path)
     _known_valid.pop(key, None)
+    _known_parts.pop(key, None)
     _known_valid[key] = (schema_sha256, text)
     while len(_known_valid) > _KNOWN_VALID_LIMIT:
-        _known_valid.pop(next(iter(_known_valid)))
+        oldest = next(iter(_known_valid))
+        _known_valid.pop(oldest)
+        _known_parts.pop(oldest, None)
 
 
 def load_manifest(
@@ -172,33 +179,60 @@ def _same_json_value(left: Any, right: Any) -> bool:
     return left == right
 
 
+def _json_text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _parts(manifest: Mapping[str, Any]) -> tuple[str, dict[str, str]]:
+    """The top level (without tasks) and each task as compact JSON text.
+
+    ``json.dumps`` keeps the JSON types apart (``true`` / ``1`` / ``1.0``), so
+    equal text means an equal JSON value. Unequal text may still be an equal
+    value (another key order); that only costs a closer look below.
+    """
+    top = {key: value for key, value in manifest.items() if key != "tasks"}
+    return _json_text(top), {task_id: _json_text(task) for task_id, task in manifest["tasks"].items()}
+
+
+def _known_parts_of(key: str, known_text: str) -> tuple[str, dict[str, str]]:
+    cached = _known_parts.get(key)
+    if cached is not None and cached[0] is known_text:
+        return cached[1], cached[2]
+    return _parts(json.loads(known_text))
+
+
 def _validate_changes(
     manifest: Mapping[str, Any], known_text: str,
-    validators: tuple[str, Any, Any, Any, bool],
-) -> bool:
+    validators: tuple[str, Any, Any, Any, bool], key: str,
+) -> tuple[str, dict[str, str]] | None:
     """Validate only what differs from a known-valid document.
 
-    Returns ``False`` when the shortcut does not apply or finds an error; the
+    Returns the manifest's parts (see ``_parts``) when every change is valid,
+    and ``None`` when the shortcut does not apply or finds an error; the
     caller then runs the full validation. JSON types are compared explicitly
     so equal Python values such as ``1`` and ``True`` cannot hide changes.
     """
     tasks = manifest.get("tasks") if isinstance(manifest, Mapping) else None
     if not validators[4] or not isinstance(tasks, dict):
-        return False
+        return None
     try:
-        known = json.loads(known_text)
-        known_tasks = known["tasks"]
+        known_top_text, known_task_texts = _known_parts_of(key, known_text)
+        top_text, task_texts = _parts(manifest)
     except (ValueError, KeyError, TypeError):
-        return False
+        return None
     _, top_validator, task_validator, fields, _ = validators
-    top = {key: value for key, value in manifest.items() if key != "tasks"}
-    known_top = {key: value for key, value in known.items() if key != "tasks"}
-    if not _same_json_value(top, known_top):
-        top["tasks"] = {}
-        if not top_validator.is_valid(top):
-            return False
+    if top_text != known_top_text:
+        top = {name: value for name, value in manifest.items() if name != "tasks"}
+        known_top = json.loads(known_top_text)
+        if not _same_json_value(top, known_top):
+            top["tasks"] = {}
+            if not top_validator.is_valid(top):
+                return None
     for task_id, task in tasks.items():
-        old = known_tasks.get(task_id)
+        old_text = known_task_texts.get(task_id)
+        if task_texts[task_id] == old_text:
+            continue
+        old = None if old_text is None else json.loads(old_text)
         if (fields is not None and isinstance(task, dict) and isinstance(old, dict)
             and task.keys() == old.keys()):
             # The old object already satisfied type, required and forbidden
@@ -208,10 +242,10 @@ def _validate_changes(
             for name, value in task.items():
                 if not _same_json_value(value, old[name]):
                     if next(task_validator.descend(value, fields[name]), None) is not None:
-                        return False
+                        return None
         elif not _same_json_value(task, old) and not task_validator.is_valid(task):
-            return False
-    return True
+            return None
+    return top_text, task_texts
 
 
 def write_manifest(
@@ -224,9 +258,12 @@ def write_manifest(
     manifest_path = Path(path)
     fast = _is_default_schema(schema_path)
     validators = _schema_validators() if fast else None
-    known = _known_valid.get(str(manifest_path)) if validators is not None else None
-    if (known is None or known[0] != validators[0]
-        or not _validate_changes(manifest, known[1], validators)):
+    key = str(manifest_path)
+    known = _known_valid.get(key) if validators is not None else None
+    parts = None
+    if known is not None and known[0] == validators[0]:
+        parts = _validate_changes(manifest, known[1], validators, key)
+    if parts is None:
         validate_manifest(manifest, schema_path=schema_path)
 
     text = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
@@ -243,3 +280,5 @@ def write_manifest(
     atomic_write_text(manifest_path, text)
     if validators is not None:
         _remember(manifest_path, text, validators[0])
+        if parts is not None:
+            _known_parts[key] = (text, *parts)

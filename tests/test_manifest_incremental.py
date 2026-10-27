@@ -92,6 +92,36 @@ def test_incremental_and_full_validation_agree_on_field_and_type_boundaries(
     assert_same_validation(path, candidate)
 
 
+@pytest.mark.parametrize("field_path,value", CASES)
+def test_cached_parts_of_the_previous_write_agree_with_full_validation(
+    tmp_path: Path, field_path: tuple[str, ...], value,
+) -> None:
+    # The second write is checked against the parts kept from the first
+    # incremental write, not against a re-read of the file.
+    path = tmp_path / "manifest.json"
+    original = baseline()
+    write_manifest(path, original)
+    previous = deepcopy(original)
+    previous["tasks"]["D1.items"]["attempt"] = 2
+    write_manifest(path, previous)
+    assert module._known_parts[str(path)][0] is module._known_valid[str(path)][1]
+    candidate = deepcopy(previous)
+    set_value(candidate, field_path, value)
+    assert_same_validation(path, candidate)
+
+
+def test_key_order_alone_is_not_a_change_that_fails(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.json"
+    original = baseline()
+    write_manifest(path, original)
+    write_manifest(path, deepcopy(original))
+    reordered = deepcopy(original)
+    task = reordered["tasks"]["D1.items"]
+    reordered["tasks"]["D1.items"] = dict(reversed(list(task.items())))
+    write_manifest(path, reordered)
+    assert load_manifest(path) == original
+
+
 @pytest.mark.parametrize("field", ["state", "executor"])
 def test_required_and_optional_key_removal_keeps_full_validation(
     tmp_path: Path, field: str,
