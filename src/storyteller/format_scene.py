@@ -143,6 +143,27 @@ def fountain_errors(text: str, *, document: bool = False) -> list[str]:
     return errors
 
 
+def strip_body_headings(text: str) -> tuple[str, list[str]]:
+    """Remove scene headings, sections and synopses from one scene body.
+
+    Returns the body and the removed lines (format-pipeline F4 検証「自己修復」).
+    The template adds the scene heading, so these lines are dropped rather
+    than failing the whole body.
+    """
+
+    kept: list[str] = []
+    removed: list[str] = []
+    for line in text.replace("\r\n", "\n").split("\n"):
+        if _FORCED_HEADING.match(line.rstrip()) or line.startswith(("#", "=")):
+            removed.append(line.rstrip())
+        else:
+            kept.append(line)
+    if not removed:
+        return text, []
+    body = re.sub(r"\n[ \t]*\n(?:[ \t]*\n)+", "\n\n", "\n".join(kept)).strip("\n")
+    return body, removed
+
+
 def check_fountain_syntax(body: str, part: Mapping[str, Any]) -> list[str]:
     """F4 code check ``fountain_syntax`` for the body of one F2 task."""
 
