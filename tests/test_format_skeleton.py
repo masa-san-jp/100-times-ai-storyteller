@@ -154,7 +154,7 @@ def test_f2_card_shows_the_skeleton_before_the_events(tmp_path, dummy_format, co
     h, run = setup(tmp_path, dummy_format, continuation=continuation)
     write = "F2.write" if continuation else "F2.write_once"
     definition = h.task_definitions[write]
-    assert definition["version"] == (6 if continuation else 5) and definition["max_input_chars"] == 16000
+    assert definition["version"] == 5 and definition["max_input_chars"] == 16000
     assert list(definition["inputs"])[:2] == ["skeleton", "events"]
     slot = definition["inputs"]["skeleton"]
     assert slot == {

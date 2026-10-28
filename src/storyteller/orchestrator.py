@@ -935,7 +935,9 @@ class Orchestrator:
             definition, _ = dev_task_definition(definition, manifest.get("scale", {}), self.repository_root)
 
         continuation = _continuation_enabled(definition)
-        extend_to_min = _extends_to_min(definition)
+        extend_to_min = (
+            definition.get("output") == "text" and definition.get("extend_to_min", False)
+        )
         partial = _read_partial_output(self.task_dir(run_id, task_id))
         continuation_warnings: tuple[str, ...] = ()
         if continuation and _is_truncated_submission(raw_output, truncated):
@@ -995,10 +997,7 @@ class Orchestrator:
                     definition, task, lambda: _read_dependency_outputs(run_dir, manifest, task)
                 ),
             )
-            minimum = (
-                _f2_minimum_chars(definition, task, lambda: _read_dependency_outputs(run_dir, manifest, task))
-                or _minimum_text_chars(definition)
-            ) if extend_to_min else 0
+            minimum = _minimum_text_chars(definition) if extend_to_min else 0
             short = (
                 isinstance(submission_output, str)
                 and output_char_count(submission_output) < minimum
@@ -1179,7 +1178,9 @@ class Orchestrator:
             at = self._now()
             from .world_facts import specialize_fact_definition
             definition = specialize_fact_definition(self.task_definitions[task["type"]], card_inputs)
-            discard_partial = discard_partial or _extends_to_min(definition)
+            discard_partial = discard_partial or (
+                definition.get("output") == "text" and definition.get("extend_to_min", False)
+            )
             errors = tuple(str(error) for error in validation.errors)
             warnings = tuple(str(warning) for warning in validation.warnings)
             recorded_warnings = tuple(
@@ -1775,7 +1776,7 @@ class Orchestrator:
         continuation_tail = None
         extend_to_min = False
         if int(task["continuation_step"]) > 0 and (
-            _continuation_enabled(definition) or _extends_to_min(definition)
+            _continuation_enabled(definition) or definition.get("extend_to_min", False)
         ):
             partial = _read_partial_output(self.task_dir(run_id, task_id))
             remaining = int(definition.get("max_input_chars", 3000)) - input_char_count(
@@ -3021,7 +3022,7 @@ def _prepare_card_inputs(
             return fitted
         except InputBudgetError as error:
             raise TaskCardError("継続の予算が足りない") from error
-    if _extends_to_min(definition) and budget > 1000:
+    if definition.get("output") == "text" and definition.get("extend_to_min") and budget > 1000:
         reserved = dict(definition, max_input_chars=budget - 1000)
         try:
             return prepare_task_inputs(reserved, inputs=inputs)
@@ -3034,18 +3035,11 @@ def _required_continuation_tail(
     definition: Mapping[str, Any], task: Mapping[str, Any], directory: Path,
 ) -> int | None:
     if int(task["continuation_step"]) > 0 and (
-        _continuation_enabled(definition) or _extends_to_min(definition)
+        _continuation_enabled(definition) or definition.get("extend_to_min", False)
     ):
         partial = unicodedata.normalize("NFC", _read_partial_output(directory))
         return min(1000, len(partial))
     return None
-
-
-def _extends_to_min(definition: Mapping[str, Any]) -> bool:
-    """task-model §8 ``extend_to_min``; for F2 only from F2.write v6 (format-pipeline F2)."""
-    if definition.get("output") != "text" or not definition.get("extend_to_min", False):
-        return False
-    return definition.get("id") not in _F2_TYPES or int(definition.get("version", 1)) >= 6
 
 
 def _minimum_text_chars(definition: Mapping[str, Any]) -> int:
@@ -3080,29 +3074,6 @@ def _f2_submit_checks(
     plan = dependency_outputs().get(f"F1.split-{task['index'][-1]}")
     checks = plan.get("submit_checks") if isinstance(plan, Mapping) else None
     return deepcopy(checks) if isinstance(checks, list) else []
-
-
-def _f2_minimum_chars(
-    definition: Mapping[str, Any],
-    task: Mapping[str, Any],
-    dependency_outputs: Callable[[], Mapping[str, Any]],
-) -> int:
-    """The part's ``min_chars`` from the F1 plan for an F2.write v6 task.
-
-    format-pipeline F2: the lower bound of ``extend_to_min`` lives in the plan,
-    not in the task definition.  Other tasks get 0.
-    """
-
-    if task["type"] != "F2.write" or int(definition.get("version", 1)) < 6:
-        return 0
-    plan = dependency_outputs().get(f"F1.split-{task['index'][-1]}")
-    parts = plan.get("parts") if isinstance(plan, Mapping) else None
-    part = next(
-        (item for item in parts or () if isinstance(item, Mapping) and item.get("id") == task["index"][0]),
-        None,
-    )
-    minimum = part.get("min_chars") if part is not None else None
-    return minimum if isinstance(minimum, int) and not isinstance(minimum, bool) else 0
 
 
 def _with_submit_checks(
