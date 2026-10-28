@@ -63,7 +63,7 @@ checks:
 F1.split v3以降と、構造化した`checks.llm`を持つプロファイルは、以下の検査を使う。従来の質問文字列配列、旧F1出力、F4.judge v2は従来の処理を維持する。新版の仕組みを旧done済みF1へ自動で適用しない。
 
 - `checks.llm`は、従来の文字列配列、または`kind`・`question`・`severity`を必須とするオブジェクトの配列を受け付ける。混在は拒否する。kindは`event_coverage`・`named_actor`・`condition_conflict`・`replay`、severityは`error`・`advisory`。`replay`はadvisoryだけを許す。小説・脚本・スライドはこの構造化指定へ移行し、最初の3種類をerror、replayをadvisoryとする。値と質問文の原本は各profileとする。
-- F1は各部分の`reviews`に対象をCODEで展開し、`kind`・`question`・`severity`・`source`を保存する。event_coverageは対象出来事1件ごとに`source={id,what,result}`、named_actorは部分1つにつき`source={characters:[{name,reading}]}`、condition_conflictは対象部分の重複を除いた確定条件1件ごとに`source={condition}`、replayは部分1つにつき`source={}`とする。条件がなければcondition_conflictの推論は作らない。並びはprofile順、出来事/条件の元の順とする。資料全体、人物プロフィール、別の出来事の項目を補助文脈として足さない。
+- F1は各部分の`reviews`に対象をCODEで展開し、`kind`・`question`・`severity`・`source`を保存する。event_coverageは対象出来事1件ごとに`source={id,what,result}`、named_actorは部分1つにつき`source={characters:[{name,reading}]}`（F1.split v7以降は、部分の`characters`に加えて、部分の出来事の文字列の項目（what・resultなど）に名前または読みが現れる正本`cast`の人物も含める。並びは`characters`の順の後に`cast`の順、重複なし。出来事の文に書かれた人物は、入力にない人物ではないため）、condition_conflictは対象部分の重複を除いた確定条件1件ごとに`source={condition}`、replayは部分1つにつき`source={}`とする。条件がなければcondition_conflictの推論は作らない。並びはprofile順、出来事/条件の元の順とする。資料全体、人物プロフィール、別の出来事の項目を補助文脈として足さない。
 - 各対象について新しい`F4.review`のLLMタスクを1件作る。これは1つの対象について1つの質問だけを判定する。既存のF4.judgeとキャッシュを共有しない。F4.verifyはこの部分の全reviewを待ち、後続F2は従来どおり前verify完了を待つ。様式間・同一部分のレビュー間は並列でよい。
 - 入力は1件のreview、対象部分の本文、様式名とする。上限14000字を維持し、source/本文は切り捨てない。スライドはCODEで画面表示とノートの語りを区別した検査表示を作る。HTMLコメントの区切り以外の文字・順序を保持し、不正構文では元本文を使う。引用の照合対象はラベルを含まない元本文とする。元F2/F3出力は変更しない。
 - event_coverageは、指定されたwhat/resultの行動・結果の欠落だけを調べる。人物一覧から各人の必須行動を補わず、時刻/場所/感情や入力にない具体語句の非再掲を欠落としない。言い換え・台詞・スライドの語りも描写として読む。明確に欠落と判断できなければunknownとする。
