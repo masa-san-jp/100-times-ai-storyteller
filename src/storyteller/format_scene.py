@@ -164,6 +164,24 @@ def strip_body_headings(text: str) -> tuple[str, list[str]]:
     return body, removed
 
 
+def separate_character_cues(text: str) -> tuple[str, int]:
+    """Put a blank line before each character cue (``@name``) that lacks one.
+
+    Returns the body and the number of blank lines added (format-pipeline
+    F4 検証「自己修復」).
+    """
+
+    lines = text.replace("\r\n", "\n").split("\n")
+    result: list[str] = []
+    added = 0
+    for line in lines:
+        if line.startswith("@") and result and result[-1].strip():
+            result.append("")
+            added += 1
+        result.append(line)
+    return ("\n".join(result), added) if added else (text, 0)
+
+
 def check_fountain_syntax(body: str, part: Mapping[str, Any]) -> list[str]:
     """F4 code check ``fountain_syntax`` for the body of one F2 task."""
 

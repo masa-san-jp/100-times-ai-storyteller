@@ -551,8 +551,12 @@ def _repaired_body(
     if "fountain_syntax" not in plan["code_checks"]:
         return body
     repaired, removed = format_scene.strip_body_headings(body)
-    if removed and warnings is not None:
-        warnings.append(f"{task_id}: 本文の見出し・節・要約の行をコードで除去：{removed[0][:40]}")
+    repaired, added = format_scene.separate_character_cues(repaired)
+    if warnings is not None:
+        if removed:
+            warnings.append(f"{task_id}: 本文の見出し・節・要約の行をコードで除去：{removed[0][:40]}")
+        if added:
+            warnings.append(f"{task_id}: 人物名の前の空行をコードで補った：{added}か所")
     return repaired
 
 

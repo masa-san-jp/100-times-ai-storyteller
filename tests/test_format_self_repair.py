@@ -7,7 +7,7 @@ import json
 
 import yaml
 
-from storyteller.format_scene import fountain_errors, strip_body_headings
+from storyteller.format_scene import fountain_errors, separate_character_cues, strip_body_headings
 from tests.test_formatting import PROFILE, _body, _drive, _start, dummy_format  # noqa: F401
 
 
@@ -43,10 +43,36 @@ def test_strip_body_headings_removes_headings_sections_and_synopses_only() -> No
     assert strip_body_headings("...と言った。") == ("...と言った。", [])
 
 
-def test_scene_headings_are_removed_by_code_without_invalidation(tmp_path, dummy_format) -> None:
+def test_separate_character_cues_adds_the_missing_blank_lines() -> None:
+    body = "鐘が鳴る。\n@ダクバン\n歌え。\n@リオ\n(小声で)\nまだだ。\n\n@ダクバン\nもう一度。"
+    repaired, added = separate_character_cues(body)
+    assert added == 2
+    assert repaired == "鐘が鳴る。\n\n@ダクバン\n歌え。\n\n@リオ\n(小声で)\nまだだ。\n\n@ダクバン\nもう一度。"
+    assert fountain_errors(body) and fountain_errors(repaired) == []
+    assert separate_character_cues("鐘が鳴る。") == ("鐘が鳴る。", 0)
+
+
+def _scene_profile(dummy_format) -> None:
     profile = deepcopy(PROFILE)
     profile["checks"]["code"].append("fountain_syntax")
     (dummy_format / "dummy" / "profile.yaml").write_text(yaml.safe_dump(profile, allow_unicode=True), encoding="utf-8")
+
+
+def test_cues_without_a_blank_line_are_repaired_without_invalidation(tmp_path, dummy_format) -> None:
+    # The shape gpt-oss:20b wrote on 2026-10-28: a heading, then cues right after lines.
+    _scene_profile(dummy_format)
+    _, run, h = _start(tmp_path, dummy_format, events=3)
+    _drive(h, run, _responder(h, run, lambda task_id: ".夕暮れの鐘楼\n" + _body(task_id, h, run)[:-1]
+                              + "\n@ダクバン\n歌え。"))
+    manifest = h.load_run(run)
+    assert manifest["status"] == "completed"
+    assert all(task["state"] == "done" and task["invalidations"] == 0 for task in _writes(manifest).values())
+    assert any("人物名の前の空行をコードで補った：1か所" in warning for warning in manifest["warnings"])
+    assert "あ\n\n@ダクバン\n歌え。" in _assembled(h, run)
+
+
+def test_scene_headings_are_removed_by_code_without_invalidation(tmp_path, dummy_format) -> None:
+    _scene_profile(dummy_format)
     _, run, h = _start(tmp_path, dummy_format, events=3)
     _drive(h, run, _responder(h, run, lambda task_id: ".灯台の水面\n\n" + _body(task_id, h, run)))
     manifest = h.load_run(run)
