@@ -98,8 +98,8 @@ def test_a_body_short_by_less_than_half_is_adopted_at_the_invalidation_limit(tmp
     assert manifest["status"] == "completed"
     for name, task in _writes(manifest).items():
         assert task["state"] == "done" and task["invalidations"] == 2, name
-        # The limit is reached after two repairs that asked to write more.
-        assert sum(task_id == name for task_id, _, _ in log) == 3
+        # Two repairs reach the limit; each try first asks twice to write more (F2.write v6).
+        assert sum(task_id == name for task_id, _, _ in log) == 9
     assert any("字数の下限（半分以上）の不合格が無効化上限に達したため、最後の本文を採用" in warning
                for warning in manifest["warnings"])
     assert "（未定）" not in _assembled(h, run)

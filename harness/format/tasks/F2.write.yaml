@@ -1,5 +1,5 @@
 id: F2.write
-version: 5
+version: 6
 kind: llm
 element: text
 output: text
@@ -66,6 +66,7 @@ continuation: true
 # （task-model §6.7、format-pipeline.md「F4 検証」）。run は止めない。
 on_exhausted: skip
 max_invalidations: 2
+extend_to_min: true
 validate:
   checks:
   - no_story_metadata

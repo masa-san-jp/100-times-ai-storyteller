@@ -336,6 +336,8 @@ def test_legacy_f2_card_carries_only_its_own_inputs_and_the_previous_tail(tmp_pa
 
 def test_f4_code_check_failure_invalidates_f2_with_the_reason(tmp_path: Path, dummy_format: Path) -> None:
     data_dir, run_id, orchestrator = _start(tmp_path, dummy_format)
+    # The repair path of F2.write v5; v6 first extends a short body (format-pipeline F2).
+    orchestrator.task_definitions["F2.write"]["version"] = 5
     good = _good_responder(orchestrator, run_id)
     calls = {"count": 0}
 
@@ -513,6 +515,9 @@ def test_format_definitions_are_checked_by_the_harness_tool() -> None:
     once = dict(definitions["F2.write_once"])
     regular = dict(definitions["F2.write"])
     assert (regular.pop("continuation"), once.pop("continuation")) == (True, False)
+    # F2.write v6 extends short bodies; F2.write_once (slides) does not (format-pipeline F2).
+    assert (regular.pop("version"), once.pop("version")) == (6, 5)
+    assert regular.pop("extend_to_min") is True and "extend_to_min" not in once
     for definition in (regular, once):
         definition["id"] = "x"
         definition["inputs"] = {
@@ -562,6 +567,7 @@ def test_f2_length_failure_is_repaired_or_skipped(tmp_path, dummy_format, contin
     (dummy_format / "dummy" / "profile.yaml").write_text(
         yaml.safe_dump(profile, allow_unicode=True), encoding="utf-8")
     _, run_id, harness = _start(tmp_path, dummy_format)
+    harness.task_definitions["F2.write"]["version"] = 5  # the repair path before F2.write v6 extends
     good = _good_responder(harness, run_id)
     seen = set()
     repaired = []
@@ -581,6 +587,7 @@ def test_f2_length_failure_is_repaired_or_skipped(tmp_path, dummy_format, contin
 
     # Exhausting attempts also completes both continuation variants.
     _, run_id, harness = _start(tmp_path / "exhaust", dummy_format)
+    harness.task_definitions["F2.write"]["version"] = 5  # the repair path before F2.write v6 extends
     good = _good_responder(harness, run_id)
     _drive(harness, run_id, lambda task_id, card: bad if task_id.startswith("F2.") else good(task_id, card))
     manifest = harness.load_run(run_id)
@@ -596,6 +603,7 @@ def test_f2_repairs_real_1029_character_shortfall(tmp_path, dummy_format, trunca
     (dummy_format / "dummy" / "profile.yaml").write_text(
         yaml.safe_dump(profile, allow_unicode=True), encoding="utf-8")
     _, run_id, harness = _start(tmp_path, dummy_format, events=1)
+    harness.task_definitions["F2.write"]["version"] = 5  # the repair path before F2.write v6 extends
     claim = _claim_task(harness, run_id)
     task_id, ticket, _ = claim
     assert task_id.startswith("F2.write-")
@@ -614,6 +622,30 @@ def test_f2_repairs_real_1029_character_shortfall(tmp_path, dummy_format, trunca
     assert harness.submit(claim[1], "あ" * 1499 + "。").accepted
     _drive(harness, run_id, _good_responder(harness, run_id))
     assert harness.load_run(run_id)["status"] == "completed"
+
+
+def test_f2_write_v6_extends_a_real_1029_character_shortfall_before_f4(tmp_path, dummy_format):
+    # #224: gpt-oss:20b wrote about 1,000 of 1,500 characters; v6 asks for more
+    # (task-model §8) and joins it, instead of a repair after F4 rejects it.
+    profile = {**PROFILE, "chars_per_event": [1500, 3000], "max_chars_per_task": 6000}
+    (dummy_format / "dummy" / "profile.yaml").write_text(
+        yaml.safe_dump(profile, allow_unicode=True), encoding="utf-8")
+    _, run_id, harness = _start(tmp_path, dummy_format, events=1)
+    assert harness.task_definitions["F2.write"]["version"] == 6
+    task_id, ticket, _ = _claim_task(harness, run_id)
+    first = "あ" * 1028 + "。"
+    assert harness.submit(ticket, first).accepted
+    assert harness.load_run(run_id)["tasks"][task_id]["continuation_step"] == 1
+    claimed, ticket, card = _claim_task(harness, run_id)
+    assert claimed == task_id
+    assert "## これまでの出力の末尾" in card and "同じ内容をさらに具体的に書き足す" in card
+    more = "い" * 599 + "。"
+    assert harness.submit(ticket, more).accepted
+    assert (harness.task_dir(run_id, task_id) / "output.md").read_text(encoding="utf-8") == first + more
+    _drive(harness, run_id, _good_responder(harness, run_id))
+    manifest = harness.load_run(run_id)
+    assert manifest["status"] == "completed"
+    assert manifest["tasks"][task_id]["invalidations"] == 0
 
 
 @pytest.mark.parametrize("continuation", [True, False])
