@@ -1,5 +1,5 @@
 id: F2.write
-version: 5
+version: 6
 kind: llm
 element: text
 output: text
@@ -38,7 +38,7 @@ inputs:
     select: parts[{slot}].range
     required: true
   previous_unit:
-    label: 直前の本文の末尾（最大600字）
+    label: これまでの物語（直前の場面。参照用）
     from: F2.write
     select: output
     required: false
@@ -58,7 +58,7 @@ card:
   - 入力にない出来事・人物を加えない。登場人物は入力の名前と読みだけを使う。
   - 書き方の規則をすべて守る。
   - 分量の範囲に収まる字数で書く。
-  - 直前の本文の末尾がある場合は、そこから自然につなげる。繰り返して書かない。
+  - これまでの物語がある場合は、それに続く次の展開として、この出来事を書く。これまでの物語の文章は写さず、繰り返さない。
   - 本文は完結した文で終える。
 max_input_chars: 16000
 continuation: true

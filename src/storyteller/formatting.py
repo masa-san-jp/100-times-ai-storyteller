@@ -275,7 +275,8 @@ def make_handlers(
                 manifest_updates={"warnings": [f"{verify_id(part_id, name)}: {reason}"]},
             )
         warnings: list[str] = []
-        body = _repaired_body(body, plan, warnings, write)
+        previous = _previous_body(getattr(context, "run_dir", None), plan, part_id, name)
+        body = _repaired_body(body, plan, warnings, write, previous)
         failures = check_body(body, part, plan["code_checks"], root)
         half_long = _meets_half_minimum(body, part, plan["code_checks"], root)
         short = any(error.startswith("min_chars:") for error in failures)
@@ -331,9 +332,11 @@ def make_handlers(
         story = read_story(context.run_dir, root)
         bodies: dict[str, list[str]] = {unit["id"]: [] for unit in plan["units"]}
         warnings: list[str] = []
+        previous: str | None = None
         for part in plan["parts"]:
             write = f2_id(part["id"], name, plan["continuation"])
             text = context.dependency_outputs.get(write)
+            raw = text if isinstance(text, str) else None
             if not isinstance(text, str):
                 _require_skipped(context.run_dir, write)
                 # task-model §6.7: 無効化・試行の上限に達して省略された単位は
@@ -343,7 +346,8 @@ def make_handlers(
                 text = _placeholder_body(plan)
                 warnings.append(f"{write}: 省略されたため本文を（未定）とした")
             else:
-                text = _repaired_body(text, plan)
+                text = _repaired_body(text, plan, previous=previous)
+            previous = raw
             bodies[part["unit"]].append(text.strip())
         units = [
             {**unit, "body": "\n\n".join(bodies[unit["id"]])} for unit in plan["units"]
@@ -541,15 +545,59 @@ def skeleton_ledger(skeleton: Mapping[str, Any], threads: Sequence[Mapping[str, 
     return "\n".join(lines)
 
 
+def _paragraph_key(paragraph: str) -> str:
+    return unicodedata.normalize("NFC", paragraph.strip())
+
+
+def strip_copied_paragraphs(body: str, previous: str | None) -> tuple[str, int]:
+    """Remove paragraphs of *body* that are paragraphs of the previous part's body.
+
+    Returns the body and the number removed (F4 検証「自己修復」, #224).
+    Paragraphs are blank-line separated and must be 20 characters or longer.
+    """
+
+    if not previous:
+        return body, 0
+    known = {key for part in re.split(r"\n[ \t]*\n", previous) if len(key := _paragraph_key(part)) >= 20}
+    kept: list[str] = []
+    removed = 0
+    for part in re.split(r"\n[ \t]*\n", body.replace("\r\n", "\n")):
+        if _paragraph_key(part) in known:
+            removed += 1
+        else:
+            kept.append(part)
+    if not removed:
+        return body, 0
+    return "\n\n".join(part.strip("\n") for part in kept if part.strip()), removed
+
+
+def _previous_body(run_dir: Path | None, plan: Mapping[str, Any], part_id: str, name: str) -> str | None:
+    """The saved F2 body of the part before *part_id* in the same format, if any."""
+
+    ids = [item["id"] for item in plan["parts"]]
+    position = ids.index(part_id) if part_id in ids else 0
+    if run_dir is None or position == 0:
+        return None
+    directory = Path(run_dir) / "tasks" / f2_id(ids[position - 1], name, plan["continuation"])
+    if not (directory / "output.md").is_file():
+        return None
+    return (directory / "output.md").read_text(encoding="utf-8")
+
+
 def _repaired_body(
     body: str, plan: Mapping[str, Any], warnings: list[str] | None = None, task_id: str = "",
+    previous: str | None = None,
 ) -> str:
     """Drop what the code can fix in an F2 body (F4 検証「自己修復」).
 
-    Only scene bodies (``fountain_syntax``) are repaired: the template adds
-    their headings.  The saved F2 output is left as it is.
+    Paragraphs copied from the previous part's body are removed in every
+    format; scene bodies (``fountain_syntax``) also lose their headings, which
+    the template adds.  The saved F2 output is left as it is.
     """
 
+    body, copied = strip_copied_paragraphs(body, previous)
+    if copied and warnings is not None:
+        warnings.append(f"{task_id}: 直前の部分の本文と同じ段落をコードで除去：{copied}段落")
     if "fountain_syntax" not in plan["code_checks"]:
         return body
     repaired, removed = format_scene.strip_body_headings(body)
