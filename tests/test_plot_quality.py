@@ -402,3 +402,15 @@ def test_format_repair_also_obeys_its_input_budget(kind):
     assert len(_repair_input_body(card)) <= definition['max_input_chars']
     assert card.count('確定した条件。') == 3
     assert '先頭。' in card and '末尾。' in card
+
+
+def test_failed_judgement_of_skipped_beat_warns_without_invalidating(monkeypatch, tmp_path):
+    from storyteller.story_s8 import story_s8_detail_judge
+    context = SimpleNamespace(task={'index': ['e001', 'b6']}, run_dir=tmp_path,
+        inputs={'judgement': {'e001-b6': {'answer': 'yes', 'reason': '確定事項と矛盾する。'}}})
+    monkeypatch.setattr('storyteller.story_s8._s7_invalidation_state', lambda context, target: (0, []))
+    monkeypatch.setattr('storyteller.story_s8._s7_task_state', lambda context, target: 'skipped')
+    result = story_s8_detail_judge(context)
+    assert not result.invalidations
+    assert result.manifest_updates['warnings'] == [
+        'S7.detail-e001-b6: 場面が省略（未定）されているため、品質不合格の書き直しをせずに進む：確定事項と矛盾する。']
