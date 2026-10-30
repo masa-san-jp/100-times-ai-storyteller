@@ -218,6 +218,14 @@ def _s7_invalidation_state(
     return count, warnings
 
 
+def _s7_task_state(context: CodeTaskContext, task_id: str) -> str | None:
+    run_dir = getattr(context, "run_dir", None)
+    if run_dir is None:
+        return None
+    task = load_manifest(run_dir / "manifest.json").get("tasks", {}).get(task_id)
+    return task.get("state") if isinstance(task, Mapping) else None
+
+
 def _event_id(context: CodeTaskContext) -> str:
     task = getattr(context, "task", {})
     index = task.get("index") if isinstance(task, Mapping) else None
@@ -297,6 +305,11 @@ def story_s8_detail_judge(context: CodeTaskContext) -> CodeTaskResult:
         return CodeTaskResult(output={"passed": True}, manifest_updates={"warnings": warnings} if warnings else {})
     count, warnings = _s7_invalidation_state(context, target)
     reason = "／".join(str(value.get("reason", "品質不合格")) for value in yes)
+    if _s7_task_state(context, target) == "skipped":
+        # A beat skipped at its own retry limit cannot be invalidated; its
+        # body is undecided, so warn and continue (story-pipeline §9.5).
+        warning = f"{target}: 場面が省略（未定）されているため、品質不合格の書き直しをせずに進む：{reason}"
+        return CodeTaskResult(output={"passed": False}, manifest_updates={"warnings": [warning]} if warning not in warnings else {})
     if count is None or count < _S7_MAX_INVALIDATIONS:
         return CodeTaskResult(output={"passed": False}, invalidations=[(target, reason)])
     warning = f"{target}: 場面の品質不合格が無効化上限に達したため、最後の出力を採用：{reason}"
