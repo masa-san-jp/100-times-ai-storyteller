@@ -337,3 +337,23 @@ def test_transport_cleanup_does_not_revoke_a_replacement_claim(tmp_path):
     harness.revoke_claim(run, "D1.value", expected_ticket=original["ticket"])
     assert harness.validate_claim(replacement["ticket"])["claim"]["executor_id"] == "new"
     assert harness.submit(replacement["ticket"], "42").accepted
+
+
+def test_check_failing_an_already_skipped_task_warns_and_continues(tmp_path):
+    definitions = {
+        "D1.value": definition(max_attempts=1, on_exhausted="skip"),
+        "D2.check": {"id": "D2.check", "version": 1, "kind": "code", "handler": "check",
+                     "inputs": {"value": {"label": "値", "from": "D1.value", "select": "output", "required": False}}},
+    }
+    harness = Orchestrator(tmp_path, definitions, code_handlers={
+        "check": lambda context: CodeTaskResult({}, invalidations=[("D1.value", "矛盾あり")])})
+    run = harness.create_run(seed=1, input_data={"material": "素材"}, task_specs=[
+        TaskSpec("D1.value", "D1.value"), TaskSpec("D2.check", "D2.check", deps=("D1.value",))])
+    claim = harness.claim_next(run, executor_id="worker")
+    harness.record_executor_failure(claim["ticket"], "出力なし")
+    harness.claim_next(run, executor_id="worker")
+    manifest = harness.load_run(run)
+    assert manifest["tasks"]["D1.value"]["state"] == "skipped"
+    assert manifest["tasks"]["D2.check"]["state"] == "done"
+    assert "D1.value: 省略（未定）のため、D2.check の不合格による無効化をせずに進む：矛盾あり" in manifest["warnings"]
+    assert manifest["status"] != "stalled"

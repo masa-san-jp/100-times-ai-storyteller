@@ -2033,6 +2033,15 @@ class Orchestrator:
                 manifest,
                 normalised.invalidations,
             )
+            skipped_targets = [
+                (invalidated_id, reason)
+                for invalidated_id, reason in normalised.invalidations
+                if manifest["tasks"][invalidated_id]["state"] == "skipped"
+            ]
+            normalised.invalidations = [
+                request for request in normalised.invalidations
+                if request not in skipped_targets
+            ]
             for invalidated_id, reason in normalised.invalidations:
                 _validate_invalidation_request(manifest, invalidated_id, reason)
             _validate_manifest_updates(normalised.manifest_updates)
@@ -2060,6 +2069,12 @@ class Orchestrator:
 
         if task["state"] == "claimed":
             _release_claim(self.run_dir(run_id), task_id, task)
+        # An already skipped target is undecided and cannot be retried;
+        # record the failed check and continue (task-model §4.3).
+        for invalidated_id, reason in skipped_targets:
+            warning = f"{invalidated_id}: 省略（未定）のため、{task_id} の不合格による無効化をせずに進む：{reason}"
+            if warning not in manifest["warnings"]:
+                manifest["warnings"].append(warning)
         _set_task_state(
             manifest,
             task_id,
