@@ -33,6 +33,7 @@
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
+| `fallback` | llm | 任意 | `name_from_sounds` / `epoch_unrecorded` | なし | `on_exhausted: fail` のタスクで、上限に達したときに入力からコードで作る種類（§6.7） |
 | `on_exhausted` | llm | 任意 | `fail` / `skip` | `skip` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
 | `extend_to_min` | llm | 任意 | 真偽値 | `false` | `output: text` のタスクで、字数の不足を継続で補う（§8） |
 | `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー。`element` が `text` 以外のタスクでは `false` |
@@ -325,6 +326,7 @@ run は、1つのタスクの不合格で止めない（[ADR-0009](../adr/0009-n
 2. **実行者の格上げ**：`tries` が `max_attempts` に達したとき、manifest の `escalation`（実行者の設定。例：`claude-haiku-5-5` → `claude-sonnet-5-5`）に次の実行者があれば、`tries` を0に戻して、そのタスクを次の実行者だけが claim できる状態にする。`st auto` と実行者ワークスペースは、自分の実行者 ID が指定と一致するタスクだけを取る。
 3. **記録して進む**：格上げの先がなくなっても合格しない場合は、`on_exhausted` に従う（既定は `skip`）。`skipped` にしたタスクは、`failure.md`（§6.3）と manifest の `warnings` に残す。後続のタスクの入力では、そのスロットを「未定」として示し、S9 の正本では該当箇所を「（未定）」と示す。
 
+- **コードで作る**：`on_exhausted: fail` のタスクのうち、定義に `fallback` を持つものは、格上げの先がなくなっても合格しない場合、オーケストレータが入力（`input.json`）からコードで要素を作り、実行者ID `harness-fallback` の試行として同じ検証にかけて提出する。合格すれば `done` とし、警告「<タスク>: 試行の上限に達したため、入力からコードで作る（<fallback>）」を残す。この試行も不合格なら `failed` にする。`fallback` の種類：`name_from_sounds`（与えた響きの音の先頭3つをつないだものを表記と読みにする。S4.item_name・S4.calendar_name・S5.name）、`epoch_unrecorded`（「<暦>の元年に何が起きたかは、記録に残っていない。」。S4.calendar_epoch）。
 - run の状態が `stalled` になるのは、`on_exhausted: fail` を明示したタスクが失敗した場合だけとする。
 - 1本の run の `skipped` の数と理由は、S9 の正本の末尾（生成の記録）と `st status --run` に示す。
 
