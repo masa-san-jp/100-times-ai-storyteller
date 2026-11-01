@@ -68,6 +68,24 @@ _TASK_TYPE = re.compile(r"^[A-Z][0-9]+\.[a-z][a-z0-9_]*$")
 _RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _TICKET = re.compile(r"^[a-f0-9]{32}$")
 _EXECUTOR_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+# §6.7: the executor ID of elements the harness builds itself from the card
+# inputs when no executor produced a valid one.
+FALLBACK_EXECUTOR = "harness-fallback"
+
+
+def _name_from_sounds(inputs: Mapping[str, Any]) -> dict[str, str]:
+    reading = "".join(inputs["name_sound"]["sounds"][:3])
+    return {"name": reading, "reading": reading}
+
+
+def _epoch_unrecorded(inputs: Mapping[str, Any]) -> str:
+    return f"{inputs['calendar']}の元年に何が起きたかは、記録に残っていない。"
+
+
+FALLBACKS: dict[str, Callable[[Mapping[str, Any]], Any]] = {
+    "name_from_sounds": _name_from_sounds,
+    "epoch_unrecorded": _epoch_unrecorded,
+}
 _ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
 _HARNESS_KINDS = frozenset({"story", "dummy", "report"})
 _TERMINAL_RUN_STATUSES = frozenset({"halted", "completed", "duplicate"})
@@ -1095,7 +1113,24 @@ class Orchestrator:
 
     submit_failure = record_executor_failure
 
-    def _commit_submission(
+    def _commit_submission(self, ticket: str, run_id: str, task_id: str, *args: Any, **kwargs: Any) -> SubmissionResult:
+        result = self._commit_submission_locked(ticket, run_id, task_id, *args, **kwargs)
+        if not result.accepted:
+            self._run_due_fallback(run_id, task_id)
+        return result
+
+    def _run_due_fallback(self, run_id: str, task_id: str) -> None:
+        """Submit the code-built element of a task left to the harness (§6.7)."""
+        task = self.load_run(run_id)["tasks"][task_id]
+        if task["state"] != "ready" or task.get("executor") != FALLBACK_EXECUTOR:
+            return
+        claim = self.claim_task(run_id, task_id, executor_id=FALLBACK_EXECUTOR)
+        inputs = _load_card_inputs(self.task_dir(run_id, task_id))
+        name = self.task_definitions[task["type"]]["fallback"]
+        output = FALLBACKS[name](inputs)
+        self.submit(claim["ticket"], output if isinstance(output, str) else json.dumps(output, ensure_ascii=False))
+
+    def _commit_submission_locked(
         self,
         ticket: str,
         run_id: str,
@@ -1271,9 +1306,21 @@ class Orchestrator:
                 manifest["warnings"].append(
                     f"{task_id}: 試行の上限に達したため実行者を {escalate_to} に格上げ"
                 )
+            fallback_due = (
+                exhausted and not fatal and escalate_to is None
+                and on_exhausted == "fail" and "fallback" in task_definition
+                and claim["executor_id"] != FALLBACK_EXECUTOR
+            )
+            if fallback_due:
+                # §6.7: the harness builds the element from the card inputs
+                # instead of stopping the run; only it may claim the task now.
+                task["executor"] = FALLBACK_EXECUTOR
+                manifest["warnings"].append(
+                    f"{task_id}: 試行の上限に達したため、入力からコードで作る（{task_definition['fallback']}）"
+                )
             if fatal:
                 next_state = "failed"
-            elif escalate_to is not None:
+            elif escalate_to is not None or fallback_due:
                 next_state = "ready"
             elif exhausted and on_exhausted == "skip":
                 next_state = "skipped"
@@ -2033,6 +2080,15 @@ class Orchestrator:
                 manifest,
                 normalised.invalidations,
             )
+            skipped_targets = [
+                (invalidated_id, reason)
+                for invalidated_id, reason in normalised.invalidations
+                if manifest["tasks"][invalidated_id]["state"] == "skipped"
+            ]
+            normalised.invalidations = [
+                request for request in normalised.invalidations
+                if request not in skipped_targets
+            ]
             for invalidated_id, reason in normalised.invalidations:
                 _validate_invalidation_request(manifest, invalidated_id, reason)
             _validate_manifest_updates(normalised.manifest_updates)
@@ -2060,6 +2116,12 @@ class Orchestrator:
 
         if task["state"] == "claimed":
             _release_claim(self.run_dir(run_id), task_id, task)
+        # An already skipped target is undecided and cannot be retried;
+        # record the failed check and continue (task-model §4.3).
+        for invalidated_id, reason in skipped_targets:
+            warning = f"{invalidated_id}: 省略（未定）のため、{task_id} の不合格による無効化をせずに進む：{reason}"
+            if warning not in manifest["warnings"]:
+                manifest["warnings"].append(warning)
         _set_task_state(
             manifest,
             task_id,
