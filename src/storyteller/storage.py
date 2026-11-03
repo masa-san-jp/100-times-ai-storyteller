@@ -483,6 +483,61 @@ def acquire_lock(
             _remove_lock_if_owned(lock_path, token)
 
 
+class HeldFileLock:
+    """An OS file lock held by this process until :meth:`release`.
+
+    The operating system releases it when the process ends, so holding it
+    proves only that the holder is alive; no elapsed time is involved.
+    """
+
+    def __init__(self, descriptor: int) -> None:
+        self._descriptor: int | None = descriptor
+
+    def release(self) -> None:
+        descriptor, self._descriptor = self._descriptor, None
+        if descriptor is None:
+            return
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+        finally:
+            os.close(descriptor)
+
+
+def try_hold_file_lock(path: os.PathLike[str] | str) -> HeldFileLock | None:
+    """Take an exclusive OS lock on *path* without waiting; ``None`` if held."""
+    lock_path = _as_path(path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o666)
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as error:
+        os.close(descriptor)
+        if error.errno in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK, errno.EDEADLK}:
+            return None
+        raise
+    return HeldFileLock(descriptor)
+
+
+def file_lock_is_held(path: os.PathLike[str] | str) -> bool:
+    """Whether a live process holds the OS lock on *path* (it is not created)."""
+    if not os.path.exists(path):
+        return False
+    hold = try_hold_file_lock(path)
+    if hold is None:
+        return True
+    hold.release()
+    return False
+
+
 def manifest_lock_path(run_dir: os.PathLike[str] | str) -> Path:
     return _as_path(run_dir) / "manifest.lock"
 

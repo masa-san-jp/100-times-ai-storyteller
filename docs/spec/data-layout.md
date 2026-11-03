@@ -53,6 +53,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
       card.md                     # 実行者に渡したタスクカード
       input.json                  # カードに埋め込んだ入力
       claim.json                  # claim 中のみ存在
+      claim.lock                  # st auto が実行中に OS のロックを持つ（task-model §5）。削除しない
       output.json | output.md     # 合格した出力
       attempts/<n>.json           # 不合格の試行（出力・理由・実行者ID・時刻）
     story/story.json, story.md, characters.md, world.md    # 正本
