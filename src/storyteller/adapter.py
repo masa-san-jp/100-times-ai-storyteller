@@ -63,8 +63,8 @@ class AdapterResponse:
 
     content: str
     done_reason: str | None = None
-    # Seconds the server spent on the request (Ollama ``total_duration``);
-    # the rest of the wall time was spent waiting in its queue.
+    # Seconds the server worked on the request (Ollama load, prompt and
+    # generation durations); the rest of the wall time was spent queued.
     server_seconds: float | None = None
 
 
@@ -412,8 +412,14 @@ class OllamaAdapter:
         done_reason = document.get("done_reason")
         if done_reason is not None and not isinstance(done_reason, str):
             raise AdapterError("Ollama の done_reason が不正です")
-        total = document.get("total_duration")
-        server_seconds = total / 1e9 if isinstance(total, (int, float)) and not isinstance(total, bool) else None
+        # Ollama's total_duration includes the time spent queued, so the
+        # work itself is the sum of loading, prompt evaluation and generation.
+        parts = [document.get(key) for key in ("load_duration", "prompt_eval_duration", "eval_duration")]
+        server_seconds = (
+            sum(parts) / 1e9
+            if all(isinstance(part, (int, float)) and not isinstance(part, bool) for part in parts)
+            else None
+        )
         return AdapterResponse(message["content"], done_reason, server_seconds)
 
 

@@ -127,9 +127,19 @@ class _HangingServer:
                 except (OSError, socket.timeout):
                     pass
                 return
-            body = b'{"message":{"content":"42"},"done_reason":"stop","total_duration":1000000000}'
+            body = (b'{"message":{"content":"42"},"done_reason":"stop","total_duration":9000000000,'
+                    b'"load_duration":1000000000,"prompt_eval_duration":1000000000,"eval_duration":1000000000}')
             connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
                                + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body)
+
+
+def test_queue_wait_is_wall_time_minus_the_server_work() -> None:
+    from storyteller.adapter import OllamaAdapter
+    response = OllamaAdapter._decode_response({
+        "message": {"content": "42"}, "total_duration": 9_000_000_000,
+        "load_duration": 1_000_000_000, "prompt_eval_duration": 1_000_000_000, "eval_duration": 1_000_000_000,
+    })
+    assert response.server_seconds == 3.0  # total_duration includes the queue
 
 
 def test_revoked_auto_claim_closes_its_connection_and_drops_the_result(tmp_path: Path, monkeypatch) -> None:
