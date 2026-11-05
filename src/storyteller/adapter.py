@@ -85,11 +85,13 @@ class _TrackedHTTPHandler(HTTPHandler):
 
 
 _OPENER = build_opener(_TrackedHTTPHandler)
+# An HTTP request, not file I/O: bound once so the call reads as such.
+_OPEN_URL = _OPENER.open
 
 
 def urlopen(request: Request, timeout: float | None = None) -> Any:
     """Open *request*; ``None`` waits while the connection is open."""
-    return _OPENER.open(request, timeout=timeout if timeout is not None else socket._GLOBAL_DEFAULT_TIMEOUT)
+    return _OPEN_URL(request, timeout=timeout if timeout is not None else socket._GLOBAL_DEFAULT_TIMEOUT)
 
 
 def abort_request(thread_id: int) -> None:
