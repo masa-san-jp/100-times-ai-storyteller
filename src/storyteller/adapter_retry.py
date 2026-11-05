@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import threading
 import time
 from typing import TypeVar
 
@@ -24,33 +25,49 @@ class RequestRejected(AdapterRequestError):
 
 
 class TransportExhausted(TransportError):
-    """Transport has remained unavailable until the lease-bound retry budget ran out."""
+    """Transport has kept failing until the retry budget ran out."""
+
+
+class ClaimLost(AdapterError):
+    """The executor lost its claim while waiting; its result must be discarded."""
 
 
 T = TypeVar("T")
 
 
 def retry_transport(
-    request: Callable[[float], T], *, timeout: float,
+    request: Callable[[float | None], T], *, timeout: float | None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     budget: float = 1800.0,
+    cancelled: threading.Event | None = None,
 ) -> T:
     """Retry the identical request, without consuming an inference attempt.
 
-    *budget* is the total retry time in seconds (the claim's remaining lease
-    minus five minutes).  A budget of zero or less sends the request once.
+    Each send waits up to *timeout* (``None``: as long as the connection is
+    open) and is never shortened: waiting behind other users of a shared
+    server is not a failure (task-model §6.3).  *budget* is counted from the
+    first failure of the current run of failures.  A budget of zero or less
+    sends the request once.  When *cancelled* is set (the claim was lost),
+    nothing is sent again and :class:`ClaimLost` is raised.
     """
-    deadline = clock() + budget
+    first_failure: float | None = None
     delay = 30.0
     while True:
+        if cancelled is not None and cancelled.is_set():
+            raise ClaimLost("claim を失ったため、送信をやめました")
         try:
-            return request(timeout if budget <= 0 else min(timeout, max(0.001, deadline - clock())))
+            return request(timeout)
         except TransportError as error:
-            remaining = deadline - clock()
+            if cancelled is not None and cancelled.is_set():
+                raise ClaimLost("claim を失ったため、送信をやめました") from error
+            now = clock()
+            if first_failure is None:
+                first_failure = now
+            remaining = first_failure + budget - now
             if remaining <= 0:
-                raise TransportExhausted(f"通信の失敗が続き、lease の残り時間内の送り直しを使い切りました: {error}") from error
+                raise TransportExhausted(f"通信の失敗が続き、送り直しの予算を使い切りました: {error}") from error
             sleep(min(delay, remaining))
-            if clock() >= deadline:
-                raise TransportExhausted(f"通信の失敗が続き、lease の残り時間内の送り直しを使い切りました: {error}") from error
+            if clock() >= first_failure + budget:
+                raise TransportExhausted(f"通信の失敗が続き、送り直しの予算を使い切りました: {error}") from error
             delay = min(delay * 2, 300)

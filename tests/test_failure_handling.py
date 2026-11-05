@@ -43,8 +43,8 @@ class Clock:
 
 
 def virtual_retry(monkeypatch, clock):
-    def retry(request, *, timeout, budget):
-        return retry_transport(request, timeout=timeout, clock=clock, sleep=clock.sleep, budget=budget)
+    def retry(request, *, timeout, budget, **kwargs):
+        return retry_transport(request, timeout=timeout, clock=clock, sleep=clock.sleep, budget=budget, **kwargs)
     monkeypatch.setattr("storyteller.adapter.retry_transport", retry)
 
 
@@ -80,28 +80,28 @@ def lease_orchestrator(tmp_path, clock, definitions):
     return Orchestrator(tmp_path, definitions, clock=lambda: base + timedelta(seconds=clock.now))
 
 
-def test_retry_budget_is_lease_remaining_minus_five_minutes(tmp_path, monkeypatch):
+def test_retry_budget_counts_from_the_first_failure_not_the_lease(tmp_path, monkeypatch):
     clock = Clock()
-    harness = lease_orchestrator(tmp_path, clock, {"D1.value": definition()})
+    harness = lease_orchestrator(tmp_path, clock, {"D1.value": definition(lease_minutes=5)})
     run = harness.create_run(seed=1, input_data={"material": "素材"})
     virtual_retry(monkeypatch, clock)
 
     def send(request, *, timeout):
-        assert 0 < timeout <= 600
+        assert timeout is None  # wait while the connection is open
         raise URLError("offline")
 
     monkeypatch.setattr("storyteller.adapter.urlopen", send)
     AutoRunner(tmp_path, model(), harness).run(run_id=run, workers=1, until_empty=True)
-    assert clock.now == 1500
-    assert clock.waits == [30, 60, 120, 240, 300, 300, 300, 150]
+    assert clock.now == 1800
+    assert clock.waits == [30, 60, 120, 240, 300, 300, 300, 300, 150]
     task = harness.load_run(run)["tasks"]["D1.value"]
     assert task["state"] == "ready" and task["claim"] is None
     assert task["tries"] == task["attempt"] == 0
 
 
-def test_no_retry_when_lease_has_five_minutes_or_less(tmp_path, monkeypatch):
+def test_zero_retry_budget_sends_once(tmp_path, monkeypatch):
     clock = Clock()
-    harness = lease_orchestrator(tmp_path, clock, {"D1.value": definition(lease_minutes=5)})
+    harness = lease_orchestrator(tmp_path, clock, {"D1.value": definition()})
     run = harness.create_run(seed=1, input_data={"material": "素材"})
     virtual_retry(monkeypatch, clock)
     calls = []
@@ -111,13 +111,15 @@ def test_no_retry_when_lease_has_five_minutes_or_less(tmp_path, monkeypatch):
         raise URLError("offline")
 
     monkeypatch.setattr("storyteller.adapter.urlopen", send)
-    AutoRunner(tmp_path, model(), harness).run(run_id=run, workers=1, until_empty=True)
+    config = model()
+    config = type(config)(**{**config.__dict__, "transport_retry_budget_seconds": 0.0})
+    AutoRunner(tmp_path, config, harness).run(run_id=run, workers=1, until_empty=True)
     assert clock.waits == [] and len(calls) == 1
     task = harness.load_run(run)["tasks"]["D1.value"]
     assert task["state"] == "ready" and task["claim"] is None
 
 
-def test_auto_continues_after_submission_rejected_by_expired_lease(tmp_path, monkeypatch, capsys):
+def test_auto_submits_when_inference_outlives_the_lease(tmp_path, monkeypatch, capsys):
     clock = Clock()
     harness = lease_orchestrator(tmp_path, clock, {
         "D1.a": definition(id="D1.a", lease_minutes=1),
@@ -129,15 +131,16 @@ def test_auto_continues_after_submission_rejected_by_expired_lease(tmp_path, mon
     def send(request, *, timeout):
         calls.append(request)
         if len(calls) == 1:
-            clock.now += 120  # inference outlives the lease
+            clock.now += 120  # waited behind other users of a shared server
         return BytesIO(b'{"message":{"content":"42"}}')
 
     monkeypatch.setattr("storyteller.adapter.urlopen", send)
     AutoRunner(tmp_path, model(), harness).run(run_id=run, workers=1, until_empty=True)
-    assert len(calls) >= 2
-    assert "lease" in capsys.readouterr().err
-    states = {t["state"] for t in harness.load_run(run)["tasks"].values()}
-    assert "done" in states
+    # The live st auto holds claim.lock, so the lapsed lease does not take
+    # the task away and the result is accepted (task-model §5).
+    assert len(calls) == 2
+    assert "lease" not in capsys.readouterr().err
+    assert {t["state"] for t in harness.load_run(run)["tasks"].values()} == {"done"}
 
 
 def test_thirty_minutes_releases_claim_and_stops_auto(tmp_path, monkeypatch):
@@ -147,7 +150,7 @@ def test_thirty_minutes_releases_claim_and_stops_auto(tmp_path, monkeypatch):
     virtual_retry(monkeypatch, clock)
 
     def send(request, *, timeout):
-        assert 0 < timeout <= 600
+        assert timeout is None
         raise URLError("offline")
 
     monkeypatch.setattr("storyteller.adapter.urlopen", send)
@@ -160,19 +163,37 @@ def test_thirty_minutes_releases_claim_and_stops_auto(tmp_path, monkeypatch):
     assert not (harness.task_dir(run, "D1.value") / "failure.md").exists()
 
 
-def test_timeout_is_bounded_by_remaining_transport_budget():
+def test_a_long_send_is_never_cut_and_does_not_consume_the_budget():
     clock = Clock()
     timeouts = []
 
     def request(timeout):
         timeouts.append(timeout)
-        clock.now += timeout
-        raise TransportError("timeout")
+        clock.now += 5000  # a long wait in a shared server's queue
+        if len(timeouts) == 1:
+            return "ok"
+        raise TransportError("reset")
 
+    assert retry_transport(request, timeout=7200, clock=clock, sleep=clock.sleep) == "ok"
     with pytest.raises(TransportExhausted):
-        retry_transport(request, timeout=600, clock=clock, sleep=clock.sleep)
-    assert clock.now == 1800
-    assert timeouts == [600, 600, 510]
+        retry_transport(request, timeout=7200, clock=clock, sleep=clock.sleep)
+    # The budget starts at the first failure; the next send still waits fully.
+    assert timeouts == [7200, 7200, 7200]
+
+
+def test_lost_claim_stops_resending():
+    import threading
+    from storyteller.adapter_retry import ClaimLost
+    cancelled = threading.Event()
+    clock = Clock()
+
+    def request(timeout):
+        cancelled.set()
+        raise TransportError("closed by the watcher")
+
+    with pytest.raises(ClaimLost):
+        retry_transport(request, timeout=None, clock=clock, sleep=clock.sleep, cancelled=cancelled)
+    assert clock.waits == []
 
 
 @pytest.mark.parametrize("status", [400, 401, 404, 422])

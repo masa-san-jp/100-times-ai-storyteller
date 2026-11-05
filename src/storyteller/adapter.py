@@ -18,24 +18,25 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from http.client import HTTPException
+from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPHandler, Request, build_opener
+import socket
 
 import yaml
 
 from .adapter_retry import (
-    AdapterError, AdapterRequestError, RequestRejected, TransportError,
+    AdapterError, AdapterRequestError, ClaimLost, RequestRejected, TransportError,
     TransportExhausted, retry_transport,
 )
 from .auto_workers import WorkersFailed, run_supervised
 from .manifest import load_manifest, write_manifest
 from .orchestrator import ClaimError, Orchestrator
 from .report_layout import report_manifest_paths
-from .storage import acquire_lock, atomic_write_json, manifest_lock
+from .storage import acquire_lock, atomic_write_json, manifest_lock, try_hold_file_lock
 from .validation import YamlValidationError, parse_json_object, validate_document
 
 
@@ -51,7 +52,9 @@ class ModelConfig:
     context_length: int
     json_mode: str
     think: bool | str | None = None
-    timeout_seconds: float = 600.0
+    # None: wait as long as the connection is open (task-model §6.3).
+    timeout_seconds: float | None = None
+    transport_retry_budget_seconds: float = 1800.0
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,47 @@ class AdapterResponse:
 
     content: str
     done_reason: str | None = None
+    # Seconds the server worked on the request (Ollama load, prompt and
+    # generation durations); the rest of the wall time was spent queued.
+    server_seconds: float | None = None
+
+
+# Connections opened by each worker thread, so that a worker that lost its
+# claim can be made to close its connection (the server then stops the work).
+_ACTIVE_CONNECTIONS: dict[int, HTTPConnection] = {}
+
+
+class _TrackedHTTPHandler(HTTPHandler):
+    def http_open(self, req: Request) -> Any:
+        return self.do_open(self._connection, req)
+
+    @staticmethod
+    def _connection(host: str, **kwargs: Any) -> HTTPConnection:
+        connection = HTTPConnection(host, **kwargs)
+        _ACTIVE_CONNECTIONS[threading.get_ident()] = connection
+        return connection
+
+
+_OPENER = build_opener(_TrackedHTTPHandler)
+# An HTTP request, not file I/O: bound once so the call reads as such.
+_OPEN_URL = _OPENER.open
+
+
+def urlopen(request: Request, timeout: float | None = None) -> Any:
+    """Open *request*; ``None`` waits while the connection is open."""
+    return _OPEN_URL(request, timeout=timeout if timeout is not None else socket._GLOBAL_DEFAULT_TIMEOUT)
+
+
+def abort_request(thread_id: int) -> None:
+    """Close the connection a worker thread is waiting on (best effort)."""
+    connection = _ACTIVE_CONNECTIONS.get(thread_id)
+    sock = getattr(connection, "sock", None)
+    if sock is None:
+        return
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
 
 
 _JSON_MODES = ("schema", "json", "off")
@@ -166,7 +210,8 @@ def load_model_config(
     context_length = raw.get("context_length")
     json_mode = raw.get("json_mode", "schema")
     think = raw.get("think") if "think" in raw else None
-    timeout_seconds = raw.get("timeout_seconds", 600)
+    timeout_seconds = raw.get("timeout_seconds")
+    retry_budget = raw.get("transport_retry_budget_seconds", 1800)
     if (
         isinstance(temperature, bool)
         or not isinstance(temperature, (int, float))
@@ -179,9 +224,14 @@ def load_model_config(
         or context_length < 1
         or json_mode not in _JSON_MODES
         or (think is not None and think not in _THINK_VALUES)
-        or isinstance(timeout_seconds, bool)
-        or not isinstance(timeout_seconds, (int, float))
-        or timeout_seconds <= 0
+        or (timeout_seconds is not None and (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or timeout_seconds <= 0
+        ))
+        or isinstance(retry_budget, bool)
+        or not isinstance(retry_budget, (int, float))
+        or retry_budget < 0
     ):
         raise AdapterError(
             f"モデル設定の数値、json_mode、think または timeout_seconds が不正です: {model}"
@@ -195,7 +245,8 @@ def load_model_config(
         context_length=context_length,
         json_mode=json_mode,
         think=think,
-        timeout_seconds=float(timeout_seconds),
+        timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
+        transport_retry_budget_seconds=float(retry_budget),
     )
 
 
@@ -298,6 +349,7 @@ class OllamaAdapter:
         json_mode: str | None = None,
         retry_budget: float = 1800.0,
         max_output_tokens: int | None = None,
+        cancelled: threading.Event | None = None,
     ) -> AdapterResponse:
         mode = json_mode or self.model.json_mode
         if mode not in _JSON_MODES:
@@ -328,7 +380,7 @@ class OllamaAdapter:
             method="POST",
         )
 
-        def send(timeout: float) -> AdapterResponse:
+        def send(timeout: float | None) -> AdapterResponse:
             try:
                 with urlopen(request, timeout=timeout) as response:
                     status = getattr(response, "status", 200)
@@ -350,7 +402,7 @@ class OllamaAdapter:
             except (json.JSONDecodeError, UnicodeError) as error:
                 raise AdapterError(f"Ollama の応答を解析できません: {error}") from error
 
-        return retry_transport(send, timeout=self.timeout, budget=retry_budget)
+        return retry_transport(send, timeout=self.timeout, budget=retry_budget, cancelled=cancelled)
 
     @staticmethod
     def _decode_response(document: Any) -> AdapterResponse:
@@ -362,7 +414,73 @@ class OllamaAdapter:
         done_reason = document.get("done_reason")
         if done_reason is not None and not isinstance(done_reason, str):
             raise AdapterError("Ollama の done_reason が不正です")
-        return AdapterResponse(message["content"], done_reason)
+        # Ollama's total_duration includes the time spent queued, so the
+        # work itself is the sum of loading, prompt evaluation and generation.
+        parts = [document.get(key) for key in ("load_duration", "prompt_eval_duration", "eval_duration")]
+        server_seconds = (
+            sum(parts) / 1e9
+            if all(isinstance(part, (int, float)) and not isinstance(part, bool) for part in parts)
+            else None
+        )
+        return AdapterResponse(message["content"], done_reason, server_seconds)
+
+
+class _ClaimWatch:
+    """Hold a claim's ``claim.lock`` and watch the claim while it is executed.
+
+    The OS lock tells other processes that this live process still executes
+    the task, so its claim is not handed to anyone else whatever the lease
+    says (task-model §5).  If the claim is revoked, the connection being
+    waited on is closed (the server stops the work) and the result is dropped.
+    """
+
+    interval = 10.0
+
+    def __init__(self, orchestrator: Orchestrator, ticket: str) -> None:
+        self.orchestrator = orchestrator
+        self.ticket = ticket
+        self.lost = threading.Event()
+        self._done = threading.Event()
+        self._worker = threading.get_ident()
+        self._hold: Any = None
+        self._thread: threading.Thread | None = None
+
+    def start(self, lock_path: Path) -> None:
+        self._hold = try_hold_file_lock(lock_path)
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._done.wait(self.interval):
+            try:
+                self.orchestrator.validate_claim(self.ticket)
+            except ClaimError:
+                self.lost.set()
+                abort_request(self._worker)
+                return
+            except Exception:
+                continue
+
+    def check(self) -> None:
+        if self.lost.is_set():
+            raise ClaimLost("claim が取り消されました")
+
+    def stop(self) -> None:
+        self._done.set()
+        if self._thread is not None:
+            self._thread.join()
+        _ACTIVE_CONNECTIONS.pop(self._worker, None)
+        if self._hold is not None:
+            self._hold.release()
+            self._hold = None
+
+
+def _report_request(task_id: str, elapsed: float, response: AdapterResponse) -> None:
+    """One line per request, so waits on a shared server can be read later."""
+    line = f"依頼 {task_id}: {elapsed:.0f}秒"
+    if response.server_seconds is not None:
+        line += f"（サーバーの処理 {response.server_seconds:.0f}秒、順番待ちの推定 {max(0.0, elapsed - response.server_seconds):.0f}秒）"
+    print(line, file=sys.stderr)
 
 
 def _default_adapter_factory(model: ModelConfig) -> Any:
@@ -473,8 +591,10 @@ class AutoRunner:
                     return
                 time.sleep(0.05)
                 continue
+            watch = _ClaimWatch(orchestrator, claim["ticket"])
             try:
                 claim_info = orchestrator.validate_claim(claim["ticket"])
+                watch.start(orchestrator.task_dir(claim_info["run_id"], claim_info["task_id"]) / "claim.lock")
                 definition = orchestrator.task_definitions[
                     orchestrator.load_run(claim_info["run_id"])["tasks"][claim_info["task_id"]]["type"]
                 ]
@@ -487,18 +607,18 @@ class AutoRunner:
                 definition = specialize_fact_definition(definition, fact_inputs or {})
                 schema = self._load_schema(definition, orchestrator, inputs=fact_inputs)
                 mode = self.state.current(self.model)["json_mode"]
-                lease_left = (
-                    datetime.fromisoformat(claim_info["claim"]["lease_expires_at"][:-1] + "+00:00")
-                    - datetime.fromisoformat(orchestrator._now()[:-1] + "+00:00")
-                ).total_seconds()
                 output_options = (
                     {"max_output_tokens": definition["max_output_tokens"]}
                     if "max_output_tokens" in definition else {}
                 )
+                started = time.monotonic()
                 response = adapter.complete(
                     claim["card"], schema=schema, json_mode=mode,
-                    retry_budget=lease_left - 300, **output_options,
+                    retry_budget=self.model.transport_retry_budget_seconds,
+                    cancelled=watch.lost, **output_options,
                 )
+                watch.check()
+                _report_request(claim_info["task_id"], time.monotonic() - started, response)
                 empty_response = not response.content.strip()
                 invalid = empty_response or (
                     _card_requests_json(claim["card"])
@@ -526,6 +646,8 @@ class AutoRunner:
                 )
                 if not result.accepted:
                     continue
+            except ClaimLost as error:
+                print(f"警告: {claim_info['task_id']}: {error}。結果を捨てて次に進みます", file=sys.stderr)
             except TransportExhausted as error:
                 self._stop.set()
                 orchestrator.revoke_claim(
@@ -553,6 +675,8 @@ class AutoRunner:
             except (AdapterError, OSError, ValueError) as error:
                 orchestrator.record_executor_failure(claim["ticket"], str(error))
                 print(f"警告: LLMタスクを処理できません: {error}", file=sys.stderr)
+            finally:
+                watch.stop()
 
     def _claim_next(
         self, run_id: str | None
