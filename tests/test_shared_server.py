@@ -41,7 +41,7 @@ def test_os_lock_is_held_only_while_the_holder_process_lives(tmp_path: Path) -> 
          f"hold = try_hold_file_lock({str(path)!r})\n"
          "print('held' if hold else 'busy', flush=True)\n"
          "time.sleep(600)\n"],
-        stdout=subprocess.PIPE, text=True,
+        stdout=subprocess.PIPE, text=True, encoding="utf-8",
     )
     try:
         assert holder.stdout.readline().strip() == "held"
