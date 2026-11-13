@@ -11,9 +11,10 @@ from collections.abc import Mapping
 from http.client import HTTPException
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from .adapter import (
+    urlopen,
     _JSON_MODES,
     effective_output_tokens,
     AdapterResponse,
@@ -55,6 +56,7 @@ class OpenAICompatibleAdapter:
         schema: Mapping[str, Any] | None = None,
         json_mode: str | None = None,
         retry_budget: float = 1800.0,
+        cancelled: Any = None,
         max_output_tokens: int | None = None,
     ) -> AdapterResponse:
         mode = json_mode or self.model.json_mode
@@ -88,7 +90,7 @@ class OpenAICompatibleAdapter:
             method="POST",
         )
 
-        def send(timeout: float) -> AdapterResponse:
+        def send(timeout: float | None) -> AdapterResponse:
             try:
                 with urlopen(request, timeout=timeout) as response:
                     status = getattr(response, "status", 200)
@@ -110,7 +112,7 @@ class OpenAICompatibleAdapter:
             except (json.JSONDecodeError, UnicodeError) as error:
                 raise AdapterError(f"OpenAI互換API の応答を解析できません: {error}") from error
 
-        return retry_transport(send, timeout=self.timeout, budget=retry_budget)
+        return retry_transport(send, timeout=self.timeout, budget=retry_budget, cancelled=cancelled)
 
     @staticmethod
     def _decode_response(document: Any) -> AdapterResponse:

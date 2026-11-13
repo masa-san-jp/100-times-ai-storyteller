@@ -43,6 +43,7 @@ from .storage import (
     LockTimeoutError,
     atomic_write_json,
     atomic_write_text,
+    file_lock_is_held,
     manifest_lock,
     prepare_atomic_write_bytes,
 )
@@ -724,7 +725,7 @@ class Orchestrator:
                             or changed
                         )
                         _refresh_blocked_tasks(manifest, now)
-                        task_id = _next_ready_llm_task(manifest, resolved_executor_id)
+                        task_id = _next_ready_llm_task(manifest, resolved_executor_id, run_dir)
                         if task_id is None:
                             if changed:
                                 _update_run_status(manifest)
@@ -803,7 +804,7 @@ class Orchestrator:
             task = _get_task(manifest, task_id)
             if task["kind"] != "llm" or task["state"] != "ready" or not _executor_allowed(
                 task, resolved_executor_id
-            ):
+            ) or file_lock_is_held(run_dir / "tasks" / task_id / "claim.lock"):
                 if cache_changed:
                     _update_run_status(manifest)
                     _touch_manifest(manifest, now)
@@ -902,8 +903,8 @@ class Orchestrator:
             ):
                 raise InvalidClaimError("ticket の claim は無効です")
             payload = _read_claim_file(claim_path)
-            if payload.get("ticket") != ticket or _claim_expired(
-                payload, self._now()
+            if payload.get("ticket") != ticket or _claim_lapsed(
+                run_dir, found_task_id, payload, self._now()
             ):
                 raise InvalidClaimError("ticket の lease が切れています")
             if _manifest_claim(payload) != dict(claim):
@@ -2931,6 +2932,19 @@ def _read_claim_file(path: Path) -> dict[str, str]:
         raise InvalidClaimError(str(error)) from error
 
 
+def _claim_lapsed(run_dir: Path, task_id: str, payload: Mapping[str, Any], now: str) -> bool:
+    """A claim ends at its lease, except while a live ``st auto`` executes it.
+
+    ``st auto`` holds the OS lock on ``claim.lock`` for as long as it executes
+    the task; the lock is released only by the holder or by the end of its
+    process (task-model §5).  Elapsed time alone never takes the task away.
+    """
+    if not _claim_expired(payload, now):
+        return False
+    return not (payload.get("isolation") == "adapter"
+                and file_lock_is_held(run_dir / "tasks" / task_id / "claim.lock"))
+
+
 def _claim_expired(payload: Mapping[str, Any], now: str) -> bool:
     claimed_at = _parse_utc_timestamp(payload["claimed_at"])
     lease_expires_at = _parse_utc_timestamp(payload["lease_expires_at"])
@@ -3003,7 +3017,7 @@ def _require_claim_locked(
         payload = _read_claim_file(claim_path)
         if payload["task_id"] != task_id or payload["ticket"] != ticket:
             raise InvalidClaimError("claim.json の ticket が一致しません")
-        if _claim_expired(payload, now):
+        if _claim_lapsed(run_dir, task_id, payload, now):
             raise InvalidClaimError("ticket の lease が切れています")
         if _manifest_claim(payload) != dict(claim):
             raise InvalidClaimError("manifest と claim.json が一致しません")
@@ -3534,7 +3548,7 @@ def _refresh_claims(
             changed = True
             continue
 
-        if _claim_expired(payload, now):
+        if _claim_lapsed(run_dir, task_id, payload, now):
             executor_id = None
             if isinstance(task.get("claim"), Mapping):
                 executor_id = task["claim"].get("executor_id")
@@ -3659,7 +3673,8 @@ def _executor_allowed(task: Mapping[str, Any], executor_id: str | None) -> bool:
 
 
 def _next_ready_llm_task(
-    manifest: Mapping[str, Any], executor_id: str | None = None
+    manifest: Mapping[str, Any], executor_id: str | None = None,
+    run_dir: Path | None = None,
 ) -> str | None:
     depths = _task_depths(manifest)
     candidates = [
@@ -3668,6 +3683,10 @@ def _next_ready_llm_task(
         if task["kind"] == "llm"
         and task["state"] == "ready"
         and _executor_allowed(task, executor_id)
+        # A revoked claim's executor may still be running; wait until it
+        # has stopped and released claim.lock (P7, task-model §5).
+        and not (run_dir is not None
+                 and file_lock_is_held(run_dir / "tasks" / task_id / "claim.lock"))
     ]
     if not candidates:
         return None
