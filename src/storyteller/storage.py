@@ -36,9 +36,16 @@ SYNC_FOLDER_MARKERS = (
     "OneDrive",
 )
 
-DEFAULT_LOCK_TIMEOUT = 10.0
+# None: wait as long as the holder is alive (data-layout §5).  A holder on a
+# busy, shared machine can be stopped for a long time without having died.
+DEFAULT_LOCK_TIMEOUT: float | None = None
 DEFAULT_LOCK_RETRY_INTERVAL = 0.1
+# A lock or queue entry is left over from an ended process only when no live
+# process holds its OS lock; the age only bridges the moment between creating
+# the file and taking that lock.
 DEFAULT_STALE_LOCK_AGE = 30.0
+_WAITER_GRACE_SECONDS = 1.0
+_WAIT_NOTICE_SECONDS = 60.0
 
 _WAITER_NAME = re.compile(r"([0-9]+)-([0-9]+)-([0-9a-fA-F]{32})\.wait")
 
@@ -295,7 +302,19 @@ def _lock_is_stale(path: Path, stale_after: float, now: float) -> bool:
         age = now - path.stat().st_mtime
     except FileNotFoundError:
         return False
-    return age > stale_after
+    return age > stale_after and not _os_lock_held(path)
+
+
+def _os_lock_held(path: Path) -> bool:
+    """Whether a live process holds the OS lock on an existing *path*."""
+    try:
+        hold = try_hold_file_lock(path, create=False)
+    except FileNotFoundError:
+        return False
+    if hold is None:
+        return True
+    hold.release()
+    return False
 
 
 def _remove_lock_if_owned(path: Path, token: str) -> None:
@@ -354,7 +373,14 @@ def _first_waiter(
             # Observe the entry before taking this clock reading. A request
             # arriving during enumeration is not a pre-reboot future entry.
             now_ns = time.monotonic_ns()
-            if deadline_ns <= now_ns or start_ns > now_ns:
+            # A live waiter holds the OS lock on its entry; an entry nobody
+            # holds was left by an ended process (after the creation moment).
+            abandoned = (
+                entry.name != own_entry_name
+                and time.time() - stat.st_mtime > _WAITER_GRACE_SECONDS
+                and not _os_lock_held(Path(entry.path))
+            )
+            if deadline_ns <= now_ns or start_ns > now_ns or abandoned:
                 # Own cleanup belongs to acquire_lock's finally: unlike this
                 # optional cleanup, its failure must fail the request.
                 if entry.name == own_entry_name:
@@ -380,12 +406,17 @@ def _first_waiter(
 def acquire_lock(
     path: os.PathLike[str] | str,
     *,
-    timeout: float = DEFAULT_LOCK_TIMEOUT,
+    timeout: float | None = DEFAULT_LOCK_TIMEOUT,
     retry_interval: float = DEFAULT_LOCK_RETRY_INTERVAL,
     stale_after: float = DEFAULT_STALE_LOCK_AGE,
 ) -> Iterator[Path]:
-    """Acquire an exclusive lock file and remove it on leaving the context."""
-    if timeout < 0:
+    """Acquire an exclusive lock file and remove it on leaving the context.
+
+    While held, the lock file also carries this process's OS lock, so it is
+    never taken over from a live holder however long it is stopped.  With
+    ``timeout=None`` the request waits while the holder is alive.
+    """
+    if timeout is not None and timeout < 0:
         raise ValueError("timeout must be non-negative")
     if retry_interval < 0:
         raise ValueError("retry_interval must be non-negative")
@@ -393,7 +424,13 @@ def acquire_lock(
         raise ValueError("stale_after must be non-negative")
 
     start_ns = time.monotonic_ns()
-    deadline_ns = start_ns + int(timeout * 1_000_000_000)
+    unbounded = timeout is None
+    if timeout is None:
+        timeout = float("inf")
+        deadline_ns = start_ns + (1 << 62)
+    else:
+        deadline_ns = start_ns + int(timeout * 1_000_000_000)
+    next_notice_ns = start_ns + int(_WAIT_NOTICE_SECONDS * 1_000_000_000)
     lock_path = _as_path(path)
     waiters = lock_path.with_name(lock_path.name + ".waiters")
     token = secrets.token_hex(16)
@@ -403,6 +440,8 @@ def acquire_lock(
     warned_entries: set[str] = set()
     entry_path = waiters / f"{start_ns}-{deadline_ns}-{token}.wait"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    entry_hold: HeldFileLock | None = None
+    body_hold: HeldFileLock | None = None
     try:
         try:
             lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -412,6 +451,7 @@ def acquire_lock(
                 registered = True
                 # Ephemeral queue entries are explicitly exempt from fsync.
                 os.close(descriptor)
+                entry_hold = try_hold_file_lock(entry_path, create=False)
 
             while True:
                 first = _first_waiter(
@@ -419,6 +459,9 @@ def acquire_lock(
                     warned_entries=warned_entries,
                 )
                 now_ns = time.monotonic_ns()
+                if unbounded and now_ns >= next_notice_ns:
+                    next_notice_ns = now_ns + int(_WAIT_NOTICE_SECONDS * 1_000_000_000)
+                    print(f"ロックの解放を待っています（持ち主は生きています）: {lock_path}", file=sys.stderr)
                 if timeout == 0:
                     if first is not None:
                         raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
@@ -461,6 +504,7 @@ def acquire_lock(
                         _remove_lock_if_owned(lock_path, token)
                         raise
                     acquired = True
+                    body_hold = try_hold_file_lock(lock_path, create=False)
                     if timeout > 0 and time.monotonic_ns() >= deadline_ns:
                         raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
                     break
@@ -472,6 +516,8 @@ def acquire_lock(
                     raise LockTimeoutError(f"timed out acquiring lock: {lock_path}")
                 time.sleep(min(retry_interval, remaining_ns / 1_000_000_000))
         finally:
+            if entry_hold is not None:
+                entry_hold.release()
             if registered:
                 try:
                     entry_path.unlink()
@@ -479,8 +525,71 @@ def acquire_lock(
                     pass
         yield lock_path
     finally:
+        if body_hold is not None:
+            body_hold.release()
         if acquired:
             _remove_lock_if_owned(lock_path, token)
+
+
+class HeldFileLock:
+    """An OS file lock held by this process until :meth:`release`.
+
+    The operating system releases it when the process ends, so holding it
+    proves only that the holder is alive; no elapsed time is involved.
+    """
+
+    def __init__(self, descriptor: int) -> None:
+        self._descriptor: int | None = descriptor
+
+    def release(self) -> None:
+        descriptor, self._descriptor = self._descriptor, None
+        if descriptor is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+        finally:
+            os.close(descriptor)
+
+
+def try_hold_file_lock(path: os.PathLike[str] | str, *, create: bool = True) -> HeldFileLock | None:
+    """Take an exclusive OS lock on *path* without waiting; ``None`` if held.
+
+    With ``create=False`` a missing file raises :class:`FileNotFoundError`.
+    """
+    lock_path = _as_path(path)
+    flags = os.O_RDWR | getattr(os, "O_BINARY", 0)
+    if create:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        flags |= os.O_CREAT
+    descriptor = os.open(lock_path, flags, 0o666)
+    try:
+        if os.name == "nt":
+            import msvcrt
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as error:
+        os.close(descriptor)
+        if error.errno in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK, errno.EDEADLK}:
+            return None
+        raise
+    return HeldFileLock(descriptor)
+
+
+def file_lock_is_held(path: os.PathLike[str] | str) -> bool:
+    """Whether a live process holds the OS lock on *path* (it is not created)."""
+    if not os.path.exists(path):
+        return False
+    hold = try_hold_file_lock(path)
+    if hold is None:
+        return True
+    hold.release()
+    return False
 
 
 def manifest_lock_path(run_dir: os.PathLike[str] | str) -> Path:

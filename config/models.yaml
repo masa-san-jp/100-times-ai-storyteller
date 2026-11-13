@@ -7,7 +7,6 @@ models:
     context_length: 32768
     json_mode: schema
     think: low
-    timeout_seconds: 600
 
   # LM Studio / llama.cpp server などの OpenAI 互換サーバー。モデル名はサーバー側の識別子に合わせて変える。
   openai/gpt-oss-20b:
@@ -17,4 +16,3 @@ models:
     max_tokens: 8192
     context_length: 32768
     json_mode: schema
-    timeout_seconds: 600
