@@ -520,7 +520,9 @@ def _select_world_sections(
     if not selected_ids and "place" in world_by_id and "place" in generated_world:
         selected_ids = ["place"]
     if not selected_ids:
-        raise ValueError("利用できる世界セクションがありません")
+        # Every candidate section was skipped (undecided): the excerpt is an
+        # optional input, so the event is written without it (ADR-0009).
+        return []
 
     result: list[dict[str, str]] = []
     for section_id in selected_ids:

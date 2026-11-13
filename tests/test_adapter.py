@@ -300,7 +300,8 @@ def test_model_config_reads_repository_defaults() -> None:
     assert config.think == "low"
     assert config.max_tokens == 8192
     assert config.context_length == 32768
-    assert config.timeout_seconds == 600
+    assert config.timeout_seconds is None  # wait while the connection is open
+    assert config.transport_retry_budget_seconds == 1800
 
 
 def test_ollama_payload_includes_think_when_configured(ollama_server: str) -> None:
@@ -323,8 +324,11 @@ def test_ollama_payload_includes_think_when_configured(ollama_server: str) -> No
 
 
 def test_ollama_adapter_uses_model_timeout_by_default(ollama_server: str) -> None:
-    adapter = OllamaAdapter(_model(ollama_server))
-    assert adapter.timeout == 600
+    # No upper bound by default: a send waits while the connection is open,
+    # since a shared server may queue it behind others (task-model §6.3).
+    assert OllamaAdapter(_model(ollama_server)).timeout is None
+    configured = ModelConfig(**{**_model(ollama_server).__dict__, "timeout_seconds": 600.0})
+    assert OllamaAdapter(configured).timeout == 600
 
 
 def test_auto_records_adapter_failure_as_attempt_and_releases_claim(

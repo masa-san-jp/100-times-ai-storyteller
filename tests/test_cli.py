@@ -479,22 +479,45 @@ def test_subprocess_exit_code_six_covers_halted_next_and_submit_and_resume(tmp_p
     ).returncode == 0
 
 
-def test_subprocess_exit_code_ten_covers_manifest_lock_timeout(tmp_path):
+def test_cli_waits_while_a_live_process_holds_the_manifest_lock(tmp_path):
+    # data-layout §5: a live holder is never timed out; st waits, then runs.
+    import sys
     data_dir = tmp_path / "data"
     run_id = _new_dummy(data_dir, seed=13)
     manifest = _load_manifest(data_dir, run_id)
     manifest["status"] = "stalled"
     _save_manifest(data_dir, run_id, manifest)
     lock_path = data_dir / "runs" / run_id / "manifest.lock"
-    lock_path.write_text("{}\n", encoding="utf-8")
-    timed_out = _run_st(
-        data_dir,
-        "next",
-        "--run",
-        run_id,
-        timeout=15,
+    source = Path(__file__).parents[1] / "src"
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import sys, time\n"
+         f"sys.path.insert(0, {str(source)!r})\n"
+         "from storyteller.storage import acquire_lock\n"
+         f"with acquire_lock({str(lock_path)!r}):\n"
+         "    print('held', flush=True)\n"
+         "    time.sleep(600)\n"],
+        stdout=subprocess.PIPE, text=True, encoding="utf-8",
     )
-    assert timed_out.returncode == 10
+    environment = os.environ.copy()
+    environment["STORYTELLER_HOME"] = str(data_dir)
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        waiting = subprocess.Popen(
+            [*st_command(FIXED_TIME), "next", "--run", run_id],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", env=environment,
+        )
+        time.sleep(12)  # longer than the former 10-second give-up
+        assert waiting.poll() is None
+        holder.kill()
+        holder.wait()
+        waiting.communicate(timeout=60)
+        assert waiting.returncode != 10
+    finally:
+        for process in (holder,):
+            if process.poll() is None:
+                process.kill()
+                process.wait()
 
 
 def test_sync_folder_warning_is_written_to_stderr(tmp_path):

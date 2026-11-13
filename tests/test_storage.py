@@ -229,9 +229,9 @@ def test_windows_lock_open_retries_access_denied_without_bypassing_o_excl(
 
     def pending_delete(path, flags, mode):
         nonlocal attempts
-        if Path(path) != lock_path:
-            return original_open(path, flags, mode)
-        assert flags & os.O_EXCL and flags & os.O_CREAT
+        if Path(path) != lock_path or not flags & os.O_EXCL:
+            return original_open(path, flags, mode)  # incl. the holder's OS lock
+        assert flags & os.O_CREAT
         attempts += 1
         if attempts <= 2:
             raise PermissionError(errno.EACCES, "pending deletion", str(path))
