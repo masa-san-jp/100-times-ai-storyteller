@@ -33,6 +33,7 @@
 | `max_invalidations` | llm | 任意 | 0以上の整数 | 2 | §4.3 |
 | `share_across_runs` | llm | 任意 | 真偽値 | `false` | §9 |
 | `lease_minutes` | llm | 任意 | 0より大きい数 | 30 | §5（小数を許す。テスト用の短い lease に使う） |
+| `fallback` | llm | 任意 | `name_from_sounds` / `epoch_unrecorded` | なし | `on_exhausted: fail` のタスクで、上限に達したときに入力からコードで作る種類（§6.7） |
 | `on_exhausted` | llm | 任意 | `fail` / `skip` | `skip` | 試行の上限に達したときの扱い。`skip` は `skipped` にして manifest の `warnings` に記録する。後続の工程が代わりの手段を持つ補助的なタスク（S2.expand など）に使う |
 | `extend_to_min` | llm | 任意 | 真偽値 | `false` | `output: text` のタスクで、字数の不足を継続で補う（§8） |
 | `continuation` | llm | 任意 | 真偽値 | `output: text` なら `true`、`json` なら `false` | §8。`output: json` で `true` を指定した定義はエラー。`element` が `text` 以外のタスクでは `false` |
@@ -225,6 +226,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 ### 4.3 無効化
 
 - 後続の検査（S8、F4、Phase 0 のダミーDAGの検査タスク）が、`done` のタスクの出力を不合格とした場合、コードはそのタスクを無効化する。
+- 検査のコードタスクが無効化を求めた対象が、すでに `skipped`（試行・無効化の上限で省略され、未定）の場合は、無効化せずに警告「<対象>: 省略（未定）のため、<検査タスク> の不合格による無効化をせずに進む：<理由>」を残し、検査タスクは `done` にする（省略済みの出力は再試行できないため。ADR-0009）。
 - 無効化の処理：
   1. 状態を `ready` に戻し、`invalidations` と `attempt` を1ずつ増やす（`attempt` が変わるので、タスクの seed とキャッシュキーも変わる）。
   2. 次のカードの「前回の不合格理由」に、検査の理由を書く。
@@ -242,7 +244,10 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 - 読めない・項目が不正・task_id が一致しない `claim.json` は、無効な claim と同じに扱う（改名し、タスクが `claimed` なら `ready` に戻す）。1つの run の claim や manifest の異常で、他の run の claim を止めない。
 - タスクが `claimed` から他の状態に移るときは、必ず `claim.json` を削除または改名し、manifest の `claim` を null にする。
 - `st auto` は、提出が lease 切れ・claim の取り消しで拒否された場合（終了コード 3）、そのタスクの結果を捨てて警告を標準エラーに出し、次のタスクに進む。処理全体を終了しない（そのタスクは、次の `st next` が無効な claim として `ready` に戻す）。
-- 並行実行を保証するのは、同じマシン上の同じファイルシステムに限る（[data-layout.md](data-layout.md) §5）。長時間の無人実行では、実行するマシンのスリープを防ぐ（macOS では `caffeinate -ims st auto ...`）。スリープで推論が lease を超えた場合も、上の扱いで処理を続ける。
+- **`st auto` の claim は、持ち主のプロセスが生きている限り他へ渡さない**（VISION P7）。`st auto` は claim を取ったら、提出・失敗の記録・解放が終わるまで、タスクディレクトリの `claim.lock` に OS の排他ロック（macOS・Linux は `fcntl.flock`、Windows は `msvcrt.locking`）を持ち続ける。OS はプロセスの終了とともにロックを外す。`isolation: adapter` の claim は、lease が過ぎても、`claim.lock` のロックが持たれている間は無効にしない（`st next` の整合処理・提出の検査・`validate_claim` のすべてで同じ）。経過時間だけでは、生きている実行者からタスクを取り上げない。共用のマシン・推論サーバーでは、生きている実行者も長く待たされるためである。
+- `st auto` は、実行中も10秒ごとに自分の claim が有効かを確かめる。取り消されていたら（無効化など）、待っている推論サーバーへの接続を閉じ（Ollama は接続が閉じると処理をやめる）、結果を捨て、`claim.lock` を外して次に進む。`claim.lock` のロックが持たれているタスクは、`ready` でも claim させない。前の実行者が止まるまで、同じタスクを次の実行者に渡さないためである。
+- `st next`／`st submit` で動く外部の実行者の claim は、ハーネスが生死を確かめる手段がないため、従来どおり lease で失効する（[#229](https://github.com/masa-san-jp/100-times-ai-storyteller/issues/229)）。
+- 並行実行を保証するのは、同じマシン上の同じファイルシステムに限る（[data-layout.md](data-layout.md) §5）。長時間の無人実行では、実行するマシンのスリープを防ぐ（macOS では `caffeinate -ims st auto ...`）。
 
 ## 6. 検証と再試行
 
@@ -276,7 +281,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 ### 6.3 不合格の扱い
 
 - 実行者が出力を作れなかった場合は、原因を3種類に分けて扱う。理由には失敗の内容を書く。アダプタは、同じタスクを lease 切れまで放置して取り直すことを繰り返さない。
-  - **通信の失敗**（接続できない、タイムアウト、HTTP 5xx・429）：試行に数えない。アダプタは同じ要求を、待ち時間を倍にしながら（初期30秒、上限5分）送り直す。送り直しの合計が、その claim の lease の残り時間から5分を引いた時間に達した場合は、claim を解放して（`tries` を増やさずに `ready` に戻す）、`st auto` を終了する。推論の失敗ではなく、実行環境の問題だからである。
+  - **通信の失敗**（接続できない、接続が切れた、`timeout_seconds` を設定した場合のその超過、HTTP 5xx・429）：試行に数えない。推論サーバーの順番待ちは失敗ではない。接続が開いている限り応答を待ち、待ち時間に上限を置かない（`timeout_seconds` を設定しない限り）。共用のサーバーでは、自分の依頼の前に何件並ぶかをハーネスは決められないからである。アダプタは同じ要求を、待ち時間を倍にしながら（初期30秒、上限5分）送り直す。送り直しの予算（`transport_retry_budget_seconds`、既定1800秒）は、続いている失敗の**最初の失敗から**数え、1回の送信の待ちを切り詰めない。予算を使い切った場合は、claim を解放して（`tries` を増やさずに `ready` に戻す）、`st auto` を終了する。推論の失敗ではなく、実行環境の問題だからである。`st auto` は依頼ごとに、所要秒数と、所要秒数から Ollama が返す処理時間（`load_duration`・`prompt_eval_duration`・`eval_duration` の合計。`total_duration` は順番待ちを含むので使わない）を引いた順番待ちの推定秒数を標準エラーに1行で出す。
   - **要求の拒否**（HTTP 4xx。429 を除く）：同じ要求は送り直しても拒否されるため、試行の上限を待たずに直ちに `failed` にする。理由に、応答の本文の先頭500字を書く。
   - **空の応答**：不合格と同じに扱う（試行に数える）。
 - 不合格の場合、出力と理由を `attempts/<n>.json` に保存し、`tries` と `attempt` を1ずつ増やす。
@@ -324,6 +329,7 @@ run は、1つのタスクの不合格で止めない（[ADR-0009](../adr/0009-n
 2. **実行者の格上げ**：`tries` が `max_attempts` に達したとき、manifest の `escalation`（実行者の設定。例：`claude-haiku-5-5` → `claude-sonnet-5-5`）に次の実行者があれば、`tries` を0に戻して、そのタスクを次の実行者だけが claim できる状態にする。`st auto` と実行者ワークスペースは、自分の実行者 ID が指定と一致するタスクだけを取る。
 3. **記録して進む**：格上げの先がなくなっても合格しない場合は、`on_exhausted` に従う（既定は `skip`）。`skipped` にしたタスクは、`failure.md`（§6.3）と manifest の `warnings` に残す。後続のタスクの入力では、そのスロットを「未定」として示し、S9 の正本では該当箇所を「（未定）」と示す。
 
+- **コードで作る**：`on_exhausted: fail` のタスクのうち、定義に `fallback` を持つものは、格上げの先がなくなっても合格しない場合、オーケストレータが入力（`input.json`）からコードで要素を作り、実行者ID `harness-fallback` の試行として同じ検証にかけて提出する。合格すれば `done` とし、警告「<タスク>: 試行の上限に達したため、入力からコードで作る（<fallback>）」を残す。この試行も不合格なら `failed` にする。`fallback` の種類：`name_from_sounds`（与えた響きの音の先頭3つをつないだものを表記と読みにする。S4.item_name・S4.calendar_name・S5.name）、`epoch_unrecorded`（「<暦>の元年に何が起きたかは、記録に残っていない。」。S4.calendar_epoch）。
 - run の状態が `stalled` になるのは、`on_exhausted: fail` を明示したタスクが失敗した場合だけとする。
 - 1本の run の `skipped` の数と理由は、S9 の正本の末尾（生成の記録）と `st status --run` に示す。
 

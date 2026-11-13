@@ -35,12 +35,25 @@ class Clock:
         ))
 
 
-def waiter(lock: Path, start: int, deadline: int, token: str = "a" * 32) -> Path:
+_LIVE_WAITERS: list = []
+
+
+def waiter(lock: Path, start: int, deadline: int, token: str = "a" * 32, *, alive: bool = True) -> Path:
+    """A queue entry; a live waiter holds the OS lock on it, as acquire_lock does."""
     directory = lock.with_name(lock.name + ".waiters")
     directory.mkdir(exist_ok=True)
     path = directory / f"{start}-{deadline}-{token}.wait"
     path.touch(exist_ok=False)
+    if alive:
+        _LIVE_WAITERS.append(storage.try_hold_file_lock(path, create=False))
     return path
+
+
+@pytest.fixture(autouse=True)
+def _release_live_waiters():
+    yield
+    while _LIVE_WAITERS:
+        _LIVE_WAITERS.pop().release()
 
 
 def _queued_worker(lock_name: str, log_name: str, label: int, ready, common_start) -> None:
@@ -256,7 +269,7 @@ def test_original_deadline_includes_registration_scan_and_body_creation(
 
     def open_file(path, flags, mode=0o777):
         descriptor = original_open(path, flags, mode)
-        if Path(path) == lock:
+        if Path(path) == lock and flags & os.O_EXCL:
             body_attempts.append(path)
             if stage == "body":
                 clock.now += 10_000_000_001
@@ -273,7 +286,7 @@ def test_original_deadline_includes_registration_scan_and_body_creation(
     monkeypatch.setattr(storage.os, "open", open_file)
     monkeypatch.setattr(storage, "_first_waiter", scan)
     with pytest.raises(LockTimeoutError):
-        with acquire_lock(lock):
+        with acquire_lock(lock, timeout=10):
             pytest.fail("request exceeded its original deadline")
     assert len(body_attempts) == (1 if stage == "body" else 0)
     assert not lock.exists()
@@ -291,12 +304,12 @@ def test_waiting_uses_original_deadline_and_expired_predecessor_stops_blocking(
     predecessor = waiter(lock, clock.now - 1,
                          clock.now + (200_000_000 if predecessor_expires else 20_000_000_000))
     if predecessor_expires:
-        with acquire_lock(lock):
+        with acquire_lock(lock, timeout=10):
             assert not predecessor.exists()
         assert clock.now == 10_200_000_000
     else:
         with pytest.raises(LockTimeoutError):
-            with acquire_lock(lock):
+            with acquire_lock(lock, timeout=10):
                 pytest.fail("a later request bypassed a live predecessor")
         assert clock.now == 20_000_000_000
         assert list(predecessor.parent.iterdir()) == [predecessor]
@@ -323,7 +336,8 @@ def test_timeout_zero_never_registers_or_waits_and_attempts_body_at_most_once(
     attempted = []
 
     def open_file(path, flags, mode=0o777):
-        attempted.append(Path(path))
+        if flags & os.O_EXCL:  # attempts to create the lock or an entry
+            attempted.append(Path(path))
         return original_open(path, flags, mode)
 
     monkeypatch.setattr(storage.os, "open", open_file)
@@ -436,7 +450,7 @@ def test_registration_collision_never_deletes_another_entry(
     existing = waiter(lock, clock.now, clock.now + 10_000_000_000)
     monkeypatch.setattr(storage.secrets, "token_hex", lambda count: "a" * 32)
     with pytest.raises(FileExistsError):
-        with acquire_lock(lock):
+        with acquire_lock(lock, timeout=10):
             pytest.fail("registration collided with another token entry")
     assert existing.exists()
     assert not lock.exists()
@@ -504,7 +518,7 @@ def test_denied_obsolete_entry_cleanup_warns_once_per_request_and_never_blocks(
 
     def collision_twice(path, flags, mode=0o777):
         nonlocal attempts
-        if Path(path) == lock:
+        if Path(path) == lock and flags & os.O_EXCL:
             attempts += 1
             if attempts % 3:
                 raise FileExistsError(errno.EEXIST, "body still held", str(path))
