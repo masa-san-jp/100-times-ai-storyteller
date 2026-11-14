@@ -137,10 +137,11 @@ def run_auto_command(args: argparse.Namespace) -> int:
     if args.workers < 1:
         raise AdapterError("--workers は1以上の整数で指定してください")
     data_dir = _resolve_cli_data_dir()
-    model = load_model_config(
+    model = resolve_model_config(
         args.model,
         provider=args.provider,
         endpoint=args.endpoint,
+        data_dir=data_dir,
     )
     _validate_local_endpoint(model.endpoint)
     from .cli import _orchestrator
@@ -193,7 +194,7 @@ def load_model_config(
         raise AdapterError(f"モデル設定の形式が不正です: {path}") from error
     raw = document["models"].get(model)
     if not isinstance(raw, Mapping):
-        raise AdapterError(f"モデル設定がありません: {model}")
+        raise ModelNotConfigured(f"モデル設定がありません: {model}")
 
     resolved_provider = raw.get("provider")
     if not isinstance(resolved_provider, str) or not resolved_provider:
@@ -248,6 +249,132 @@ def load_model_config(
         timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
         transport_retry_budget_seconds=float(retry_budget),
     )
+
+
+class ModelNotConfigured(AdapterError):
+    """The model name is not in ``config/models.yaml``."""
+
+
+_DEFAULT_ENDPOINTS = {
+    "ollama": "http://127.0.0.1:11434",
+    "openai-compatible": "http://127.0.0.1:1234",
+}
+# Fits the 16000-character input ceiling of story-pipeline.md with the card,
+# retry reasons and output (the registered 20B models use the same value).
+_DEFAULT_CONTEXT_LENGTH = 32768
+_DEFAULT_TEMPERATURE = 0.7
+_DEFAULT_MAX_TOKENS = 8192
+_INFERRED_PATH = Path("adapters") / "inferred-models.json"
+
+
+def resolve_model_config(
+    model: str,
+    *,
+    provider: str,
+    endpoint: str | None = None,
+    data_dir: Path,
+    config_path: str | Path | None = None,
+) -> ModelConfig:
+    """Load *model*, or fill in a configuration for an unregistered one.
+
+    architecture.md §5: an unregistered model does not stop ``st auto``; the
+    filled values and their sources are shown on stderr and saved in the data
+    directory.  Registered models are loaded exactly as before.
+    """
+
+    try:
+        return load_model_config(model, provider=provider, endpoint=endpoint, config_path=config_path)
+    except ModelNotConfigured:
+        pass
+    if provider not in _DEFAULT_ENDPOINTS:
+        raise AdapterError(f"provider が不正です: {provider}")
+    sources: dict[str, dict[str, Any]] = {}
+
+    def fill(field: str, value: Any, source: str) -> Any:
+        sources[field] = {"value": value, "source": source}
+        return value
+
+    resolved_endpoint = fill(
+        "endpoint",
+        endpoint if endpoint is not None else _DEFAULT_ENDPOINTS[provider],
+        "--endpoint" if endpoint is not None else "default",
+    )
+    _validate_local_endpoint(resolved_endpoint)
+    context_length, context_source = _DEFAULT_CONTEXT_LENGTH, "default"
+    if provider == "ollama":
+        reported = _ollama_context_length(resolved_endpoint, model)
+        if reported is not None:
+            context_length = min(reported, _DEFAULT_CONTEXT_LENGTH)
+            context_source = f"/api/show（{reported}）と {_DEFAULT_CONTEXT_LENGTH} の小さいほう"
+    config = ModelConfig(
+        name=model,
+        provider=fill("provider", provider, "--provider"),
+        endpoint=resolved_endpoint,
+        temperature=fill("temperature", _DEFAULT_TEMPERATURE, "default"),
+        max_tokens=fill("max_tokens", _DEFAULT_MAX_TOKENS, "default"),
+        context_length=fill("context_length", context_length, context_source),
+        json_mode=fill("json_mode", "schema", "default"),
+    )
+    print(f"st auto: config/models.yaml に {model} がないため、設定を補いました", file=sys.stderr)
+    for field, item in sources.items():
+        print(f"st auto:   {field} = {item['value']}（{item['source']}）", file=sys.stderr)
+    _record_inferred(Path(data_dir), model, sources)
+    return config
+
+
+def _ollama_context_length(endpoint: str, model: str) -> int | None:
+    """The model's context length from Ollama's ``/api/show``, if it answers.
+
+    A 404 means the server does not have the model: every request would
+    fail, so ``st auto`` stops instead of filling in a configuration.
+    """
+
+    base = endpoint.rstrip("/")
+    if base.endswith("/api/chat"):
+        base = base[: -len("/api/chat")]
+    request = Request(
+        base + "/api/show",
+        data=json.dumps({"model": model}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            document = json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        error.close()
+        if error.code == 404:
+            raise AdapterError(f"Ollama のサーバーにモデルがありません: {model}（ollama pull で取得してください）") from error
+        return None
+    except (URLError, TimeoutError, OSError, HTTPException, json.JSONDecodeError, UnicodeError):
+        return None
+    info = document.get("model_info") if isinstance(document, Mapping) else None
+    if not isinstance(info, Mapping):
+        return None
+    for key, value in info.items():
+        if (
+            isinstance(key, str) and key.endswith(".context_length")
+            and isinstance(value, int) and not isinstance(value, bool) and value > 0
+        ):
+            return value
+    return None
+
+
+def _record_inferred(data_dir: Path, model: str, sources: Mapping[str, Any]) -> None:
+    path = data_dir / _INFERRED_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with acquire_lock(data_dir / "adapters.lock"):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            document = {}
+        models = document.get("models") if isinstance(document, Mapping) else None
+        models = dict(models) if isinstance(models, Mapping) else {}
+        models[model] = {
+            "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "settings": dict(sources),
+        }
+        atomic_write_json(path, {"models": models})
 
 
 def _validate_local_endpoint(endpoint: str) -> None:
@@ -822,8 +949,10 @@ __all__ = [
     "AdapterResponse",
     "AutoRunner",
     "ModelConfig",
+    "ModelNotConfigured",
     "OllamaAdapter",
     "load_model_config",
     "register_auto_command",
+    "resolve_model_config",
     "run_auto_command",
 ]
