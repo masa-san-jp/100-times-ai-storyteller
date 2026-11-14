@@ -315,10 +315,10 @@ def resolve_model_config(
         context_length=fill("context_length", context_length, context_source),
         json_mode=fill("json_mode", "schema", "default"),
     )
+    _record_inferred(Path(data_dir), model, sources)
     print(f"st auto: config/models.yaml に {model} がないため、設定を補いました", file=sys.stderr)
     for field, item in sources.items():
         print(f"st auto:   {field} = {item['value']}（{item['source']}）", file=sys.stderr)
-    _record_inferred(Path(data_dir), model, sources)
     return config
 
 
@@ -351,30 +351,46 @@ def _ollama_context_length(endpoint: str, model: str) -> int | None:
     info = document.get("model_info") if isinstance(document, Mapping) else None
     if not isinstance(info, Mapping):
         return None
-    for key, value in info.items():
-        if (
-            isinstance(key, str) and key.endswith(".context_length")
-            and isinstance(value, int) and not isinstance(value, bool) and value > 0
-        ):
-            return value
+    architecture = info.get("general.architecture")
+    if not isinstance(architecture, str) or not architecture:
+        return None
+    value = info.get(f"{architecture}.context_length")
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
     return None
 
 
 def _record_inferred(data_dir: Path, model: str, sources: Mapping[str, Any]) -> None:
+    """Save the filled values in ``adapters/inferred-models.json``.
+
+    A record that cannot be read is moved aside (not overwritten), so the
+    records of other models are not lost silently.
+    """
+
     path = data_dir / _INFERRED_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with acquire_lock(data_dir / "adapters.lock"):
-        try:
-            document = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            document = {}
-        models = document.get("models") if isinstance(document, Mapping) else None
-        models = dict(models) if isinstance(models, Mapping) else {}
-        models[model] = {
-            "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "settings": dict(sources),
-        }
-        atomic_write_json(path, {"models": models})
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with acquire_lock(data_dir / "adapters.lock"):
+            models: dict[str, Any] = {}
+            if path.exists():
+                try:
+                    document = json.loads(path.read_text(encoding="utf-8"))
+                    if not isinstance(document, Mapping) or not isinstance(document.get("models"), Mapping):
+                        raise ValueError("models がありません")
+                    models = dict(document["models"])
+                except (UnicodeError, ValueError) as error:
+                    aside = path.with_name(
+                        f"{path.name}.broken-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+                    )
+                    path.replace(aside)
+                    print(f"st auto: 補った設定の記録を読めないため {aside.name} に移しました（{error}）", file=sys.stderr)
+            models[model] = {
+                "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "settings": dict(sources),
+            }
+            atomic_write_json(path, {"models": models})
+    except OSError as error:
+        raise AdapterError(f"補った設定を記録できません: {path}（{error}）") from error
 
 
 def _validate_local_endpoint(endpoint: str) -> None:

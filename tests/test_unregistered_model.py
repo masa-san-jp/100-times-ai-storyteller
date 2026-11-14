@@ -100,7 +100,7 @@ def test_unreachable_server_falls_back_to_the_default_context_length(tmp_path: P
 
 
 def test_api_show_without_context_length_falls_back_to_the_default(tmp_path: Path, show_server: str) -> None:
-    _ShowHandler.body = {"model_info": {"general.architecture": "x"}}
+    _ShowHandler.body = {"model_info": {"general.architecture": "x", "other.context_length": 4096}}
     config = resolve_model_config("other:7b", provider="ollama", endpoint=show_server, data_dir=tmp_path)
     assert config.context_length == 32768
 
@@ -133,7 +133,7 @@ def test_records_of_several_models_are_kept(tmp_path: Path) -> None:
 
 
 def test_st_auto_starts_with_an_unregistered_model(tmp_path: Path, show_server: str, monkeypatch) -> None:
-    _ShowHandler.body = {"model_info": {"gptoss.context_length": 131072}}
+    _ShowHandler.body = {"model_info": {"general.architecture": "gptoss", "gptoss.context_length": 131072}}
     started = {}
 
     class FakeRunner:
@@ -151,3 +151,23 @@ def test_st_auto_starts_with_an_unregistered_model(tmp_path: Path, show_server: 
     assert adapter.run_auto_command(args) == 0
     assert started["ran"] and started["model"].name == "gpt-oss:120b"
     assert started["model"].context_length == 32768
+
+
+def test_an_unreadable_record_is_moved_aside_not_overwritten(tmp_path: Path, capsys) -> None:
+    (tmp_path / "adapters").mkdir()
+    (tmp_path / "adapters" / "inferred-models.json").write_text("{broken", encoding="utf-8")
+    resolve_model_config("local/model", provider="openai-compatible", data_dir=tmp_path)
+    aside = list((tmp_path / "adapters").glob("inferred-models.json.broken-*"))
+    assert len(aside) == 1 and aside[0].read_text(encoding="utf-8") == "{broken"
+    assert set(json.loads((tmp_path / "adapters" / "inferred-models.json").read_text(encoding="utf-8"))["models"]) == {
+        "local/model"}
+    assert "に移しました" in capsys.readouterr().err
+
+
+def test_a_record_that_cannot_be_written_stops_with_an_adapter_error(tmp_path: Path, monkeypatch) -> None:
+    def refuse(*_args, **_kwargs):
+        raise OSError("read-only")
+
+    monkeypatch.setattr(adapter, "atomic_write_json", refuse)
+    with pytest.raises(AdapterError, match="補った設定を記録できません"):
+        resolve_model_config("local/model", provider="openai-compatible", data_dir=tmp_path)
