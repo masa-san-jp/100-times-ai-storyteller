@@ -1,5 +1,5 @@
 id: F1.split
-version: 6
+version: 7
 kind: code
 handler: format_f1_split
 inputs:

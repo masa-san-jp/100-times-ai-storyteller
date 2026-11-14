@@ -12,10 +12,27 @@ def review_id(part: str, number: int, name: str) -> str:
     return f"F4.review-{part}-b{number}-{name}"
 
 
-def expand_reviews(checks: Sequence[Mapping[str, Any]], part: Mapping[str, Any],
-                   story: Mapping[str, Any]) -> list[dict[str, Any]]:
-    events = {event['id']: event for event in story['events']}
+def _named_actors(part: Mapping[str, Any], story: Mapping[str, Any],
+                  events: Mapping[str, Any], named_in_events: bool) -> list[Mapping[str, Any]]:
+    """The people a part may name: its ``characters``, and with
+    ``named_in_events`` (F1.split v7) also the cast whose name or reading
+    appears in a text field of the part's events, in cast order."""
+    allowed = {person['id'] for person in part['characters']}
+    if named_in_events:
+        texts = [value for event_id in part['event_ids']
+                 for value in events[event_id].values() if isinstance(value, str)]
+        for person in story['cast']:
+            if any(person[key] and person[key] in text for key in ('name', 'reading') for text in texts):
+                allowed.add(person['id'])
+    order = [person['id'] for person in part['characters']]
+    order += [person['id'] for person in story['cast'] if person['id'] in allowed and person['id'] not in order]
     people = {person['id']: person for person in story['cast']}
+    return [people[person_id] for person_id in order]
+
+
+def expand_reviews(checks: Sequence[Mapping[str, Any]], part: Mapping[str, Any],
+                   story: Mapping[str, Any], *, named_in_events: bool = False) -> list[dict[str, Any]]:
+    events = {event['id']: event for event in story['events']}
     reviews = []
     for check in checks:
         kind = check['kind']
@@ -23,8 +40,8 @@ def expand_reviews(checks: Sequence[Mapping[str, Any]], part: Mapping[str, Any],
             sources = [{key: events[event_id][key] for key in ('id', 'what', 'result')}
                        for event_id in part['event_ids']]
         elif kind == 'named_actor':
-            sources = [{'characters': [{key: people[person['id']][key] for key in ('name', 'reading')}
-                                       for person in part['characters']]}]
+            sources = [{'characters': [{key: person[key] for key in ('name', 'reading')}
+                                       for person in _named_actors(part, story, events, named_in_events)]}]
         elif kind == 'condition_conflict':
             sources = [{'condition': condition} for condition in dict.fromkeys(part.get('conditions', []))]
         else:

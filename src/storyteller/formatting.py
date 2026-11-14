@@ -214,7 +214,9 @@ def make_handlers(
         checks = profile["checks"].get("llm", [])
         if context.definition.get("version", 1) >= 3 and checks and isinstance(checks[0], Mapping):
             for part in plan["parts"]:
-                part["reviews"] = format_review.expand_reviews(checks, part, story)
+                part["reviews"] = format_review.expand_reviews(
+                    checks, part, story, named_in_events=context.definition.get("version", 1) >= 7
+                )
         if context.definition.get("version", 1) >= 5:
             # format-pipeline §4.5: F2 v4 adds these checks at submission.
             plan["submit_checks"] = deepcopy(profile.get("submit_checks", []))
