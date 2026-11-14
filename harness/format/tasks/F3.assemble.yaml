@@ -1,5 +1,5 @@
 id: F3.assemble
-version: 1
+version: 2
 kind: code
 handler: format_f3_assemble
 inputs:

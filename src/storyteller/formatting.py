@@ -272,9 +272,17 @@ def make_handlers(
                         **({"assessment": "unresolved"} if "reviews" in part else {})},
                 manifest_updates={"warnings": [f"{verify_id(part_id, name)}: {reason}"]},
             )
-        failures = check_body(body, part, plan["code_checks"], root)
         warnings: list[str] = []
-        quality_only = all(error.startswith("no_story_metadata:") for error in failures)
+        body = _repaired_body(body, plan, warnings, write)
+        failures = check_body(body, part, plan["code_checks"], root)
+        half_long = _meets_half_minimum(body, part, plan["code_checks"], root)
+        short = any(error.startswith("min_chars:") for error in failures)
+        # format-pipeline F4 検証「自己修復」: a body that is only short, by
+        # less than half, is adopted at the invalidation limit like quality.
+        quality_only = all(
+            error.startswith("no_story_metadata:") or (error.startswith("min_chars:") and half_long)
+            for error in failures
+        )
         if "reviews" in part:
             review_failures, review_warnings, review_quality = format_review.collect(
                 part, name, context.dependency_outputs, body)
@@ -298,7 +306,8 @@ def make_handlers(
                 # F2's existing invalidation limit is the durable boundary.
                 exhausted = record["invalidations"] >= 2
             if exhausted:
-                warnings.append(f"{write}: 品質の不合格が無効化上限に達したため、最後の本文を採用：{'；'.join(failures)}")
+                kind = "字数の下限（半分以上）" if short else "品質"
+                warnings.append(f"{write}: {kind}の不合格が無効化上限に達したため、最後の本文を採用：{'；'.join(failures)}")
             else:
                 context.invalidate_task(write, "；".join(failures))
         return CodeTaskResult(
@@ -331,6 +340,8 @@ def make_handlers(
                 # F3 の check_deck が失敗するため、構文を満たす代替スライドにする。
                 text = _placeholder_body(plan)
                 warnings.append(f"{write}: 省略されたため本文を（未定）とした")
+            else:
+                text = _repaired_body(text, plan)
             bodies[part["unit"]].append(text.strip())
         units = [
             {**unit, "body": "\n\n".join(bodies[unit["id"]])} for unit in plan["units"]
@@ -526,6 +537,41 @@ def skeleton_ledger(skeleton: Mapping[str, Any], threads: Sequence[Mapping[str, 
         slot = f"・{turn['slot']}" if turn.get("slot") else ""
         lines.append(f"転換（{turn['thread']}・{turn['n']}{slot}）：{value(turn.get('text'))}")
     return "\n".join(lines)
+
+
+def _repaired_body(
+    body: str, plan: Mapping[str, Any], warnings: list[str] | None = None, task_id: str = "",
+) -> str:
+    """Drop what the code can fix in an F2 body (F4 検証「自己修復」).
+
+    Only scene bodies (``fountain_syntax``) are repaired: the template adds
+    their headings.  The saved F2 output is left as it is.
+    """
+
+    if "fountain_syntax" not in plan["code_checks"]:
+        return body
+    repaired, removed = format_scene.strip_body_headings(body)
+    repaired, added = format_scene.separate_character_cues(repaired)
+    if warnings is not None:
+        if removed:
+            warnings.append(f"{task_id}: 本文の見出し・節・要約の行をコードで除去：{removed[0][:40]}")
+        if added:
+            warnings.append(f"{task_id}: 人物名の前の空行をコードで補った：{added}か所")
+    return repaired
+
+
+def _meets_half_minimum(
+    body: str, part: Mapping[str, Any], code_checks: Sequence[str], repository_root: Path
+) -> bool:
+    """Whether the body has at least half of ``min_chars`` (task-model §8)."""
+
+    if "min_chars" not in code_checks:
+        return False
+    result = validate_output(
+        {"output": "text", "validate": {"checks": [{"min_chars": {"n": (part["min_chars"] + 1) // 2}}]}},
+        body, {}, harness_root=repository_root,
+    )
+    return not result.errors
 
 
 def check_body(
