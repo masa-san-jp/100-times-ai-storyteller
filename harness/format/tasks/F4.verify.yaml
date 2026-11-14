@@ -1,5 +1,5 @@
 id: F4.verify
-version: 2
+version: 3
 kind: code
 handler: format_f4_verify
 inputs:

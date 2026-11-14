@@ -18,6 +18,8 @@ KINDS = ('event_coverage', 'named_actor', 'condition_conflict', 'replay')
 CHECKS = [{'kind': kind, 'question': f'{kind}の質問',
            'severity': 'advisory' if kind == 'replay' else 'error'} for kind in KINDS]
 BODY = 'カナが道を歩く。' + 'あ' * 15 + '。'
+# Later parts tell another scene: a paragraph equal to the previous part's is a copy (F4 v3).
+LATER_BODY = 'カナが道を歩く。' + 'い' * 15 + '。'
 
 
 def reply(answer='no', **kwargs):
@@ -86,7 +88,7 @@ def test_unconfirmed_or_advisory_does_not_discard_any_body(tmp_path, dummy_forma
     body = (source['what'] + '。' + BODY) if mode == 'already_present' else BODY
     def respond(task, card):
         if task.startswith('F2.'):
-            return body if 'u01p1' in task else BODY
+            return body if 'u01p1' in task else LATER_BODY
         if mode == 'unknown':
             value = reply('unknown')
         elif mode == 'fabricated_source':
