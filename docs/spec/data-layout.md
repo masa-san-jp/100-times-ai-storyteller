@@ -40,6 +40,7 @@ private/                  # 既定のデータディレクトリ。.gitignore �
   tables/<axis>.json              # 増補テーブル（S2 の対極要素の追記先。追記のみ）
   tables.lock                     # 増補テーブルへの追記のロック
   adapters/state.json             # LLMアダプタが実行中に変更したモデルごとの設定
+  adapters/inferred-models.json   # config/models.yaml にないモデルに補った設定と出どころ（architecture.md §5）
   cache/<key[0:2]>/<key>.json     # タスク出力のキャッシュ（task-model.md §9）
   batches/<batch_id>/
     manifest.json

@@ -77,6 +77,7 @@ P1-12 の生成設定と実機検証手順は次のとおりである。
 | `openai-compatible` | OpenAI 互換の `/v1/chat/completions`（LM Studio、llama.cpp server、vLLM 等のローカルサーバー） | 4 |
 
 - モデルごとの設定は `config/models.yaml` に置く（温度、最大出力長、コンテキスト長、JSON の出させ方）。待ちの上限 `timeout_seconds` は任意で、既定では置かない（接続が開いている限り待つ）。送り直しの予算は `transport_retry_budget_seconds`（既定1800秒、[task-model.md](task-model.md) §6.3）。JSON の出させ方は [task-model.md](task-model.md) §6.5 に従う。
+- `config/models.yaml` にないモデル名を `st auto` に指定した場合は、止めずに設定を補って進める（ADR-0009）。provider は `--provider`、接続先は `--endpoint`（なければ provider の既定：`ollama` は `http://127.0.0.1:11434`、`openai-compatible` は `http://127.0.0.1:1234`）とし、温度 0.7、最大出力長 8192、JSON の出させ方 `schema` とし、`think` は送らない。コンテキスト長は、`ollama` ではサーバーの `/api/show` が返すモデルの情報（`model_info` の `<arch>.context_length`）と 32768 の小さいほう、取得できなければ 32768 とする（32768 は [story-pipeline.md](story-pipeline.md) の入力の上限 16000字が収まる長さ）。`/api/show` が「モデルがない」（HTTP 404）と答えた場合は、推論が必ず失敗するので、補わずに起動を止める。補った値と出どころ（`default`・`--endpoint`・`/api/show` など）は、標準エラーに1項目1行で示し、データディレクトリの `adapters/inferred-models.json` にモデルごとに保存する（読めない記録ファイルは上書きせず `inferred-models.json.broken-<日時>` に移して警告する。書けなければ起動を止める）。登録済みのモデルの扱いは変えない。
 - アダプタが実行中に変更した設定（JSON の出させ方の切り替え）は、データディレクトリの `adapters/state.json` にモデルごとに保存し、`st auto` の全プロセスで共有する。
 - アダプタは、応答が長さの上限で打ち切られたかどうか（`done_reason` 等）を、提出時にオーケストレータへ渡す（[task-model.md](task-model.md) §8）。
 
