@@ -839,3 +839,110 @@ def test_may_have_claimable_work_is_false_only_when_nothing_can_change(
     # The only task is claimed with a live lease: a waiting poll needs no lock.
     assert not orchestrator.may_have_claimable_work(run_id)
     assert orchestrator.may_have_claimable_work("20000101-000000-000000")
+
+
+def _two_task_orchestrator(tmp_path: Path, clock: MutableClock) -> tuple[Orchestrator, str]:
+    definitions = {
+        "D1.a": llm_definition("D1.a", lease_minutes=0.05),
+        "D1.b": llm_definition("D1.b", lease_minutes=0.05),
+    }
+    orchestrator = Orchestrator(tmp_path, definitions, clock=clock)
+    run_id = orchestrator.create_run(
+        seed=1, tasks=[TaskSpec("D1.a", "D1.a"), TaskSpec("D1.b", "D1.b")]
+    )
+    return orchestrator, run_id
+
+
+@pytest.mark.parametrize("isolation", ["permission", "placement"])
+def test_workspace_executor_resumes_its_own_live_claim(
+    tmp_path: Path, isolation: str
+) -> None:
+    clock = MutableClock()
+    orchestrator, run_id = _two_task_orchestrator(tmp_path, clock)
+    first = orchestrator.claim_next(run_id, executor_id="ws-1", isolation=isolation)
+    assert first is not None
+
+    # A restarted executor calls st next again without submitting.
+    clock.value += timedelta(seconds=1)
+    again = orchestrator.claim_next(executor_id="ws-1", isolation=isolation)
+
+    assert again == first
+    manifest = orchestrator.load_run(run_id)
+    assert manifest["tasks"]["D1.a"]["claim"]["ticket"] == first["ticket"]
+    assert manifest["tasks"]["D1.b"]["state"] == "ready"
+    assert orchestrator.validate_claim(first["ticket"])["task_id"] == "D1.a"
+
+
+def test_other_executors_do_not_receive_a_held_claim(tmp_path: Path) -> None:
+    clock = MutableClock()
+    orchestrator, run_id = _two_task_orchestrator(tmp_path, clock)
+    first = orchestrator.claim_next(run_id, executor_id="ws-1", isolation="permission")
+    other = orchestrator.claim_next(run_id, executor_id="ws-2", isolation="permission")
+
+    assert first is not None and other is not None
+    assert other["ticket"] != first["ticket"]
+    manifest = orchestrator.load_run(run_id)
+    assert manifest["tasks"]["D1.b"]["claim"]["ticket"] == other["ticket"]
+
+
+@pytest.mark.parametrize("isolation", ["adapter", "none"])
+def test_shared_or_anonymous_executor_ids_do_not_resume(
+    tmp_path: Path, isolation: str
+) -> None:
+    clock = MutableClock()
+    orchestrator, run_id = _two_task_orchestrator(tmp_path, clock)
+    first = orchestrator.claim_next(run_id, executor_id="auto-1", isolation=isolation)
+    second = orchestrator.claim_next(run_id, executor_id="auto-1", isolation=isolation)
+
+    assert first is not None and second is not None
+    assert second["ticket"] != first["ticket"]
+
+
+def test_expired_own_claim_is_not_resumed_but_reclaimed(tmp_path: Path) -> None:
+    clock = MutableClock()
+    orchestrator, run_id = _two_task_orchestrator(tmp_path, clock)
+    first = orchestrator.claim_next(run_id, executor_id="ws-1", isolation="permission")
+    assert first is not None
+
+    clock.value += timedelta(seconds=3)
+    again = orchestrator.claim_next(run_id, executor_id="ws-1", isolation="permission")
+
+    assert again is not None
+    assert again["ticket"] != first["ticket"]
+    with pytest.raises(InvalidClaimError):
+        orchestrator.validate_claim(first["ticket"])
+
+
+def test_claim_without_published_card_is_not_resumed(tmp_path: Path) -> None:
+    clock = MutableClock()
+    orchestrator, run_id = _two_task_orchestrator(tmp_path, clock)
+    first = orchestrator.claim_next(run_id, executor_id="ws-1", isolation="permission")
+    assert first is not None
+    (tmp_path / "runs" / run_id / "tasks" / "D1.a" / "card.md").unlink()
+
+    again = orchestrator.claim_next(run_id, executor_id="ws-1", isolation="permission")
+
+    assert again is not None
+    assert again["ticket"] != first["ticket"]
+    manifest = orchestrator.load_run(run_id)
+    assert manifest["tasks"]["D1.b"]["claim"]["ticket"] == again["ticket"]
+
+
+def test_resume_prefers_held_claim_in_another_run(tmp_path: Path) -> None:
+    clock = MutableClock()
+    orchestrator, first_run = _two_task_orchestrator(tmp_path, clock)
+    clock.value += timedelta(seconds=1)
+    second_run = orchestrator.create_run(
+        seed=2, tasks=[TaskSpec("D1.a", "D1.a"), TaskSpec("D1.b", "D1.b")]
+    )
+    # Hold a task of the later run, then ask without --run.
+    held = orchestrator.claim_next(second_run, executor_id="ws-1", isolation="permission")
+    assert held is not None
+
+    again = orchestrator.claim_next(executor_id="ws-1", isolation="permission")
+
+    assert again == held
+    assert all(
+        task["state"] == "ready"
+        for task in orchestrator.load_run(first_run)["tasks"].values()
+    )
