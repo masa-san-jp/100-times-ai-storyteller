@@ -88,6 +88,9 @@ FALLBACKS: dict[str, Callable[[Mapping[str, Any]], Any]] = {
     "epoch_unrecorded": _epoch_unrecorded,
 }
 _ISOLATIONS = frozenset({"permission", "placement", "adapter", "none"})
+# Workspace executors: one workspace is one executor, so a claim held under
+# its executor ID belongs to whoever runs in that workspace (task-model §5).
+_RESUMING_ISOLATIONS = frozenset({"permission", "placement"})
 _HARNESS_KINDS = frozenset({"story", "dummy", "report"})
 _TERMINAL_RUN_STATUSES = frozenset({"halted", "completed", "duplicate"})
 _MISSING: Final = object()
@@ -670,6 +673,11 @@ class Orchestrator:
 
         statuses: dict[str, str] = {}
         run_ids = self._claimable_run_ids(run_id, statuses)
+        resumed = self.resume_own_claim(
+            run_ids, executor_id=resolved_executor_id, isolation=isolation
+        )
+        if resumed is not None:
+            return resumed
         # Code tasks are synchronous.  Advancing before looking for an LLM
         # task makes a newly-unblocked task visible to this invocation.
         advance_failed = False
@@ -756,6 +764,67 @@ class Orchestrator:
                         raise
                     _warn_skipped_run(candidate_run_id, error)
                     break
+        return None
+
+    def resume_own_claim(
+        self,
+        run_ids: Iterable[str],
+        *,
+        executor_id: str,
+        isolation: str,
+    ) -> dict[str, str] | None:
+        """Return the card of a live claim the workspace executor already holds.
+
+        An executor that restarted, or lost its ticket, calls ``st next`` again
+        from the same workspace.  Handing it the claim it still holds lets it
+        resume the task itself instead of leaving the claim to lapse
+        (task-model §5).  Only workspace executors (``permission`` and
+        ``placement``) resume: one workspace is one executor, whereas
+        ``st auto`` workers share an executor ID.
+        """
+
+        if isolation not in _RESUMING_ISOLATIONS:
+            return None
+        for candidate_run_id in run_ids:
+            run_dir = self.run_dir(candidate_run_id)
+            try:
+                with manifest_lock(run_dir):
+                    manifest = load_manifest(run_dir / "manifest.json")
+                    if manifest["status"] == "halted":
+                        continue
+                    now = self._now()
+                    for task_id in sorted(manifest["tasks"]):
+                        task = manifest["tasks"][task_id]
+                        claim = task.get("claim")
+                        if (
+                            task["state"] != "claimed"
+                            or not isinstance(claim, Mapping)
+                            or claim.get("executor_id") != executor_id
+                            or claim.get("isolation") != isolation
+                        ):
+                            continue
+                        try:
+                            live = _require_claim_locked(
+                                manifest, run_dir, task_id, claim["ticket"], now
+                            )
+                        except InvalidClaimError:
+                            continue
+                        card_path = self.task_dir(candidate_run_id, task_id) / "card.md"
+                        try:
+                            card = card_path.read_text(encoding="utf-8")
+                        except OSError:
+                            continue
+                        if f"# タスク {live['ticket']}" not in card:
+                            continue
+                        return {
+                            "ticket": live["ticket"],
+                            "card": card,
+                            "lease_expires_at": live["lease_expires_at"],
+                        }
+            except LockTimeoutError:
+                raise
+            except (OSError, ValueError, ClaimError) as error:
+                _warn_skipped_run(candidate_run_id, error)
         return None
 
     # These aliases keep the operation discoverable to callers that use the

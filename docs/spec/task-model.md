@@ -247,6 +247,7 @@ LLM タスク1つは、1つの要素だけを作る（P1、[ADR-0008](../adr/000
 - **`st auto` の claim は、持ち主のプロセスが生きている限り他へ渡さない**（VISION P7）。`st auto` は claim を取ったら、提出・失敗の記録・解放が終わるまで、タスクディレクトリの `claim.lock` に OS の排他ロック（macOS・Linux は `fcntl.flock`、Windows は `msvcrt.locking`）を持ち続ける。OS はプロセスの終了とともにロックを外す。`isolation: adapter` の claim は、lease が過ぎても、`claim.lock` のロックが持たれている間は無効にしない（`st next` の整合処理・提出の検査・`validate_claim` のすべてで同じ）。経過時間だけでは、生きている実行者からタスクを取り上げない。共用のマシン・推論サーバーでは、生きている実行者も長く待たされるためである。
 - `st auto` は、実行中も10秒ごとに自分の claim が有効かを確かめる。取り消されていたら（無効化など）、待っている推論サーバーへの接続を閉じ（Ollama は接続が閉じると処理をやめる）、結果を捨て、`claim.lock` を外して次に進む。`claim.lock` のロックが持たれているタスクは、`ready` でも claim させない。前の実行者が止まるまで、同じタスクを次の実行者に渡さないためである。
 - `st next`／`st submit` で動く外部の実行者の claim は、ハーネスが生死を確かめる手段がないため、従来どおり lease で失効する（[#229](https://github.com/masa-san-jp/100-times-ai-storyteller/issues/229)）。
+- **ワークスペースの実行者は、自分の claim から再開する。** 隔離の種類が `permission`・`placement` の `st next` は、新しいタスクを選ぶ前に、同じ実行者ID・同じ隔離の種類で持っている有効な claim（lease 内で、`claim.json` と manifest が一致し、保存済みの `card.md` がその ticket のもの）を探す。あれば、claim をやり直さず、そのタスクのカードを同じ ticket のまま返す（lease は延長しない）。対象は `--run` で指定した run、指定がなければ claim の対象になるすべての run とし、他の run の新しいタスクより先に返す。途中で止まった実行者（再起動、ticket を見失った場合など）が、lease 切れを待たずに続きから再開するためである。1つのワークスペースは1つの実行者とする（ワークスペースを共有すると、同じタスクが2つの実行者に渡る）。`st auto`（`adapter`）は複数のワーカーが実行者IDを共有するため、対象外とする。
 - 並行実行を保証するのは、同じマシン上の同じファイルシステムに限る（[data-layout.md](data-layout.md) §5）。長時間の無人実行では、実行するマシンのスリープを防ぐ（macOS では `caffeinate -ims st auto ...`）。
 
 ## 6. 検証と再試行

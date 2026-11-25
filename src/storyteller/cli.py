@@ -296,6 +296,25 @@ def _next(args: argparse.Namespace) -> int:
     polling = False
     while True:
         run_ids = [args.run_id] if args.run_id is not None else _candidate_run_ids(data_dir)
+        if executor_id is not None and not polling:
+            # 自分がまだ持っている claim を、他の run の新しいタスクより先に返す
+            # （task-model §5。再起動した実行者が続きから再開する）。
+            for run_id in run_ids:
+                try:
+                    result = _orchestrator(data_dir, run_id).resume_own_claim(
+                        [run_id], executor_id=executor_id, isolation=isolation
+                    )
+                except PermissionError as error:
+                    if args.run_id is not None:
+                        raise
+                    _warn_skipped_run(run_id, error)
+                    continue
+                if result is not None:
+                    if args.as_json:
+                        _print_json(result)
+                    else:
+                        print(result["card"], end="" if result["card"].endswith("\n") else "\n")
+                    return EXIT_OK
         for run_id in run_ids:
             orchestrator = _orchestrator(data_dir, run_id)
             if polling and not orchestrator.may_have_claimable_work(run_id):

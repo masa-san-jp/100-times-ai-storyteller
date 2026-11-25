@@ -48,6 +48,7 @@ st next [--run RUN_ID] [--executor-id ID] [--wait SECONDS] [--json]
 ```
 
 - `ready` のLLMタスクを1つ claim し、タスクカードを標準出力に出す。カードの見出しに ticket が書かれている。
+- ワークスペースの実行者（隔離の種類が `permission`・`placement`）が、まだ有効な claim を持っている場合は、新しく claim せず、そのタスクのカードを同じ ticket で出す（[task-model.md](task-model.md) §5）。
 - `--json` のときは `{"ticket", "card", "lease_expires_at"}` を出力する。タスクIDは出力しない（[task-model.md](task-model.md) §3）。
 - `--run` で指定した run が `halted` の場合は、終了コード 6 を返す。
 - `--wait SECONDS`：`ready` のタスクがないとき、指定秒数まで5秒間隔で待つ（0以上の整数。0は待たない。負の値は終了コード 1）。待っても見つからなければ終了コード 2。

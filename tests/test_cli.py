@@ -666,3 +666,35 @@ def test_own_queue_cleanup_denial_never_returns_card_and_preserves_run_isolation
         assert bad_run in output.err
         card = json.loads(output.out)
         assert orchestrator.load_run(healthy_run)["tasks"]["D1.echo"]["claim"]["ticket"] == card["ticket"]
+
+
+def test_workspace_next_resumes_the_claim_the_executor_still_holds(tmp_path):
+    data_dir = tmp_path / "data"
+    created = [
+        _run_st(data_dir, "dev", "new-dummy", "--seed", str(seed), now=at)
+        for seed, at in ((21, FIXED_TIME - timedelta(seconds=2)), (22, FIXED_TIME - timedelta(seconds=1)))
+    ]
+    assert all(result.returncode == 0 for result in created), [r.stderr for r in created]
+    first_run, second_run = (result.stdout.strip() for result in created)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / ".storyteller-workspace.yaml").write_text(
+        f"data_dir: {json.dumps(str(data_dir))}\n"
+        "executor_id: ws-1\nagent: generic\nisolation: placement\n",
+        encoding="utf-8",
+    )
+
+    # The executor holds a task of the later run, then restarts and asks again.
+    held = _run_st(data_dir, "next", "--run", second_run, "--json", cwd=workspace)
+    assert held.returncode == 0, held.stderr
+    again = _run_st(data_dir, "next", "--json", cwd=workspace)
+    assert again.returncode == 0, again.stderr
+    assert json.loads(again.stdout) == json.loads(held.stdout)
+    assert all(
+        task["state"] != "claimed"
+        for task in _load_manifest(data_dir, first_run)["tasks"].values()
+    )
+
+    # Another executor (no workspace) does not receive the held task.
+    other = _claim(data_dir, second_run)
+    assert other["ticket"] != json.loads(held.stdout)["ticket"]
